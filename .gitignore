@@ -1,0 +1,61 @@
+# ===== Python =====
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+*.egg
+.eggs/
+
+# ===== Virtual Environments =====
+.venv/
+venv/
+env/
+.uv/
+
+# ===== Jupyter Notebooks =====
+.ipynb_checkpoints/
+
+# ===== Data =====
+data/
+*.csv
+*.parquet
+*.json
+!pyproject.toml
+*.db
+*.sqlite3
+
+# ===== Azure / Cloud =====
+.azure/
+*.tfstate
+*.tfstate.backup
+
+# ===== OS Files =====
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# ===== IDE =====
+.vscode/
+.idea/
+*.code-workspace
+
+# ===== Secrets & Environment =====
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# ===== Logs =====
+*.log
+logs/
+
+# ===== Misc =====
+node_modules/
+.cache/
+*.bak
