@@ -21,11 +21,8 @@ AgentGuard_NamoFans/
 ├── notebooks/                  # Jupyter notebooks & experiments
 ├── assets/                     # Images, architecture diagrams, presentation assets
 ├── docs/                       # Documentation & team briefing
-│   └── TEAM_BRIEFING.md        # ⭐ Start here — full team action plan
-├── Idea_submission/            # Original idea submission PDF
-├── Azure-AI-Fundamentals/      # Azure learning resources
-├── resources-AI-Governance/    # AI governance resources
-├── AI-Unlocked-Track-*.pdf     # Track evaluation presentations
+│   ├── TEAM_BRIEFING.md        # ⭐ Start here — full team action plan
+│   └── reference_materials/    # Consolidated competition rules, Azure guides & PDF submissions
 └── pyproject.toml              # Project config (managed by uv)
 ```
 

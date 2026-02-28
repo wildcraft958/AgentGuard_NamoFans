@@ -195,9 +195,9 @@ User Request
 | Resource | Link |
 |---|---|
 | Competition Website | https://microsoft.acehacker.com/aiunlocked/ |
-| Track 5 Presentation | [AI-Unlocked-Track-5-Presentation.pdf](file:///home/bakasur/Downloads/HACKATHONS/AgentGuard_NamoFans/AI-Unlocked-Track-5-Presentation.pdf) |
-| Track 4 Presentation | [AI-Unlocked-Track-4-Presentation.pdf](file:///home/bakasur/Downloads/HACKATHONS/AgentGuard_NamoFans/AI-Unlocked-Track-4-Presentation.pdf) |
-| Our Idea Submission | [AgentGuard_NamoFans_IITKharagpur_Track5.pdf](file:///home/bakasur/Downloads/HACKATHONS/AgentGuard_NamoFans/Idea_submission/AgentGuard_NamoFans_IITKharagpur_Track5.pdf) |
+| Track 5 Presentation | [AI-Unlocked-Track-5-Presentation.pdf](file:///home/bakasur/Downloads/HACKATHONS/AgentGuard_NamoFans/docs/reference_materials/AI-Unlocked-Track-5-Presentation.pdf) |
+| Track 4 Presentation | [AI-Unlocked-Track-4-Presentation.pdf](file:///home/bakasur/Downloads/HACKATHONS/AgentGuard_NamoFans/docs/reference_materials/AI-Unlocked-Track-4-Presentation.pdf) |
+| Our Idea Submission | [AgentGuard_NamoFans_IITKharagpur_Track5.pdf](file:///home/bakasur/Downloads/HACKATHONS/AgentGuard_NamoFans/docs/reference_materials/AgentGuard_NamoFans_IITKharagpur_Track5.pdf) |
 | Azure Credits Support | HackSupport@synergetics-india.com |
 | AI Unlocked Support | INDIAEIP@microsoft.com |
 | AutoGen GitHub | https://github.com/microsoft/autogen |
