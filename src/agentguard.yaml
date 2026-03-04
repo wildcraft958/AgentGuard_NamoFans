@@ -1,0 +1,180 @@
+########################################
+# AgentGuard Configuration
+# Version 1
+########################################
+
+version: 1
+
+########################################
+# GLOBAL SETTINGS
+########################################
+global:
+  mode: enforce              # enforce | monitor | dry-run
+  log_level: detailed        # minimal | standard | detailed
+  fail_safe: block           # block | allow
+  max_validation_latency_ms: 200
+
+########################################
+# L1 – INPUT SECURITY (Azure Integration)
+########################################
+input_security:
+
+  prompt_shields:
+    enabled: true
+    sensitivity: medium               # low | medium | high (high caused false positives on frustrated reviews)
+    block_on_detected_injection: true
+
+  spotlighting:
+    enabled: false                   # Not available -- requires Azure AI Foundry endpoint
+    treat_external_docs_as_untrusted: true
+
+  content_filters:
+    block_toxicity: true
+    block_violence: true
+    block_self_harm: true
+
+  image_filters:
+    enabled: true
+    block_hate: true
+    block_violence: true
+    block_self_harm: true
+    block_sexual: true
+
+########################################
+# L2 – OUTPUT VALIDATION / PII PROTECTION
+# (Not yet implemented – stubs only)
+########################################
+output_security:
+
+  hallucination_detection:
+    enabled: false
+    block_on_high_confidence: false
+    confidence_threshold: 0.9
+
+  pii_detection:
+    enabled: false
+    block_on_pii_exfiltration: true
+    allowed_destinations_for_pii:
+      - api.mycompany.com
+
+  toxicity_detection:
+    enabled: false
+    block_on_detected_toxicity: true
+
+########################################
+# L3 – CUSTOM PATTERN MATCHING
+# (Not yet implemented – stubs only)
+########################################
+pattern_detection:
+  enabled: false
+
+  blocked_patterns:
+    - "SYSTEM OVERRIDE"
+    - "curl "
+    - "wget "
+    - "metadata.google.internal"
+    - "169.254.169.254"
+    - "BEGIN PRIVATE KEY"
+
+  block_on_match: true
+
+########################################
+# TOOL FIREWALL (CORE LAYER)
+# (Not yet implemented – stubs only)
+########################################
+tools:
+
+  http_post:
+    enabled: false
+    mode: allowlist
+    allowed_domains:
+      - api.mycompany.com
+      - hooks.slack.com
+    require_https: true
+    block_private_ips: true
+    max_payload_kb: 512
+    rate_limit_per_minute: 20
+
+  http_get:
+    enabled: false
+    mode: allowlist
+    allowed_domains:
+      - wikipedia.org
+      - docs.mycompany.com
+    block_metadata_services: true
+
+  sql_query:
+    enabled: false
+    mode: restricted
+    allowed_statements:
+      - SELECT
+    denied_statements:
+      - DROP
+      - DELETE
+      - UPDATE
+    max_rows_returned: 1000
+
+  file_system:
+    enabled: false
+    allowed_paths:
+      - /tmp/
+      - /app/safe_data/
+    deny_extensions:
+      - .env
+      - .pem
+      - .key
+
+########################################
+# RBAC – AGENT ROLE CONTROL
+# (Not yet implemented – stubs only)
+########################################
+rbac:
+  roles:
+    planner:
+      allowed_tools:
+        - http_get
+    executor:
+      allowed_tools:
+        - http_post
+        - sql_query
+    admin:
+      allowed_tools: "*"
+
+########################################
+# L4 – BEHAVIORAL MONITORING
+# (Not yet implemented – stubs only)
+########################################
+behavioral_monitoring:
+  detect_tool_chaining_spikes: true
+  max_tool_calls_per_task: 10
+  detect_unusual_domain_access: true
+  detect_new_tool_usage: true
+  detect_data_exfiltration_patterns: true
+
+########################################
+# HUMAN APPROVAL WORKFLOW
+# (Not yet implemented – stubs only)
+########################################
+approval_workflow:
+  require_approval_for:
+    - external_http_post
+    - database_write
+  approval_timeout_seconds: 120
+
+########################################
+# CACHING (OPTIONAL)
+########################################
+cache:
+  enabled: false
+  backend: redis
+  ttl_seconds: 300
+
+########################################
+# OBSERVABILITY / LOGGING
+########################################
+observability:
+  log_all_decisions: true
+  store_full_context: true
+  export_to:
+    - azure_monitor
+    - otel

@@ -18,6 +18,13 @@ env/
 # ===== Jupyter Notebooks =====
 .ipynb_checkpoints/
 
+# ===== Testing =====
+.pytest_cache/
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+
 # ===== Data =====
 data/
 *.csv
@@ -55,7 +62,13 @@ Thumbs.db
 *.log
 logs/
 
+# ===== Agent / AI =====
+.gemini/
+.agents/
+.agent/
+
 # ===== Misc =====
 node_modules/
 .cache/
 *.bak
+
