@@ -113,6 +113,39 @@ class AgentGuardConfig:
     def spotlighting_enabled(self) -> bool:
         return _deep_get(self._raw, "input_security", "spotlighting", "enabled", default=False)
 
+    # ----- Output Security: Toxicity Detection -----
+
+    @property
+    def output_toxicity_enabled(self) -> bool:
+        return _deep_get(self._raw, "output_security", "toxicity_detection", "enabled", default=False)
+
+    @property
+    def output_toxicity_block(self) -> bool:
+        return _deep_get(
+            self._raw, "output_security", "toxicity_detection",
+            "block_on_detected_toxicity", default=True
+        )
+
+    # ----- Output Security: PII Detection -----
+
+    @property
+    def pii_detection_enabled(self) -> bool:
+        return _deep_get(self._raw, "output_security", "pii_detection", "enabled", default=False)
+
+    @property
+    def pii_block_on_detection(self) -> bool:
+        return _deep_get(
+            self._raw, "output_security", "pii_detection",
+            "block_on_pii_exfiltration", default=True
+        )
+
+    @property
+    def pii_allowed_categories(self) -> list:
+        return _deep_get(
+            self._raw, "output_security", "pii_detection",
+            "allowed_categories", default=[]
+        )
+
 
 def load_config(config_path: str) -> AgentGuardConfig:
     """Load and validate an AgentGuard YAML config file.

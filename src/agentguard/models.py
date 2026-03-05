@@ -55,3 +55,18 @@ class InputValidationResult:
     def __repr__(self):
         status = "SAFE" if self.is_safe else f"BLOCKED by {self.blocked_by}"
         return f"InputValidationResult({status}, checks={len(self.results)})"
+
+
+@dataclass
+class OutputValidationResult:
+    """Aggregated result from all L2 output validation checks."""
+    is_safe: bool
+    results: list = field(default_factory=list)
+    blocked_by: Optional[str] = None
+    blocked_reason: Optional[str] = None
+    redacted_text: Optional[str] = None
+
+    def __repr__(self):
+        status = "SAFE" if self.is_safe else f"BLOCKED by {self.blocked_by}"
+        redacted = " (redacted)" if self.redacted_text else ""
+        return f"OutputValidationResult({status}, checks={len(self.results)}{redacted})"

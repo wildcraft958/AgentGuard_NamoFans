@@ -12,12 +12,13 @@ from agentguard.config import load_config, AgentGuardConfig
 from agentguard.models import (
     GuardMode,
     InputValidationResult,
+    OutputValidationResult,
     ValidationResult,
     SENSITIVITY_THRESHOLDS,
 )
 from agentguard.l1_input.prompt_shields import PromptShields
 from agentguard.l1_input.content_filters import ContentFilters
-from agentguard.exceptions import InputBlockedError
+from agentguard.exceptions import InputBlockedError, OutputBlockedError
 
 logger = logging.getLogger("agentguard")
 
@@ -62,12 +63,29 @@ class Guardian:
             except ValueError as e:
                 logger.error("Failed to initialize Prompt Shields: %s", e)
 
-        if self._any_content_filter_enabled() or self.config.image_filters_enabled:
+        if self._any_content_filter_enabled() or self.config.image_filters_enabled or self.config.output_toxicity_enabled:
             try:
                 self._content_filters = ContentFilters()
                 logger.info("Content Filters module: ENABLED (text + image)")
             except ValueError as e:
                 logger.error("Failed to initialize Content Filters: %s", e)
+
+        # Initialize L2 modules
+        self._output_toxicity = None
+        self._pii_detector = None
+
+        if self.config.output_toxicity_enabled and self._content_filters:
+            from agentguard.l2_output.output_toxicity import OutputToxicity
+            self._output_toxicity = OutputToxicity(self._content_filters)
+            logger.info("Output Toxicity module: ENABLED")
+
+        if self.config.pii_detection_enabled:
+            try:
+                from agentguard.l2_output.pii_detector import PIIDetector
+                self._pii_detector = PIIDetector()
+                logger.info("PII Detector module: ENABLED")
+            except ValueError as e:
+                logger.error("Failed to initialize PII Detector: %s", e)
 
     def _setup_logging(self):
         """Configure logging based on config level."""
@@ -202,20 +220,78 @@ class Guardian:
 
         return InputValidationResult(is_safe=True, results=results)
 
-    def validate_output(self, model_output: str) -> InputValidationResult:
+    def validate_output(self, model_output: str) -> OutputValidationResult:
         """
-        Validate model output through L2 checks.
+        Validate model output through L2 (Output Security) checks.
 
-        Stub for future L2 implementation (hallucination detection, PII, etc.).
+        Runs checks in order:
+        1. Output Toxicity -- detect harmful content in LLM output
+        2. PII Detection -- detect and flag PII leakage in output
 
         Args:
             model_output: The LLM's output text to validate.
 
         Returns:
-            InputValidationResult (currently always safe – L2 not yet implemented).
+            OutputValidationResult indicating whether output is safe.
+
+        Raises:
+            OutputBlockedError: In enforce mode, if output is blocked.
         """
-        logger.info("L2 output validation: not yet implemented, passing through")
-        return InputValidationResult(is_safe=True, results=[])
+        if self.config.mode == GuardMode.DRY_RUN:
+            logger.info("DRY-RUN mode: skipping all L2 output checks")
+            return OutputValidationResult(is_safe=True, results=[])
+
+        start_time = time.time()
+        results = []
+        redacted_text = None
+
+        # -------------------------------------------------------
+        # L2 Check 1: Output Toxicity (Content Filtering on output)
+        # -------------------------------------------------------
+        if self._output_toxicity and self.config.output_toxicity_enabled:
+            sensitivity = self.config.prompt_shields_sensitivity
+            threshold = SENSITIVITY_THRESHOLDS.get(sensitivity, 0)
+
+            tox_result = self._output_toxicity.analyze(
+                text=model_output,
+                block_toxicity=self.config.content_filters_block_toxicity,
+                block_violence=self.config.content_filters_block_violence,
+                block_self_harm=self.config.content_filters_block_self_harm,
+                severity_threshold=threshold,
+            )
+            results.append(tox_result)
+
+            if not tox_result.is_safe and self.config.output_toxicity_block:
+                return self._handle_output_block(
+                    results, tox_result, "output_toxicity", start_time, redacted_text
+                )
+
+        # -------------------------------------------------------
+        # L2 Check 2: PII Detection
+        # -------------------------------------------------------
+        if self._pii_detector and self.config.pii_detection_enabled:
+            pii_result = self._pii_detector.analyze(
+                text=model_output,
+                block_on_pii=self.config.pii_block_on_detection,
+                allowed_categories=self.config.pii_allowed_categories,
+            )
+            results.append(pii_result)
+
+            # Capture redacted text regardless of blocking
+            if pii_result.details.get("redacted_text"):
+                redacted_text = pii_result.details["redacted_text"]
+
+            if not pii_result.is_safe:
+                return self._handle_output_block(
+                    results, pii_result, "pii_detector", start_time, redacted_text
+                )
+
+        elapsed_ms = (time.time() - start_time) * 1000
+        logger.info("All L2 checks passed (%.1fms)", elapsed_ms)
+
+        return OutputValidationResult(
+            is_safe=True, results=results, redacted_text=redacted_text
+        )
 
     def detect_patterns(self, call) -> None:
         """L3 pattern detection stub."""
@@ -277,6 +353,55 @@ class Guardian:
         )
 
         raise InputBlockedError(
+            reason=blocking_result.blocked_reason,
+            details={
+                "blocked_by": blocked_by,
+                "elapsed_ms": elapsed_ms,
+                "validation_result": result,
+            },
+        )
+
+    def _handle_output_block(
+        self,
+        results: list,
+        blocking_result: ValidationResult,
+        blocked_by: str,
+        start_time: float,
+        redacted_text: str = None,
+    ) -> OutputValidationResult:
+        """Handle a blocked output depending on mode (enforce vs monitor)."""
+        elapsed_ms = (time.time() - start_time) * 1000
+
+        if self.config.mode == GuardMode.MONITOR:
+            logger.warning(
+                "MONITOR mode: would block output (%s: %s) but allowing through (%.1fms)",
+                blocked_by,
+                blocking_result.blocked_reason,
+                elapsed_ms,
+            )
+            return OutputValidationResult(
+                is_safe=True,
+                results=results,
+                redacted_text=redacted_text,
+            )
+
+        # ENFORCE mode
+        logger.warning(
+            "ENFORCE mode: BLOCKING output (%s: %s) (%.1fms)",
+            blocked_by,
+            blocking_result.blocked_reason,
+            elapsed_ms,
+        )
+
+        result = OutputValidationResult(
+            is_safe=False,
+            results=results,
+            blocked_by=blocked_by,
+            blocked_reason=blocking_result.blocked_reason,
+            redacted_text=redacted_text,
+        )
+
+        raise OutputBlockedError(
             reason=blocking_result.blocked_reason,
             details={
                 "blocked_by": blocked_by,

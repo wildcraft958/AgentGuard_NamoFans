@@ -41,25 +41,31 @@ input_security:
     block_sexual: true
 
 ########################################
-# L2 – OUTPUT VALIDATION / PII PROTECTION
-# (Not yet implemented – stubs only)
+# L2 – OUTPUT SECURITY
 ########################################
 output_security:
 
-  hallucination_detection:
-    enabled: false
-    block_on_high_confidence: false
-    confidence_threshold: 0.9
+  toxicity_detection:
+    enabled: true
+    block_on_detected_toxicity: true
 
   pii_detection:
-    enabled: false
+    enabled: true
     block_on_pii_exfiltration: true
-    allowed_destinations_for_pii:
-      - api.mycompany.com
+    allowed_categories:                # PII categories to allow through (non-sensitive)
+      - Organization
+      - Person                         # generic names in technical text (e.g. "Node.js")
+      - PersonType
+      - DateTime
+      - URL
+      - Quantity
+      - IPAddress
+      - Address
 
-  toxicity_detection:
-    enabled: false
-    block_on_detected_toxicity: true
+  hallucination_detection:
+    enabled: false                     # Phase 2 — requires grounding sources
+    block_on_high_confidence: false
+    confidence_threshold: 0.9
 
 ########################################
 # L3 – CUSTOM PATTERN MATCHING
