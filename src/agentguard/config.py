@@ -146,6 +146,24 @@ class AgentGuardConfig:
             "allowed_categories", default=[]
         )
 
+    # ----- Pattern Detection: Custom Blocklists -----
+
+    @property
+    def pattern_detection_enabled(self) -> bool:
+        return _deep_get(self._raw, "pattern_detection", "enabled", default=False)
+
+    @property
+    def blocklists_config(self) -> list:
+        return _deep_get(self._raw, "pattern_detection", "blocklists", default=[])
+
+    @property
+    def block_on_blocklist_match(self) -> bool:
+        return _deep_get(self._raw, "pattern_detection", "block_on_match", default=True)
+
+    @property
+    def halt_on_blocklist_hit(self) -> bool:
+        return _deep_get(self._raw, "pattern_detection", "halt_on_blocklist_hit", default=True)
+
 
 def load_config(config_path: str) -> AgentGuardConfig:
     """Load and validate an AgentGuard YAML config file.

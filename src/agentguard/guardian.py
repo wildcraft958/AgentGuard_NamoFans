@@ -53,6 +53,8 @@ class Guardian:
         # Initialize L1 modules
         self._prompt_shields = None
         self._content_filters = None
+        self._blocklist_manager = None
+        self._blocklist_names = []
 
         if self.config.prompt_shields_enabled:
             try:
@@ -63,12 +65,33 @@ class Guardian:
             except ValueError as e:
                 logger.error("Failed to initialize Prompt Shields: %s", e)
 
-        if self._any_content_filter_enabled() or self.config.image_filters_enabled or self.config.output_toxicity_enabled:
+        needs_content_filters = (
+            self._any_content_filter_enabled()
+            or self.config.image_filters_enabled
+            or self.config.output_toxicity_enabled
+            or self.config.pattern_detection_enabled
+        )
+        if needs_content_filters:
             try:
                 self._content_filters = ContentFilters()
                 logger.info("Content Filters module: ENABLED (text + image)")
             except ValueError as e:
                 logger.error("Failed to initialize Content Filters: %s", e)
+
+        # Initialize L3: Blocklist Manager
+        if self.config.pattern_detection_enabled:
+            try:
+                from agentguard.l1_input.blocklist_manager import BlocklistManager
+                self._blocklist_manager = BlocklistManager()
+                self._blocklist_names = self._blocklist_manager.sync_blocklists(
+                    self.config.blocklists_config
+                )
+                logger.info(
+                    "Blocklist Manager module: ENABLED (%d blocklist(s))",
+                    len(self._blocklist_names),
+                )
+            except (ValueError, Exception) as e:
+                logger.error("Failed to initialize Blocklist Manager: %s", e)
 
         # Initialize L2 modules
         self._output_toxicity = None
@@ -169,9 +192,9 @@ class Guardian:
                     )
 
         # -------------------------------------------------------
-        # L1 Check 2: Content Filters (Toxicity, Violence, etc.)
+        # L1 Check 2: Content Filters + Blocklists (single API call)
         # -------------------------------------------------------
-        if self._content_filters and self._any_content_filter_enabled():
+        if self._content_filters and (self._any_content_filter_enabled() or self._blocklist_names):
             logger.info("Running Content Filters check...")
             # Determine severity threshold from sensitivity config
             sensitivity = self.config.prompt_shields_sensitivity
@@ -183,6 +206,8 @@ class Guardian:
                 block_violence=self.config.content_filters_block_violence,
                 block_self_harm=self.config.content_filters_block_self_harm,
                 severity_threshold=threshold,
+                blocklist_names=self._blocklist_names or None,
+                halt_on_blocklist_hit=self.config.halt_on_blocklist_hit,
             )
             results.append(cf_result)
 

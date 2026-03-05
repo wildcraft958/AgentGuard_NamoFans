@@ -75,9 +75,11 @@ class ContentFilters:
         block_violence: bool = True,
         block_self_harm: bool = True,
         severity_threshold: int = 0,
+        blocklist_names: list = None,
+        halt_on_blocklist_hit: bool = True,
     ) -> ValidationResult:
         """
-        Analyze text content for harmful material.
+        Analyze text content for harmful material and custom blocklist matches.
 
         Args:
             text: The text content to analyze.
@@ -85,11 +87,17 @@ class ContentFilters:
             block_violence: Whether to block on detected violence.
             block_self_harm: Whether to block on detected self-harm.
             severity_threshold: Minimum severity score to trigger a block (0-6).
+            blocklist_names: Optional list of Azure blocklist names to check against.
+            halt_on_blocklist_hit: Stop on first blocklist match (default True).
 
         Returns:
-            ValidationResult with per-category severity scores.
+            ValidationResult with per-category severity scores and blocklist matches.
         """
-        request = AnalyzeTextOptions(text=text)
+        request_kwargs = {"text": text}
+        if blocklist_names:
+            request_kwargs["blocklist_names"] = blocklist_names
+            request_kwargs["halt_on_blocklist_hit"] = halt_on_blocklist_hit
+        request = AnalyzeTextOptions(**request_kwargs)
         logger.debug("Content Filters analyzing text: %.100s...", text)
 
         try:
@@ -117,7 +125,23 @@ class ContentFilters:
 
         details = {"severities": severities}
 
-        # Check violations
+        # Check blocklist matches first
+        blocklist_matches = getattr(response, "blocklists_match", None) or []
+        if blocklist_matches:
+            matched_terms = [
+                {"blocklist": m.blocklist_name, "term": m.blocklist_item_text}
+                for m in blocklist_matches
+            ]
+            details["blocklist_matches"] = matched_terms
+            term_list = ", ".join(m["term"] for m in matched_terms)
+            blocked_reason = f"Blocklist match detected: {term_list}"
+            logger.warning("Content Filters BLOCKED (blocklist): %s", blocked_reason)
+            return ValidationResult(
+                is_safe=False, layer="content_filters",
+                blocked_reason=blocked_reason, details=details,
+            )
+
+        # Check severity violations
         violations = []
         if block_toxicity and severities["hate"] > severity_threshold:
             violations.append(f"Hate/Toxicity (severity={severities['hate']})")
