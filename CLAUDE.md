@@ -22,6 +22,8 @@ Use **conventional commits** (`type(scope): description`):
 
 Commit when a meaningful unit of work is complete and tests pass. Keep commits atomic — no batching unrelated changes, no committing broken code.
 
+**Auto-commit is authorized** — after completing any meaningful unit of work (feature, fix, docs update, etc.), commit and push immediately without waiting for explicit user instruction. Always lint and verify tests pass before committing.
+
 ## Claude Workflow Rules
 
 - **No explore agents** — search files directly with Glob/Grep; do not spawn Agent(subagent_type=Explore)
