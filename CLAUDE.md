@@ -80,6 +80,35 @@ Append new entries; do not overwrite previous ones. Use a heading with the date 
 **Example:** ...
 ```
 
+## LiteLLM Usage
+
+Always use LiteLLM for all LLM calls — never call provider SDKs (OpenAI, Anthropic, etc.) directly.
+
+- **Import:** `from litellm import completion` (or `acompletion` for async)
+- **Model strings:** use provider-prefixed format — `"openai/gpt-4o"`, `"anthropic/claude-sonnet-4-6"`, `"azure/my-deployment"`, etc.
+- **Current provider:** TrueFoundry API (we do not have Azure credits) — use `TRUEFOUNDRY_API_KEY` and `TRUEFOUNDRY_API_BASE` from `.env`
+- **Config via env vars:** set provider keys in `.env`; never hardcode credentials
+- **Structured output:** use `response_format=` with a Pydantic model or `{"type": "json_object"}` — do not parse raw strings
+- **No direct SDK instantiation:** do not create `anthropic.Anthropic()` or `openai.OpenAI()` clients; route everything through LiteLLM
+
+```python
+# correct — TrueFoundry via LiteLLM
+from litellm import completion
+import os
+
+response = completion(
+    model="openai/your-truefoundry-deployment",   # TrueFoundry model name
+    api_key=os.environ["TRUEFOUNDRY_API_KEY"],
+    api_base=os.environ["TRUEFOUNDRY_API_BASE"],
+    messages=[{"role": "user", "content": prompt}],
+)
+
+# wrong — do not do this
+import anthropic
+client = anthropic.Anthropic()
+client.messages.create(...)
+```
+
 ## Task Tracking
 
 Before implementing any plan:
