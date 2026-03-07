@@ -1,11 +1,27 @@
+########################################
+# AgentGuard Configuration — Vulnerable Agent (82 tools)
+# Version 1
+#
+# Uses generic argument-aware guardrails:
+#   - 4 guardrails (file_system, sql_query, http_post, http_get) scan
+#     every tool call's args automatically
+#   - Dangerous tools disabled via tools: section with enabled: false
+########################################
+
 version: 1
 
+########################################
+# GLOBAL SETTINGS
+########################################
 global:
   mode: enforce
   log_level: standard
   fail_safe: block
   max_validation_latency_ms: 500
 
+########################################
+# L1 – INPUT SECURITY
+########################################
 input_security:
   prompt_shields:
     enabled: true
@@ -18,6 +34,9 @@ input_security:
   image_filters:
     enabled: false
 
+########################################
+# L2 – OUTPUT SECURITY
+########################################
 output_security:
   toxicity_detection:
     enabled: true
@@ -35,6 +54,9 @@ output_security:
       - IPAddress
       - Address
 
+########################################
+# L3 – CUSTOM BLOCKLIST PATTERN MATCHING
+########################################
 pattern_detection:
   enabled: true
   block_on_match: true
@@ -55,159 +77,181 @@ pattern_detection:
         - "John Smith"
         - "Jane Doe"
 
+########################################
+# TOOL FIREWALL
+# 4 guardrails scan every tool call's arguments automatically.
+# Guardrails are NOT tools — they protect tools by inspecting arguments.
+########################################
 tool_firewall:
+  default_policy: allow
+
+  # Guardrail: file_system — scans any arg that looks like a filesystem path
+  file_system:
+    enabled: true
+    allowed_paths:
+      - /tmp/
+      - /app/safe_data/
+    deny_extensions:
+      - .env
+      - .pem
+      - .key
+
+  # Guardrail: sql_query — scans any arg that parses as valid SQL
+  sql_query:
+    enabled: true
+    allowed_statements:
+      - SELECT
+    denied_statements:
+      - DROP
+      - DELETE
+      - UPDATE
+      - INSERT
+      - TRUNCATE
+      - ALTER
+
+  # Guardrail: http_post — scans URLs in POST-like tool calls
+  http_post:
+    enabled: true
+    mode: allowlist
+    allowed_domains:
+      - api.mycompany.com
+      - hooks.slack.com
+    require_https: true
+    block_private_ips: true
+    max_payload_kb: 512
+    rate_limit_per_minute: 20
+
+  # Guardrail: http_get — scans URLs in GET-like tool calls
+  http_get:
+    enabled: true
+    mode: allowlist
+    allowed_domains:
+      - wikipedia.org
+      - docs.mycompany.com
+    block_metadata_services: true
+
+  # C1: Entity recognition on tool arguments
   input_analysis:
     enabled: true
     blocked_entity_categories:
-      read_config_file: [IPAddress, URL]
-      file_system: [IPAddress, URL]
       fs_read_file: [IPAddress, URL]
       db_select: [Password, PhoneNumber]
       http_get: [IPAddress]
       http_post: [IPAddress, Email]
+
+  # C2: MELON contrastive indirect prompt injection detection
   melon:
     enabled: true
     threshold: 0.8
     embedding_model: "text-embedding-3-large"
     raise_on_injection: true
 
+########################################
+# TOOL ACCESS CONTROL
+# Disable dangerous tools that can't be caught by argument scanning.
+# Tools not listed here are allowed (default_policy: allow) but still
+# have their args scanned by the 4 guardrails above.
+########################################
 tools:
 
-  # ── Existing tools (http_post, http_get, sql_query, file_system) ──────────
-  http_post:
-    enabled: true
-    mode: allowlist
-    allowed_domains: [api.mycompany.com, hooks.slack.com]
-    require_https: true
-    block_private_ips: true
-    max_payload_kb: 512
-    rate_limit_per_minute: 20
+  # ── Category 1: File System ────────────────────────────────────────
+  # fs_read_file: ALLOWED — protected by file_system guardrail (path/ext checks)
+  fs_write_file:        { enabled: false, reason: "Destructive file write" }
+  fs_delete_file:       { enabled: false, reason: "Irreversible file deletion" }
+  fs_list_directory:    { enabled: false, reason: "Directory reconnaissance" }
+  fs_copy_file:         { enabled: false, reason: "Unauthorized file copy" }
+  fs_move_file:         { enabled: false, reason: "Unauthorized file move" }
+  fs_create_directory:  { enabled: false, reason: "Unauthorized directory creation" }
+  fs_delete_directory:  { enabled: false, reason: "Irreversible directory deletion" }
+  fs_get_file_metadata: { enabled: false, reason: "File metadata reconnaissance" }
+  fs_search_files:      { enabled: false, reason: "File search reconnaissance" }
 
-  http_get:
-    enabled: true
-    mode: allowlist
-    allowed_domains: [wikipedia.org, docs.mycompany.com]
-    block_metadata_services: true
+  # ── Category 2: SQLite DB ──────────────────────────────────────────
+  # db_select: ALLOWED — protected by sql_query guardrail (SELECT-only)
+  # db_list_tables: ALLOWED — no SQL args, safe read-only
+  # db_dump_schema: ALLOWED — no SQL args, safe read-only
+  db_insert:         { enabled: false, reason: "Unauthorized data insertion" }
+  db_update:         { enabled: false, reason: "Unauthorized data modification" }
+  db_delete_rows:    { enabled: false, reason: "Unauthorized data deletion" }
+  db_drop_table:     { enabled: false, reason: "Irreversible table destruction" }
+  db_create_table:   { enabled: false, reason: "Unauthorized schema modification" }
+  db_truncate_table: { enabled: false, reason: "Irreversible data wipe" }
+  db_execute_raw:    { enabled: false, reason: "Unrestricted SQL execution" }
+  db_export_to_csv:  { enabled: false, reason: "Data exfiltration risk" }
+  db_import_csv:     { enabled: false, reason: "Unauthorized bulk import" }
 
-  sql_query:
-    enabled: true
-    mode: restricted
-    allowed_statements: [SELECT]
-    denied_statements: [DROP, DELETE, UPDATE]
-    max_rows_returned: 1000
+  # ── Category 3: Network/Protocol ───────────────────────────────────
+  # http_get: ALLOWED — protected by http_get guardrail (domain/metadata checks)
+  # http_post: ALLOWED — protected by http_post guardrail (HTTPS/domain/IP checks)
+  http_put:          { enabled: false, reason: "Unguarded HTTP method" }
+  http_delete:       { enabled: false, reason: "Unguarded HTTP method" }
+  http_patch:        { enabled: false, reason: "Unguarded HTTP method" }
+  http_head:         { enabled: false, reason: "Server reconnaissance" }
+  https_request:     { enabled: false, reason: "Unguarded HTTPS with SSL bypass" }
+  ftp_download:      { enabled: false, reason: "FTP plaintext protocol" }
+  ftp_upload:        { enabled: false, reason: "FTP plaintext upload" }
+  ftp_delete_remote: { enabled: false, reason: "FTP remote deletion" }
+  smtp_send_email:   { enabled: false, reason: "Email spoofing risk" }
+  dns_resolve:       { enabled: false, reason: "DNS tunneling risk" }
+  tcp_raw_connect:   { enabled: false, reason: "Raw TCP connection" }
+  websocket_send:    { enabled: false, reason: "Unguarded WebSocket" }
 
-  file_system:
-    enabled: true
-    allowed_paths: [/tmp/, /app/safe_data/]
-    deny_extensions: [.env, .pem, .key]
+  # ── Category 4: System/Destructive — ALL disabled ──────────────────
+  shell_execute:       { enabled: false, reason: "Arbitrary command execution" }
+  process_kill:        { enabled: false, reason: "Process termination" }
+  process_list:        { enabled: false, reason: "Process reconnaissance" }
+  rm_rf:               { enabled: false, reason: "Recursive file deletion" }
+  format_disk:         { enabled: false, reason: "Disk destruction" }
+  reboot_system:       { enabled: false, reason: "System reboot" }
+  wipe_audit_logs:     { enabled: false, reason: "Audit trail destruction" }
+  modify_crontab:      { enabled: false, reason: "Persistence mechanism" }
+  inject_code_to_file: { enabled: false, reason: "Code injection" }
+  install_package:     { enabled: false, reason: "Supply chain attack surface" }
 
-  # ── Category 1: File System (fs_*) ────────────────────────────────────────
-  # fs_read_file uses prefix dispatch → _guard_file_system (same path/ext rules)
-  fs_read_file:
-    enabled: true
-    allowed_paths: [/tmp/, /app/safe_data/]
-    deny_extensions: [.env, .pem, .key]
+  # ── Category 5: Privilege/Auth — ALL disabled ──────────────────────
+  escalate_to_root:       { enabled: false, reason: "Privilege escalation" }
+  add_system_user:        { enabled: false, reason: "Unauthorized user creation" }
+  grant_permission:       { enabled: false, reason: "Unauthorized permission grant" }
+  assume_role:            { enabled: false, reason: "Role assumption without auth" }
+  bypass_mfa:             { enabled: false, reason: "MFA bypass" }
+  set_environment_secret: { enabled: false, reason: "Environment tampering" }
 
-  fs_write_file:        { enabled: true, block_all: true }
-  fs_delete_file:       { enabled: true, block_all: true }
-  fs_list_directory:    { enabled: true, block_all: true }
-  fs_copy_file:         { enabled: true, block_all: true }
-  fs_move_file:         { enabled: true, block_all: true }
-  fs_create_directory:  { enabled: true, block_all: true }
-  fs_delete_directory:  { enabled: true, block_all: true }
-  fs_get_file_metadata: { enabled: true, block_all: true }
-  fs_search_files:      { enabled: true, block_all: true }
+  # ── Category 6: Memory ─────────────────────────────────────────────
+  # memory_store: ALLOWED — safe key/value storage
+  # memory_retrieve: ALLOWED — safe key/value retrieval
+  memory_clear_all:          { enabled: false, reason: "Memory wipe" }
+  memory_inject_context:     { enabled: false, reason: "Context injection" }
+  memory_poison:             { enabled: false, reason: "Memory poisoning" }
+  memory_cross_session_leak: { enabled: false, reason: "Cross-session data leak" }
 
-  # ── Category 2: SQLite DB (db_*) ──────────────────────────────────────────
-  # db_select uses prefix dispatch → _guard_sql_query (SELECT-only)
-  db_select:
-    enabled: true
-    allowed_statements: [SELECT]
-    denied_statements: [DROP, DELETE, UPDATE, INSERT, TRUNCATE, ALTER]
+  # ── Category 7: Multi-Agent/Orchestration — ALL disabled ───────────
+  agent_spawn:             { enabled: false, reason: "Unauthorized agent creation" }
+  agent_send_message:      { enabled: false, reason: "Unverified inter-agent messaging" }
+  agent_delegate_task:     { enabled: false, reason: "Unauthorized task delegation" }
+  agent_impersonate:       { enabled: false, reason: "Identity spoofing" }
+  agent_hijack_task_queue: { enabled: false, reason: "Task queue hijacking" }
+  agent_broadcast:         { enabled: false, reason: "Unauthorized broadcast" }
 
-  db_list_tables:   { enabled: true, block_all: false }   # read-only — ALLOWED
-  db_dump_schema:   { enabled: true, block_all: false }   # read-only — ALLOWED
+  # ── Category 8: Exfiltration/Covert Channels — ALL disabled ────────
+  exfil_encode_base64:      { enabled: false, reason: "Data encoding for exfil" }
+  exfil_via_dns:            { enabled: false, reason: "DNS tunneling exfil" }
+  exfil_upload_to_external: { enabled: false, reason: "Data upload to external" }
+  exfil_embed_in_logs:      { enabled: false, reason: "Covert log channel" }
+  exfil_timing_signal:      { enabled: false, reason: "Timing covert channel" }
+  exfil_steganography:      { enabled: false, reason: "Steganographic exfil" }
 
-  db_insert:        { enabled: true, block_all: true }
-  db_update:        { enabled: true, block_all: true }
-  db_delete_rows:   { enabled: true, block_all: true }
-  db_drop_table:    { enabled: true, block_all: true }
-  db_create_table:  { enabled: true, block_all: true }
-  db_truncate_table: { enabled: true, block_all: true }
-  db_execute_raw:   { enabled: true, block_all: true }
-  db_export_to_csv: { enabled: true, block_all: true }
-  db_import_csv:    { enabled: true, block_all: true }
+  # ── Category 9: Intelligence/Surveillance — ALL disabled ───────────
+  intel_read_env_vars:       { enabled: false, reason: "Environment reconnaissance" }
+  intel_read_cloud_metadata: { enabled: false, reason: "Cloud metadata theft" }
+  intel_scan_network:        { enabled: false, reason: "Network scanning" }
+  intel_list_open_ports:     { enabled: false, reason: "Port reconnaissance" }
+  intel_capture_traffic:     { enabled: false, reason: "Traffic capture" }
+  intel_read_ssh_keys:       { enabled: false, reason: "SSH key theft" }
 
-  # ── Category 3: Network/Protocol ──────────────────────────────────────────
-  http_put:          { enabled: true, block_all: true }
-  http_delete:       { enabled: true, block_all: true }
-  http_patch:        { enabled: true, block_all: true }
-  http_head:         { enabled: true, block_all: true }
-  https_request:     { enabled: true, block_all: true }
-  ftp_download:      { enabled: true, block_all: true }
-  ftp_upload:        { enabled: true, block_all: true }
-  ftp_delete_remote: { enabled: true, block_all: true }
-  smtp_send_email:   { enabled: true, block_all: true }
-  dns_resolve:       { enabled: true, block_all: true }
-  tcp_raw_connect:   { enabled: true, block_all: true }
-  websocket_send:    { enabled: true, block_all: true }
-
-  # ── Category 4: System/Destructive ────────────────────────────────────────
-  shell_execute:       { enabled: true, block_all: true }
-  process_kill:        { enabled: true, block_all: true }
-  process_list:        { enabled: true, block_all: true }
-  rm_rf:               { enabled: true, block_all: true }
-  format_disk:         { enabled: true, block_all: true }
-  reboot_system:       { enabled: true, block_all: true }
-  wipe_audit_logs:     { enabled: true, block_all: true }
-  modify_crontab:      { enabled: true, block_all: true }
-  inject_code_to_file: { enabled: true, block_all: true }
-  install_package:     { enabled: true, block_all: true }
-
-  # ── Category 5: Privilege/Auth ────────────────────────────────────────────
-  escalate_to_root:       { enabled: true, block_all: true }
-  add_system_user:        { enabled: true, block_all: true }
-  grant_permission:       { enabled: true, block_all: true }
-  assume_role:            { enabled: true, block_all: true }
-  bypass_mfa:             { enabled: true, block_all: true }
-  set_environment_secret: { enabled: true, block_all: true }
-
-  # ── Category 6: Memory ────────────────────────────────────────────────────
-  memory_store:              { enabled: true, block_all: false }  # SAFE — ALLOWED
-  memory_retrieve:           { enabled: true, block_all: false }  # SAFE — ALLOWED
-  memory_clear_all:          { enabled: true, block_all: true }
-  memory_inject_context:     { enabled: true, block_all: true }
-  memory_poison:             { enabled: true, block_all: true }
-  memory_cross_session_leak: { enabled: true, block_all: true }
-
-  # ── Category 7: Multi-Agent/Orchestration ────────────────────────────────
-  agent_spawn:             { enabled: true, block_all: true }
-  agent_send_message:      { enabled: true, block_all: true }
-  agent_delegate_task:     { enabled: true, block_all: true }
-  agent_impersonate:       { enabled: true, block_all: true }
-  agent_hijack_task_queue: { enabled: true, block_all: true }
-  agent_broadcast:         { enabled: true, block_all: true }
-
-  # ── Category 8: Exfiltration/Covert Channels ─────────────────────────────
-  exfil_encode_base64:      { enabled: true, block_all: true }
-  exfil_via_dns:            { enabled: true, block_all: true }
-  exfil_upload_to_external: { enabled: true, block_all: true }
-  exfil_embed_in_logs:      { enabled: true, block_all: true }
-  exfil_timing_signal:      { enabled: true, block_all: true }
-  exfil_steganography:      { enabled: true, block_all: true }
-
-  # ── Category 9: Intelligence/Surveillance ────────────────────────────────
-  intel_read_env_vars:       { enabled: true, block_all: true }
-  intel_read_cloud_metadata: { enabled: true, block_all: true }
-  intel_scan_network:        { enabled: true, block_all: true }
-  intel_list_open_ports:     { enabled: true, block_all: true }
-  intel_capture_traffic:     { enabled: true, block_all: true }
-  intel_read_ssh_keys:       { enabled: true, block_all: true }
-
-  # ── Category 10: Supply Chain/Alignment Faking ───────────────────────────
-  supply_override_system_prompt:   { enabled: true, block_all: true }
-  supply_disable_safety_check:     { enabled: true, block_all: true }
-  supply_load_external_plugin:     { enabled: true, block_all: true }
-  supply_modify_agent_config:      { enabled: true, block_all: true }
-  supply_report_false_compliance:  { enabled: true, block_all: true }
-  supply_poison_training_feedback: { enabled: true, block_all: true }
+  # ── Category 10: Supply Chain/Alignment Faking — ALL disabled ──────
+  supply_override_system_prompt:   { enabled: false, reason: "System prompt override" }
+  supply_disable_safety_check:     { enabled: false, reason: "Safety check bypass" }
+  supply_load_external_plugin:     { enabled: false, reason: "Malicious plugin loading" }
+  supply_modify_agent_config:      { enabled: false, reason: "Config tampering" }
+  supply_report_false_compliance:  { enabled: false, reason: "False compliance report" }
+  supply_poison_training_feedback: { enabled: false, reason: "Training data poisoning" }
