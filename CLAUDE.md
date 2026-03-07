@@ -84,35 +84,39 @@ Append new entries; do not overwrite previous ones. Use a heading with the date 
 **Example:** ...
 ```
 
-## LiteLLM Usage
+## LLM Usage
 
-Always use LiteLLM for all LLM calls — never call provider SDKs (OpenAI, Anthropic, etc.) directly.
+Use the **OpenAI SDK** for all LLM calls routed through TrueFoundry. Do not use LiteLLM — it strips Gemini `thought_signature` fields from tool call responses, breaking multi-turn ReAct loops with thinking models.
 
-- **Import:** `from litellm import completion` (or `acompletion` for async)
-- **Model strings:** use provider-prefixed format — `"openai/gpt-4o"`, `"anthropic/claude-sonnet-4-6"`, `"azure/my-deployment"`, etc.
-- **LLM provider:** TrueFoundry — env vars `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_MODEL`
+- **Import:** `from openai import OpenAI`
+- **Provider:** TrueFoundry gateway (OpenAI-compatible) — env vars `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_MODEL`
 - **Azure Content Safety (L1):** `CONTENT_SAFETY_ENDPOINT` + `CONTENT_SAFETY_KEY` → `https://agentguard.cognitiveservices.azure.com/`
 - **Azure Language / PII (L2):** `AZURE_LANGUAGE_ENDPOINT` + `AZURE_LANGUAGE_KEY` → `https://lang-anal-ag.cognitiveservices.azure.com/`
 - **Config via env vars:** all keys live in `.env` (gitignored); never hardcode credentials
-- **Structured output:** use `response_format=` with a Pydantic model or `{"type": "json_object"}` — do not parse raw strings
-- **No direct SDK instantiation:** do not create `anthropic.Anthropic()` or `openai.OpenAI()` clients; route everything through LiteLLM
+- **Append assistant messages as-is** — do not call `.model_dump()` before appending to the message list; the OpenAI SDK uses `extra='allow'` and preserves extra fields like `thought_signature` needed for subsequent turns
 
 ```python
-# correct — TrueFoundry via LiteLLM
-from litellm import completion
+# correct — TrueFoundry via OpenAI SDK
+from openai import OpenAI
 import os
 
-response = completion(
-    model="openai/" + os.environ["OPENAI_MODEL"],
+client = OpenAI(
     api_key=os.environ["OPENAI_API_KEY"],
-    api_base=os.environ["OPENAI_BASE_URL"],
-    messages=[{"role": "user", "content": prompt}],
+    base_url=os.environ["OPENAI_BASE_URL"],
 )
+MODEL = os.environ["OPENAI_MODEL"]
 
-# wrong — do not do this
-import anthropic
-client = anthropic.Anthropic()
-client.messages.create(...)
+response = client.chat.completions.create(
+    model=MODEL,
+    messages=messages,
+    tools=tools,
+)
+msg = response.choices[0].message
+messages.append(msg)  # append as-is — preserves thought_signature
+
+# wrong — LiteLLM strips thought_signature, breaking Gemini multi-turn tool calls
+from litellm import completion
+completion(model="openai/" + MODEL, ...)
 ```
 
 ## Task Tracking

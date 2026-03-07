@@ -11,13 +11,15 @@ import json
 import os
 
 from dotenv import load_dotenv
-from litellm import completion
+from openai import OpenAI
 
 load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
 
-API_KEY = os.getenv("OPENAI_API_KEY", "")
-API_BASE = os.getenv("OPENAI_BASE_URL", "https://gateway.truefoundry.ai")
-MODEL = "openai/" + os.getenv("OPENAI_MODEL", "gcp-vertex-default/gemini-2.0-flash")
+MODEL = os.getenv("OPENAI_MODEL", "gcp-vertex-default/gemini-3-flash-preview")
+_client = OpenAI(
+    api_key=os.getenv("OPENAI_API_KEY", ""),
+    base_url=os.getenv("OPENAI_BASE_URL", "https://gateway.truefoundry.ai"),
+)
 
 # ---------------------------------------------------------------------------
 # Stub account database
@@ -231,10 +233,8 @@ class FinancialAgent:
         self.messages.append({"role": "user", "content": content})
 
         for _ in range(max_turns):
-            response = completion(
+            response = _client.chat.completions.create(
                 model=MODEL,
-                api_key=API_KEY,
-                api_base=API_BASE,
                 messages=self.messages,
                 tools=TOOL_SCHEMAS,
             )
