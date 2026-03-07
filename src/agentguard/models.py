@@ -70,3 +70,19 @@ class OutputValidationResult:
         status = "SAFE" if self.is_safe else f"BLOCKED by {self.blocked_by}"
         redacted = " (redacted)" if self.redacted_text else ""
         return f"OutputValidationResult({status}, checks={len(self.results)}{redacted})"
+
+
+@dataclass
+class ToolCallValidationResult:
+    """Aggregated result from tool firewall checks."""
+    is_safe: bool
+    results: list = field(default_factory=list)
+    blocked_by: Optional[str] = None
+    blocked_reason: Optional[str] = None
+    redacted_output: Optional[str] = None
+    tool_name: Optional[str] = None
+
+    def __repr__(self):
+        status = "SAFE" if self.is_safe else f"BLOCKED by {self.blocked_by}"
+        redacted = " (output redacted)" if self.redacted_output else ""
+        return f"ToolCallValidationResult({status}, tool={self.tool_name}, checks={len(self.results)}{redacted})"

@@ -7,20 +7,29 @@ OWASP Scanner: DeepTeam-powered red-team scan against OWASP Top 10 for LLMs
                and OWASP Top 10 for Agentic Applications.
 """
 
+from agentguard.decorators import GuardedToolRegistry, guard, guard_input, guard_tool
+from agentguard.exceptions import (
+    AgentGuardError,
+    ConfigurationError,
+    InputBlockedError,
+    OutputBlockedError,
+    ToolCallBlockedError,
+)
 from agentguard.guardian import Guardian
-from agentguard.exceptions import AgentGuardError, InputBlockedError, OutputBlockedError, ConfigurationError
-from agentguard.decorators import guard, guard_input
-from agentguard.owasp_scanner import scan_agent, OWASPScanResult
+from agentguard.owasp_scanner import OWASPScanResult, scan_agent
 
 __all__ = [
     "Guardian",
     "AgentGuardError",
     "InputBlockedError",
     "OutputBlockedError",
+    "ToolCallBlockedError",
     "ConfigurationError",
     "guard",
     "guard_input",
     "scan_agent",
     "OWASPScanResult",
+    "guard_tool",
+    "GuardedToolRegistry",
 ]
-__version__ = "0.2.0"
+__version__ = "0.3.0"

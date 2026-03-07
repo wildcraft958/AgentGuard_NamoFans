@@ -94,13 +94,24 @@ pattern_detection:
         - "Jane Doe"
 
 ########################################
-# TOOL FIREWALL (CORE LAYER)
-# (Not yet implemented – stubs only)
+# TOOL FIREWALL
 ########################################
+tool_firewall:
+  input_analysis:
+    enabled: true
+    blocked_entity_categories:
+      read_config_file: [IPAddress, URL]
+      file_system: [IPAddress, URL]
+  melon:
+    enabled: true
+    threshold: 0.8
+    embedding_model: "text-embedding-3-large"
+    raise_on_injection: true
+
 tools:
 
   http_post:
-    enabled: false
+    enabled: true
     mode: allowlist
     allowed_domains:
       - api.mycompany.com
@@ -111,7 +122,7 @@ tools:
     rate_limit_per_minute: 20
 
   http_get:
-    enabled: false
+    enabled: true
     mode: allowlist
     allowed_domains:
       - wikipedia.org
@@ -119,7 +130,7 @@ tools:
     block_metadata_services: true
 
   sql_query:
-    enabled: false
+    enabled: true
     mode: restricted
     allowed_statements:
       - SELECT
@@ -130,7 +141,7 @@ tools:
     max_rows_returned: 1000
 
   file_system:
-    enabled: false
+    enabled: true
     allowed_paths:
       - /tmp/
       - /app/safe_data/
