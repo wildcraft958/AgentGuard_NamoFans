@@ -95,21 +95,34 @@ pattern_detection:
 
 ########################################
 # TOOL FIREWALL
+# 4 guardrails that scan every tool call's arguments automatically.
+# Guardrails are NOT tools — they protect tools by inspecting arguments.
 ########################################
 tool_firewall:
-  input_analysis:
-    enabled: true
-    blocked_entity_categories:
-      read_config_file: [IPAddress, URL]
-      file_system: [IPAddress, URL]
-  melon:
-    enabled: true
-    threshold: 0.8
-    embedding_model: "text-embedding-3-large"
-    raise_on_injection: true
+  default_policy: allow            # allow | deny (for tools not listed in tools: section)
 
-tools:
+  # Guardrail: file_system — scans any arg that looks like a filesystem path
+  file_system:
+    enabled: true
+    allowed_paths:
+      - /tmp/
+      - /app/safe_data/
+    deny_extensions:
+      - .env
+      - .pem
+      - .key
 
+  # Guardrail: sql_query — scans any arg that parses as valid SQL (via sqlparse)
+  sql_query:
+    enabled: true
+    allowed_statements:
+      - SELECT
+    denied_statements:
+      - DROP
+      - DELETE
+      - UPDATE
+
+  # Guardrail: http_post — scans URLs in POST-like tool calls
   http_post:
     enabled: true
     mode: allowlist
@@ -121,6 +134,7 @@ tools:
     max_payload_kb: 512
     rate_limit_per_minute: 20
 
+  # Guardrail: http_get — scans URLs in GET-like tool calls
   http_get:
     enabled: true
     mode: allowlist
@@ -129,26 +143,18 @@ tools:
       - docs.mycompany.com
     block_metadata_services: true
 
-  sql_query:
+  # C1: Entity recognition on tool arguments (Azure Text Analytics)
+  input_analysis:
     enabled: true
-    mode: restricted
-    allowed_statements:
-      - SELECT
-    denied_statements:
-      - DROP
-      - DELETE
-      - UPDATE
-    max_rows_returned: 1000
+    blocked_entity_categories:
+      read_config_file: [IPAddress, URL]
 
-  file_system:
+  # C2: MELON contrastive indirect prompt injection detection on tool outputs
+  melon:
     enabled: true
-    allowed_paths:
-      - /tmp/
-      - /app/safe_data/
-    deny_extensions:
-      - .env
-      - .pem
-      - .key
+    threshold: 0.8
+    embedding_model: "text-embedding-3-large"
+    raise_on_injection: true
 
 ########################################
 # RBAC – AGENT ROLE CONTROL

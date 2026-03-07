@@ -168,14 +168,24 @@ class AgentGuardConfig:
 
     @property
     def tool_firewall_enabled(self) -> bool:
-        """True if any tool in the tools config is enabled."""
-        tools = self._raw.get("tools", {})
-        if not isinstance(tools, dict):
+        """True if any guardrail in tool_firewall config is enabled."""
+        tf = self._raw.get("tool_firewall", {})
+        if not isinstance(tf, dict):
             return False
-        return any(
-            isinstance(v, dict) and v.get("enabled", False)
-            for v in tools.values()
-        )
+        # Check if any of the 4 guardrails are enabled
+        guardrails = ["file_system", "sql_query", "http_post", "http_get"]
+        for g in guardrails:
+            cfg = tf.get(g)
+            if isinstance(cfg, dict) and cfg.get("enabled", False):
+                return True
+        # Also consider enabled if there are disabled tools in tools: section
+        tools = self._raw.get("tools", {})
+        if isinstance(tools, dict) and tools:
+            return True
+        # Also enabled if default_policy is deny
+        if tf.get("default_policy") == "deny":
+            return True
+        return False
 
     def get_tool_config(self, tool_name: str) -> dict:
         """Get the full config dict for a specific tool."""
@@ -214,6 +224,26 @@ class AgentGuardConfig:
     @property
     def melon_raise_on_injection(self) -> bool:
         return _deep_get(self._raw, "tool_firewall", "melon", "raise_on_injection", default=True)
+
+    @property
+    def tool_firewall_default_policy(self) -> str:
+        return _deep_get(self._raw, "tool_firewall", "default_policy", default="allow")
+
+    @property
+    def tool_firewall_file_system_config(self) -> dict:
+        return _deep_get(self._raw, "tool_firewall", "file_system", default={})
+
+    @property
+    def tool_firewall_sql_query_config(self) -> dict:
+        return _deep_get(self._raw, "tool_firewall", "sql_query", default={})
+
+    @property
+    def tool_firewall_http_post_config(self) -> dict:
+        return _deep_get(self._raw, "tool_firewall", "http_post", default={})
+
+    @property
+    def tool_firewall_http_get_config(self) -> dict:
+        return _deep_get(self._raw, "tool_firewall", "http_get", default={})
 
 
 def load_config(config_path: str) -> AgentGuardConfig:
