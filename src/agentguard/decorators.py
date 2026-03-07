@@ -1,19 +1,22 @@
 """
 AgentGuard -- Decorator API.
 
-Provides the @guard_input decorator to protect functions with
-automatic L1 input security validation (Prompt Shields + Content Filters + Image Filters).
+Provides the @guard decorator for unified L1 (input) + L2 (output) security,
+and @guard_input as a backward-compatible alias for L1-only checks.
 
 Usage:
+    from agentguard import guard
+
+    @guard(param="message", output_field="response")
+    def chat(message: str):
+        return {"response": llm.complete(message)}
+
+    # L1-only (backward compat):
     from agentguard import guard_input
 
     @guard_input(param="message")
     def chat(message: str):
         return llm.complete(message)
-
-    @guard_input(param="message", image_param="photo")
-    def chat_with_image(message: str, photo: bytes = None):
-        return vision_model.analyze(message, photo)
 """
 
 import functools
@@ -59,26 +62,35 @@ def _extract_param(func, args, kwargs, param_name: str):
     return None
 
 
-def guard_input(config: str = _DEFAULT_CONFIG, param: str = None, docs_param: str = None, image_param: str = None):
+def guard(
+    config: str = _DEFAULT_CONFIG,
+    param: str = None,
+    docs_param: str = None,
+    image_param: str = None,
+    output_field: str = None,
+):
     """
-    Decorator that validates function input through AgentGuard L1 checks
-    (Prompt Shields + Content Filters + Image Filters) before the function runs.
+    Unified decorator: L1 input checks before function, L2 output checks after.
 
     Args:
         config: Path to agentguard.yaml config file.
-        param: Name of the function parameter containing user text.
+        param: Name of the function parameter containing user text (L1).
                If None, uses the first string parameter.
-        docs_param: Optional name of the parameter containing documents list.
-        image_param: Optional name of the parameter containing image(s).
-                     Can be bytes (single image) or list[bytes] (multiple).
+        docs_param: Name of the parameter containing documents list (L1).
+        image_param: Name of the parameter containing image(s) (L1).
+        output_field: Key in the function's return dict to check for L2.
+                      If None, L2 checks are skipped.
+                      If the function returns a string (not dict), set to any
+                      truthy value and the raw return value is checked.
 
     Raises:
         InputBlockedError: If input is blocked in enforce mode.
+        OutputBlockedError: If output is blocked in enforce mode.
 
     Example:
-        @guard_input(param="message", image_param="photo")
-        def chat(message: str, photo: bytes = None):
-            return llm.complete(message)
+        @guard(param="message", output_field="response")
+        def chat(message: str):
+            return {"response": llm.complete(message)}
     """
     def decorator(func):
         is_async = inspect.iscoroutinefunction(func)
@@ -86,31 +98,71 @@ def guard_input(config: str = _DEFAULT_CONFIG, param: str = None, docs_param: st
         @functools.wraps(func)
         async def async_wrapper(*args, **kwargs):
             guardian = _get_guardian(config)
+
+            # --- L1: Input validation ---
             user_text = _resolve_text(func, args, kwargs, param)
             documents = _resolve_docs(func, args, kwargs, docs_param)
             images = _resolve_images(func, args, kwargs, image_param)
 
             if user_text is not None:
-                logger.debug("guard_input: validating '%s...'", str(user_text)[:50])
+                logger.debug("guard: L1 validating input '%s...'", str(user_text)[:50])
                 guardian.validate_input(user_text, documents=documents, images=images)
 
-            return await func(*args, **kwargs)
+            # --- Run the function ---
+            result = await func(*args, **kwargs)
+
+            # --- L2: Output validation ---
+            if output_field is not None:
+                output_text = _resolve_output(result, output_field)
+                if output_text is not None:
+                    logger.debug("guard: L2 validating output '%s...'", str(output_text)[:50])
+                    guardian.validate_output(output_text)
+
+            return result
 
         @functools.wraps(func)
         def sync_wrapper(*args, **kwargs):
             guardian = _get_guardian(config)
+
+            # --- L1: Input validation ---
             user_text = _resolve_text(func, args, kwargs, param)
             documents = _resolve_docs(func, args, kwargs, docs_param)
             images = _resolve_images(func, args, kwargs, image_param)
 
             if user_text is not None:
-                logger.debug("guard_input: validating '%s...'", str(user_text)[:50])
+                logger.debug("guard: L1 validating input '%s...'", str(user_text)[:50])
                 guardian.validate_input(user_text, documents=documents, images=images)
 
-            return func(*args, **kwargs)
+            # --- Run the function ---
+            result = func(*args, **kwargs)
+
+            # --- L2: Output validation ---
+            if output_field is not None:
+                output_text = _resolve_output(result, output_field)
+                if output_text is not None:
+                    logger.debug("guard: L2 validating output '%s...'", str(output_text)[:50])
+                    guardian.validate_output(output_text)
+
+            return result
 
         return async_wrapper if is_async else sync_wrapper
     return decorator
+
+
+def guard_input(config: str = _DEFAULT_CONFIG, param: str = None, docs_param: str = None, image_param: str = None):
+    """
+    Backward-compatible L1-only decorator. Alias for @guard() without output_field.
+
+    Args:
+        config: Path to agentguard.yaml config file.
+        param: Name of the function parameter containing user text.
+        docs_param: Optional name of the parameter containing documents list.
+        image_param: Optional name of the parameter containing image(s).
+
+    Raises:
+        InputBlockedError: If input is blocked in enforce mode.
+    """
+    return guard(config=config, param=param, docs_param=docs_param, image_param=image_param, output_field=None)
 
 
 # ---------------------------------------------------------
@@ -155,3 +207,17 @@ def _resolve_images(func, args, kwargs, image_param: str = None) -> list:
     if isinstance(value, bytes):
         return [value]
     return value
+
+
+def _resolve_output(result, output_field: str) -> str:
+    """Extract the output text from the function's return value.
+
+    If result is a dict, extracts result[output_field].
+    If result is a string, returns it directly.
+    Returns None if extraction fails.
+    """
+    if isinstance(result, dict):
+        return result.get(output_field)
+    if isinstance(result, str):
+        return result
+    return None

@@ -40,6 +40,7 @@ class TestContentFiltersText:
             _make_category_item(TextCategory.SEXUAL, sexual),
             _make_category_item(TextCategory.VIOLENCE, violence),
         ]
+        mock_result.blocklists_match = None
         filters.client.analyze_text.return_value = mock_result
 
     def test_safe_text(self, filters):

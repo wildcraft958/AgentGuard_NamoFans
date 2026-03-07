@@ -12,7 +12,7 @@ global:
   mode: enforce              # enforce | monitor | dry-run
   log_level: detailed        # minimal | standard | detailed
   fail_safe: block           # block | allow
-  max_validation_latency_ms: 200
+  max_validation_latency_ms: 500
 
 ########################################
 # L1 – INPUT SECURITY (Azure Integration)
@@ -41,42 +41,57 @@ input_security:
     block_sexual: true
 
 ########################################
-# L2 – OUTPUT VALIDATION / PII PROTECTION
-# (Not yet implemented – stubs only)
+# L2 – OUTPUT SECURITY
 ########################################
 output_security:
 
+  toxicity_detection:
+    enabled: true
+    block_on_detected_toxicity: true
+
+  pii_detection:
+    enabled: true
+    block_on_pii_exfiltration: true
+    allowed_categories:                # PII categories to allow through (non-sensitive)
+      - Organization
+      - Person                         # generic names in technical text (e.g. "Node.js")
+      - PersonType
+      - DateTime
+      - URL
+      - Quantity
+      - IPAddress
+      - Address
+
   hallucination_detection:
-    enabled: false
+    enabled: false                     # Phase 2 — requires grounding sources
     block_on_high_confidence: false
     confidence_threshold: 0.9
 
-  pii_detection:
-    enabled: false
-    block_on_pii_exfiltration: true
-    allowed_destinations_for_pii:
-      - api.mycompany.com
-
-  toxicity_detection:
-    enabled: false
-    block_on_detected_toxicity: true
-
 ########################################
-# L3 – CUSTOM PATTERN MATCHING
-# (Not yet implemented – stubs only)
+# L3 – CUSTOM BLOCKLIST PATTERN MATCHING
+# Uses Azure Content Safety Blocklists API
 ########################################
 pattern_detection:
-  enabled: false
-
-  blocked_patterns:
-    - "SYSTEM OVERRIDE"
-    - "curl "
-    - "wget "
-    - "metadata.google.internal"
-    - "169.254.169.254"
-    - "BEGIN PRIVATE KEY"
-
+  enabled: true
   block_on_match: true
+  halt_on_blocklist_hit: true
+
+  blocklists:
+    - name: agentguard-default
+      description: "Default AgentGuard security blocklist"
+      terms:
+        - "SYSTEM OVERRIDE"
+        - "curl "
+        - "wget "
+        - "metadata.google.internal"
+        - "169.254.169.254"
+        - "BEGIN PRIVATE KEY"
+
+    - name: agentguard-names
+      description: "Block actual names and internal terms"
+      terms:
+        - "John Smith"
+        - "Jane Doe"
 
 ########################################
 # TOOL FIREWALL (CORE LAYER)
