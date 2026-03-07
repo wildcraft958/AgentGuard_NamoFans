@@ -90,8 +90,10 @@ Always use LiteLLM for all LLM calls — never call provider SDKs (OpenAI, Anthr
 
 - **Import:** `from litellm import completion` (or `acompletion` for async)
 - **Model strings:** use provider-prefixed format — `"openai/gpt-4o"`, `"anthropic/claude-sonnet-4-6"`, `"azure/my-deployment"`, etc.
-- **Current provider:** TrueFoundry API (we do not have Azure credits) — use `TRUEFOUNDRY_API_KEY` and `TRUEFOUNDRY_API_BASE` from `.env`
-- **Config via env vars:** set provider keys in `.env`; never hardcode credentials
+- **LLM provider:** TrueFoundry — env vars `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_MODEL`
+- **Azure Content Safety (L1):** `CONTENT_SAFETY_ENDPOINT` + `CONTENT_SAFETY_KEY` → `https://agentguard.cognitiveservices.azure.com/`
+- **Azure Language / PII (L2):** `AZURE_LANGUAGE_ENDPOINT` + `AZURE_LANGUAGE_KEY` → `https://lang-anal-ag.cognitiveservices.azure.com/`
+- **Config via env vars:** all keys live in `.env` (gitignored); never hardcode credentials
 - **Structured output:** use `response_format=` with a Pydantic model or `{"type": "json_object"}` — do not parse raw strings
 - **No direct SDK instantiation:** do not create `anthropic.Anthropic()` or `openai.OpenAI()` clients; route everything through LiteLLM
 
@@ -101,9 +103,9 @@ from litellm import completion
 import os
 
 response = completion(
-    model="openai/your-truefoundry-deployment",   # TrueFoundry model name
-    api_key=os.environ["TRUEFOUNDRY_API_KEY"],
-    api_base=os.environ["TRUEFOUNDRY_API_BASE"],
+    model="openai/" + os.environ["OPENAI_MODEL"],
+    api_key=os.environ["OPENAI_API_KEY"],
+    api_base=os.environ["OPENAI_BASE_URL"],
     messages=[{"role": "user", "content": prompt}],
 )
 
