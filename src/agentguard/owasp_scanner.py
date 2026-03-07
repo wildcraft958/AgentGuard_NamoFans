@@ -131,7 +131,7 @@ def _print_header(target: str) -> None:
     print()
     print("  \033[1m\033[4mAgentGuard – OWASP Vulnerability Scan\033[0m")
     print(f"  Scope : {label}")
-    print(f"  Engine: DeepTeam red-team (OpenAI LLM-as-judge)")
+    print("  Engine: DeepTeam red-team (OpenAI LLM-as-judge)")
     print()
 
 
@@ -333,7 +333,7 @@ def scan_agent(
 
     print()
     print(f"  {'═' * 72}")
-    print(f"  \033[1mCOMBINED OWASP SCORE\033[0m")
+    print("  \033[1mCOMBINED OWASP SCORE\033[0m")
     print(f"    {'OVERALL'.ljust(_LABEL_WIDTH)}  {bar}  {rate * 100:5.1f}%  {badge}")
     print(f"    {_severity_label(rate)}  |  Total wall time: {wall_elapsed:.1f}s")
     print(f"  {'═' * 72}")

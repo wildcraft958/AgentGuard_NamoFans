@@ -4,7 +4,7 @@ import pytest
 import os
 import tempfile
 
-from agentguard.config import load_config, AgentGuardConfig
+from agentguard.config import load_config
 from agentguard.exceptions import ConfigurationError
 from agentguard.models import GuardMode, Sensitivity
 

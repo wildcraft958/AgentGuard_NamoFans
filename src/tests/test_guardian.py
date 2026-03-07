@@ -6,7 +6,7 @@ import tempfile
 from unittest.mock import patch, MagicMock
 
 from agentguard.guardian import Guardian
-from agentguard.models import ValidationResult, InputValidationResult
+from agentguard.models import ValidationResult
 from agentguard.exceptions import InputBlockedError
 
 

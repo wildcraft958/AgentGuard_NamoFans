@@ -3,7 +3,6 @@
 Pure Python guards — no Azure API mocking needed.
 """
 
-import pytest
 from unittest.mock import MagicMock
 
 from agentguard.tool_firewall.tool_specific_guards import ToolSpecificGuards

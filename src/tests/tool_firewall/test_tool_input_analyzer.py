@@ -1,7 +1,6 @@
 """Tests for agentguard.tool_firewall.tool_input_analyzer (Component 1)."""
 
 import pytest
-import os
 from unittest.mock import patch, MagicMock
 
 from agentguard.tool_firewall.tool_input_analyzer import ToolInputAnalyzer

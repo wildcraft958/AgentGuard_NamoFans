@@ -8,7 +8,7 @@ and provides the validate_input() / validate_output() interface.
 import logging
 import time
 
-from agentguard.config import load_config, AgentGuardConfig
+from agentguard.config import load_config
 from agentguard.models import (
     GuardMode,
     InputValidationResult,

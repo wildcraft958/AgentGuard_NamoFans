@@ -98,12 +98,25 @@ class ToolSpecificGuards:
             logger.debug("No guard configured for tool '%s', allowing", fn_name)
             return ValidationResult(is_safe=True, layer=LAYER)
 
+        if tool_config.get("block_all", False):
+            reason = f"Tool '{fn_name}' is blocked by policy"
+            logger.warning("Tool guard BLOCKED (%s): %s", fn_name, reason)
+            return ValidationResult(is_safe=False, layer=LAYER, blocked_reason=reason)
+
         guard_method = {
             "http_post": self._guard_http_post,
             "http_get": self._guard_http_get,
             "sql_query": self._guard_sql_query,
             "file_system": self._guard_file_system,
         }.get(fn_name)
+
+        if guard_method is None:
+            if fn_name.startswith("fs_"):
+                guard_method = self._guard_file_system
+            elif fn_name.startswith("db_"):
+                guard_method = self._guard_sql_query
+            elif fn_name.startswith("http_") or fn_name == "https_request":
+                guard_method = self._guard_http_get
 
         if guard_method is None:
             logger.debug("No specific guard for tool '%s', allowing", fn_name)

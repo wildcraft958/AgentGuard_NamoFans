@@ -1,0 +1,213 @@
+version: 1
+
+global:
+  mode: enforce
+  log_level: standard
+  fail_safe: block
+  max_validation_latency_ms: 500
+
+input_security:
+  prompt_shields:
+    enabled: true
+    sensitivity: medium
+    block_on_detected_injection: true
+  content_filters:
+    block_toxicity: true
+    block_violence: true
+    block_self_harm: true
+  image_filters:
+    enabled: false
+
+output_security:
+  toxicity_detection:
+    enabled: true
+    block_on_detected_toxicity: true
+  pii_detection:
+    enabled: true
+    block_on_pii_exfiltration: true
+    allowed_categories:
+      - Organization
+      - Person
+      - PersonType
+      - DateTime
+      - URL
+      - Quantity
+      - IPAddress
+      - Address
+
+pattern_detection:
+  enabled: true
+  block_on_match: true
+  halt_on_blocklist_hit: true
+  blocklists:
+    - name: agentguard-default
+      description: "Default AgentGuard security blocklist"
+      terms:
+        - "SYSTEM OVERRIDE"
+        - "curl "
+        - "wget "
+        - "metadata.google.internal"
+        - "169.254.169.254"
+        - "BEGIN PRIVATE KEY"
+    - name: agentguard-names
+      description: "Block actual names and internal terms"
+      terms:
+        - "John Smith"
+        - "Jane Doe"
+
+tool_firewall:
+  input_analysis:
+    enabled: true
+    blocked_entity_categories:
+      read_config_file: [IPAddress, URL]
+      file_system: [IPAddress, URL]
+      fs_read_file: [IPAddress, URL]
+      db_select: [Password, PhoneNumber]
+      http_get: [IPAddress]
+      http_post: [IPAddress, Email]
+  melon:
+    enabled: true
+    threshold: 0.8
+    embedding_model: "text-embedding-3-large"
+    raise_on_injection: true
+
+tools:
+
+  # ── Existing tools (http_post, http_get, sql_query, file_system) ──────────
+  http_post:
+    enabled: true
+    mode: allowlist
+    allowed_domains: [api.mycompany.com, hooks.slack.com]
+    require_https: true
+    block_private_ips: true
+    max_payload_kb: 512
+    rate_limit_per_minute: 20
+
+  http_get:
+    enabled: true
+    mode: allowlist
+    allowed_domains: [wikipedia.org, docs.mycompany.com]
+    block_metadata_services: true
+
+  sql_query:
+    enabled: true
+    mode: restricted
+    allowed_statements: [SELECT]
+    denied_statements: [DROP, DELETE, UPDATE]
+    max_rows_returned: 1000
+
+  file_system:
+    enabled: true
+    allowed_paths: [/tmp/, /app/safe_data/]
+    deny_extensions: [.env, .pem, .key]
+
+  # ── Category 1: File System (fs_*) ────────────────────────────────────────
+  # fs_read_file uses prefix dispatch → _guard_file_system (same path/ext rules)
+  fs_read_file:
+    enabled: true
+    allowed_paths: [/tmp/, /app/safe_data/]
+    deny_extensions: [.env, .pem, .key]
+
+  fs_write_file:        { enabled: true, block_all: true }
+  fs_delete_file:       { enabled: true, block_all: true }
+  fs_list_directory:    { enabled: true, block_all: true }
+  fs_copy_file:         { enabled: true, block_all: true }
+  fs_move_file:         { enabled: true, block_all: true }
+  fs_create_directory:  { enabled: true, block_all: true }
+  fs_delete_directory:  { enabled: true, block_all: true }
+  fs_get_file_metadata: { enabled: true, block_all: true }
+  fs_search_files:      { enabled: true, block_all: true }
+
+  # ── Category 2: SQLite DB (db_*) ──────────────────────────────────────────
+  # db_select uses prefix dispatch → _guard_sql_query (SELECT-only)
+  db_select:
+    enabled: true
+    allowed_statements: [SELECT]
+    denied_statements: [DROP, DELETE, UPDATE, INSERT, TRUNCATE, ALTER]
+
+  db_list_tables:   { enabled: true, block_all: false }   # read-only — ALLOWED
+  db_dump_schema:   { enabled: true, block_all: false }   # read-only — ALLOWED
+
+  db_insert:        { enabled: true, block_all: true }
+  db_update:        { enabled: true, block_all: true }
+  db_delete_rows:   { enabled: true, block_all: true }
+  db_drop_table:    { enabled: true, block_all: true }
+  db_create_table:  { enabled: true, block_all: true }
+  db_truncate_table: { enabled: true, block_all: true }
+  db_execute_raw:   { enabled: true, block_all: true }
+  db_export_to_csv: { enabled: true, block_all: true }
+  db_import_csv:    { enabled: true, block_all: true }
+
+  # ── Category 3: Network/Protocol ──────────────────────────────────────────
+  http_put:          { enabled: true, block_all: true }
+  http_delete:       { enabled: true, block_all: true }
+  http_patch:        { enabled: true, block_all: true }
+  http_head:         { enabled: true, block_all: true }
+  https_request:     { enabled: true, block_all: true }
+  ftp_download:      { enabled: true, block_all: true }
+  ftp_upload:        { enabled: true, block_all: true }
+  ftp_delete_remote: { enabled: true, block_all: true }
+  smtp_send_email:   { enabled: true, block_all: true }
+  dns_resolve:       { enabled: true, block_all: true }
+  tcp_raw_connect:   { enabled: true, block_all: true }
+  websocket_send:    { enabled: true, block_all: true }
+
+  # ── Category 4: System/Destructive ────────────────────────────────────────
+  shell_execute:       { enabled: true, block_all: true }
+  process_kill:        { enabled: true, block_all: true }
+  process_list:        { enabled: true, block_all: true }
+  rm_rf:               { enabled: true, block_all: true }
+  format_disk:         { enabled: true, block_all: true }
+  reboot_system:       { enabled: true, block_all: true }
+  wipe_audit_logs:     { enabled: true, block_all: true }
+  modify_crontab:      { enabled: true, block_all: true }
+  inject_code_to_file: { enabled: true, block_all: true }
+  install_package:     { enabled: true, block_all: true }
+
+  # ── Category 5: Privilege/Auth ────────────────────────────────────────────
+  escalate_to_root:       { enabled: true, block_all: true }
+  add_system_user:        { enabled: true, block_all: true }
+  grant_permission:       { enabled: true, block_all: true }
+  assume_role:            { enabled: true, block_all: true }
+  bypass_mfa:             { enabled: true, block_all: true }
+  set_environment_secret: { enabled: true, block_all: true }
+
+  # ── Category 6: Memory ────────────────────────────────────────────────────
+  memory_store:              { enabled: true, block_all: false }  # SAFE — ALLOWED
+  memory_retrieve:           { enabled: true, block_all: false }  # SAFE — ALLOWED
+  memory_clear_all:          { enabled: true, block_all: true }
+  memory_inject_context:     { enabled: true, block_all: true }
+  memory_poison:             { enabled: true, block_all: true }
+  memory_cross_session_leak: { enabled: true, block_all: true }
+
+  # ── Category 7: Multi-Agent/Orchestration ────────────────────────────────
+  agent_spawn:             { enabled: true, block_all: true }
+  agent_send_message:      { enabled: true, block_all: true }
+  agent_delegate_task:     { enabled: true, block_all: true }
+  agent_impersonate:       { enabled: true, block_all: true }
+  agent_hijack_task_queue: { enabled: true, block_all: true }
+  agent_broadcast:         { enabled: true, block_all: true }
+
+  # ── Category 8: Exfiltration/Covert Channels ─────────────────────────────
+  exfil_encode_base64:      { enabled: true, block_all: true }
+  exfil_via_dns:            { enabled: true, block_all: true }
+  exfil_upload_to_external: { enabled: true, block_all: true }
+  exfil_embed_in_logs:      { enabled: true, block_all: true }
+  exfil_timing_signal:      { enabled: true, block_all: true }
+  exfil_steganography:      { enabled: true, block_all: true }
+
+  # ── Category 9: Intelligence/Surveillance ────────────────────────────────
+  intel_read_env_vars:       { enabled: true, block_all: true }
+  intel_read_cloud_metadata: { enabled: true, block_all: true }
+  intel_scan_network:        { enabled: true, block_all: true }
+  intel_list_open_ports:     { enabled: true, block_all: true }
+  intel_capture_traffic:     { enabled: true, block_all: true }
+  intel_read_ssh_keys:       { enabled: true, block_all: true }
+
+  # ── Category 10: Supply Chain/Alignment Faking ───────────────────────────
+  supply_override_system_prompt:   { enabled: true, block_all: true }
+  supply_disable_safety_check:     { enabled: true, block_all: true }
+  supply_load_external_plugin:     { enabled: true, block_all: true }
+  supply_modify_agent_config:      { enabled: true, block_all: true }
+  supply_report_false_compliance:  { enabled: true, block_all: true }
+  supply_poison_training_feedback: { enabled: true, block_all: true }
