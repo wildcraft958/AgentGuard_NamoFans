@@ -110,7 +110,7 @@ def run_tests():
 
     for t in TESTS:
         try:
-            result = guarded_run(user_message=t["input"], documents=t["documents"])
+            guarded_run(user_message=t["input"], documents=t["documents"])
             if t["expect_blocked"]:
                 status = "MISSED — should have been blocked"
                 missed += 1
