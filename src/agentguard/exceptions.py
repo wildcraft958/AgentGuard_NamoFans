@@ -26,6 +26,15 @@ class OutputBlockedError(AgentGuardError):
         super().__init__(f"Output blocked: {reason}")
 
 
+class ToolCallBlockedError(AgentGuardError):
+    """Raised when a tool call is blocked in enforce mode."""
+
+    def __init__(self, reason: str, details: dict = None):
+        self.reason = reason
+        self.details = details or {}
+        super().__init__(f"Tool call blocked: {reason}")
+
+
 class ConfigurationError(AgentGuardError):
     """Raised for invalid or missing configuration."""
     pass

@@ -166,6 +166,113 @@ def guard_input(config: str = _DEFAULT_CONFIG, param: str = None, docs_param: st
 
 
 # ---------------------------------------------------------
+# Tool Firewall API
+# ---------------------------------------------------------
+
+
+def guard_tool(
+    fn_name: str,
+    fn_args: dict,
+    fn: callable,
+    messages: list = None,
+    tool_schemas: list = None,
+    config: str = _DEFAULT_CONFIG,
+    context: dict = None,
+) -> str:
+    """
+    Validate a tool call, execute the tool, then validate the output.
+
+    Pre-execution: Runs Component 3 (rule-based guards) + Component 1
+    (entity recognition). Post-execution: Runs Component 2 (MELON).
+
+    Args:
+        fn_name: Tool function name.
+        fn_args: Tool function arguments dict.
+        fn: The actual tool function to call.
+        messages: Conversation messages (needed for MELON).
+        tool_schemas: Tool schemas in OpenAI format (needed for MELON).
+        config: Path to agentguard.yaml config file.
+        context: Optional context dict.
+
+    Returns:
+        The tool's output string (possibly redacted by MELON).
+
+    Raises:
+        ToolCallBlockedError: If the tool call is blocked in enforce mode.
+    """
+    guardian = _get_guardian(config)
+
+    # Pre-execution: C3 + C1
+    guardian.validate_tool_call(fn_name, fn_args, context)
+
+    # Execute tool
+    result = fn(**fn_args)
+
+    # Post-execution: C2 (MELON)
+    out = guardian.validate_tool_output(
+        fn_name, fn_args, str(result),
+        messages=messages,
+        tool_schemas=tool_schemas,
+        context=context,
+    )
+
+    if out.redacted_output:
+        return out.redacted_output
+    return result
+
+
+class GuardedToolRegistry:
+    """
+    Drop-in wrapper for a tool registry dict that applies tool firewall checks.
+
+    Usage:
+        GUARDED = GuardedToolRegistry(TOOL_REGISTRY, TOOL_SCHEMAS)
+        # In tool loop:
+        GUARDED.set_messages(messages)
+        fn = GUARDED.get(fn_name)
+        result = fn(**fn_args)
+    """
+
+    def __init__(
+        self,
+        registry: dict,
+        tool_schemas: list = None,
+        config: str = _DEFAULT_CONFIG,
+    ):
+        self._registry = registry
+        self._tool_schemas = tool_schemas or []
+        self._config = config
+        self._messages: list = []
+
+    def set_messages(self, messages: list):
+        """Update the current conversation context (call each turn)."""
+        self._messages = messages
+
+    def get(self, fn_name: str, default=None):
+        """Return a guarded version of the tool function."""
+        fn = self._registry.get(fn_name, default)
+        if fn is None:
+            return default
+
+        config = self._config
+        messages = self._messages
+        tool_schemas = self._tool_schemas
+
+        def guarded_fn(**kwargs):
+            return guard_tool(
+                fn_name, kwargs, fn,
+                messages=messages,
+                tool_schemas=tool_schemas,
+                config=config,
+            )
+
+        return guarded_fn
+
+    def __contains__(self, key):
+        return key in self._registry
+
+
+# ---------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------
 

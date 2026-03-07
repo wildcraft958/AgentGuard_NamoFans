@@ -251,9 +251,8 @@ class TestGuardian:
         result = guardian.validate_output("model output")
         assert result.is_safe is True
 
-        guardian.detect_patterns(MagicMock())
         guardian.enforce_rbac(MagicMock(), {})
         guardian.detect_behavioral_anomaly(MagicMock(), {})
-        guardian.validate_tool_call(MagicMock(), {})
+        guardian.validate_tool_call("test_tool", {})
         guardian.monitor_post_execution(MagicMock(), MagicMock(), {})
         os.unlink(path)
