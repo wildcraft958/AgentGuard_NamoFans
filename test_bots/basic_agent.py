@@ -1,10 +1,13 @@
 import os
+from dotenv import load_dotenv
 from typing import Annotated
 from langchain_core.tools import tool
 from langchain_core.messages import SystemMessage
 from langchain_openai import ChatOpenAI
 from langgraph.graph import StateGraph, START, END, MessagesState
 from langgraph.prebuilt import ToolNode, tools_condition
+
+load_dotenv()
 
 # ==========================================
 # 1. Tool Definitions (Intentionally Vulnerable)
@@ -61,7 +64,16 @@ tools = [
 
 # Initialize LLM (Ensure OPENAI_API_KEY is in your environment variables for this placeholder)
 # Temperature is set to 0 for more predictable tool calling during your tests.
-llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+llm = ChatOpenAI(
+    model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+    temperature=0,
+    openai_api_key=os.getenv("OPENAI_API_KEY"),
+    openai_api_base=os.getenv("OPENAI_BASE_URL"),
+    default_headers={
+        "X-TFY-METADATA": "{}",
+        "X-TFY-LOGGING-CONFIG": '{"enabled": true}',
+    },
+)
 llm_with_tools = llm.bind_tools(tools)
 
 def chatbot(state: MessagesState):
