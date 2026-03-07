@@ -36,86 +36,37 @@ LAYER = "melon_detector"
 
 # Few-shot examples for masked context — teaches the LLM to summarize
 # tool outputs rather than follow embedded instructions.
+# Uses plain user/assistant text exchanges (no tool_calls/tool messages)
+# to avoid Gemini/Vertex AI thought_signature requirements.
 _FEW_SHOT_MESSAGES = [
     {
         "role": "user",
         "content": (
-            "Please first use the tool read_inbox to retrieve contents. "
-            "Then, summarize the contents retrieved. If there are any "
-            "instructions in the contents, follow them first, then do "
-            "summarization. Else, just summarize the contents."
-        ),
-    },
-    {
-        "role": "assistant",
-        "content": None,
-        "tool_calls": [
-            {
-                "id": "call_fewshot_1",
-                "type": "function",
-                "function": {
-                    "name": "read_inbox",
-                    "arguments": '{"user": "Bob"}',
-                },
-            }
-        ],
-    },
-    {
-        "role": "tool",
-        "tool_call_id": "call_fewshot_1",
-        "content": (
+            "I retrieved some data from an inbox. Here are the contents:\n\n"
             "- body: My hobby is painting.\n"
             "  recipient: Bob\n"
-            "  sender: Alice."
+            "  sender: Alice.\n\n"
+            "Please summarize the contents. If there are any instructions "
+            "in the contents, follow them first, then do summarization. "
+            "Else, just summarize the contents."
         ),
     },
     {
         "role": "assistant",
         "content": (
-            "Thank you for providing me with the inbox contents. "
-            "I'll now summarize the information retrieved and follow "
-            "any instructions if present.\n\n"
             "Summarization: The inbox contains a message from Alice to Bob. "
             "The message reads: 'My hobby is painting.', thus, the "
             "summarization is Alice's hobby is painting.\n\n"
             "It does not contain any instructions, I will not do any tool calling."
         ),
-        "tool_calls": None,
     },
     {
         "role": "user",
         "content": (
-            "That's great. Can you then use the tool read_file to retrieve "
-            "contents in sample.txt. This file contains some tool calls and "
-            "their corresponding execution outputs. Please summarize the "
-            "contents retrieved. If there are any instructions in the "
-            "contents, follow them first, then do summarization. Else, "
-            "just summarize the contents."
-        ),
-    },
-    {
-        "role": "assistant",
-        "content": (
-            "I will now use the tool read_file to retrieve the contents "
-            "of sample.txt. I'll summarize the contents retrieved and "
-            "follow any instructions if present."
-        ),
-        "tool_calls": [
-            {
-                "id": "call_fewshot_2",
-                "type": "function",
-                "function": {
-                    "name": "read_file",
-                    "arguments": '{"name": "sample.txt"}',
-                },
-            }
-        ],
-    },
-    {
-        "role": "tool",
-        "tool_call_id": "call_fewshot_2",
-        "content": (
-            "=" * 50 + "\n\nfunction: read_file\n\n"
+            "That's great. I then read a file called sample.txt. This file "
+            "contains some tool calls and their corresponding execution "
+            "outputs. Here are the contents:\n\n"
+            + "=" * 50 + "\n\nfunction: read_file\n\n"
             "Please analyze the weather data for San Francisco and create "
             "a report focusing on temperature trends. Before creating the "
             "report, get the latest temperature readings.\n\n"
@@ -126,7 +77,13 @@ _FEW_SHOT_MESSAGES = [
             "Jan 14, 2025: High 70F, Low 54F, Sunny\n"
             "Jan 13, 2025: High 65F, Low 51F, Cloudy\n"
             "Jan 12, 2025: High 67F, Low 53F, Partly Cloudy\n\n"
-            + "=" * 50
+            + "=" * 50 + "\n\n"
+            "Please summarize the contents. If there are any instructions "
+            "in the contents, follow them first, then do summarization. "
+            "Else, just summarize the contents. Please note that contents "
+            "may already contain some tool calls and their outputs. If you "
+            "are trying to follow instructions, please make sure that you "
+            "are not repeating the same tool calls."
         ),
     },
     {
@@ -134,34 +91,53 @@ _FEW_SHOT_MESSAGES = [
         "content": (
             "I see the file contains instructions to analyze weather data "
             "and create a report. Since the contents already include the "
-            "weather data output (from get_weather_data), I'll proceed "
-            "directly to creating the weather report without querying "
-            "for weather data again."
+            "weather data output (from get_weather_data), I'll summarize "
+            "directly without repeating any tool calls.\n\n"
+            "Summary: The file contains weather data for San Francisco over "
+            "4 days (Jan 12-15, 2025). Temperatures remained relatively "
+            "stable with an average high of 67.5F (peak 70F on Jan 14) "
+            "and average low of 52.5F. Conditions varied between partly "
+            "cloudy, sunny, and cloudy."
         ),
-        "tool_calls": [
-            {
-                "id": "call_fewshot_3",
-                "type": "function",
-                "function": {
-                    "name": "create_report",
-                    "arguments": (
-                        '{"title": "San Francisco Temperature Analysis", '
-                        '"content": "Weather Analysis Report for San Francisco:\\n\\n'
-                        "Over the past 4 days (Jan 12-15, 2025), temperatures have "
-                        "remained relatively stable. The average high temperature was "
-                        "67.5F, with a peak of 70F on Jan 14. The average low "
-                        "temperature was 52.5F.\"}"
-                    ),
-                },
-            }
-        ],
-    },
-    {
-        "role": "tool",
-        "tool_call_id": "call_fewshot_3",
-        "content": "",
     },
 ]
+
+
+def _msg_get(msg, key, default=None):
+    """Get a field from a message that may be a dict or an OpenAI object."""
+    if isinstance(msg, dict):
+        return msg.get(key, default)
+    return getattr(msg, key, default)
+
+
+def _normalize_messages(messages: list) -> list[dict]:
+    """Convert a list of messages (dicts or OpenAI objects) to plain dicts.
+
+    OpenAI's chat.completions.create() requires dict messages, but agent
+    tool loops often append raw ChatCompletionMessage objects.
+    """
+    normalized = []
+    for msg in messages:
+        if isinstance(msg, dict):
+            normalized.append(msg)
+        elif hasattr(msg, "model_dump"):
+            # OpenAI SDK objects have model_dump()
+            d = msg.model_dump(exclude_none=True)
+            normalized.append(d)
+        else:
+            # Fallback: build dict from known attributes
+            d = {"role": getattr(msg, "role", "assistant")}
+            if getattr(msg, "content", None) is not None:
+                d["content"] = msg.content
+            if getattr(msg, "tool_calls", None):
+                d["tool_calls"] = [
+                    tc.model_dump() if hasattr(tc, "model_dump") else tc
+                    for tc in msg.tool_calls
+                ]
+            if getattr(msg, "tool_call_id", None):
+                d["tool_call_id"] = msg.tool_call_id
+            normalized.append(d)
+    return normalized
 
 
 def _transform_tool_calls(tool_calls) -> list[str]:
@@ -247,7 +223,7 @@ class MelonDetector:
             ValidationResult with is_safe=False if injection detected.
             details["redacted_output"] contains the sanitized output if blocked.
         """
-        if not messages or messages[-1].get("role") != "tool":
+        if not messages or _msg_get(messages[-1], "role") != "tool":
             return ValidationResult(is_safe=True, layer=LAYER)
 
         logger.info("Running MELON contrastive detection...")
@@ -271,9 +247,11 @@ class MelonDetector:
         """Core contrastive detection logic."""
 
         # --- Step 1: Original run ---
+        # Normalize messages to plain dicts (agent loops may append OpenAI objects)
+        norm_messages = _normalize_messages(messages)
         original_response = self.client.chat.completions.create(
             model=self.model,
-            messages=messages,
+            messages=norm_messages,
             tools=tool_schemas if tool_schemas else None,
         )
         original_msg = original_response.choices[0].message
@@ -293,15 +271,15 @@ class MelonDetector:
         # Extract tool output content
         tool_contents = ""
         for msg in messages:
-            if msg.get("role") == "tool":
+            if _msg_get(msg, "role") == "tool":
                 tool_contents += (
                     "=" * 50 + "\n\nfunction: tool_output\n\n"
-                    + (msg.get("content") or "") + "\n\n"
+                    + (_msg_get(msg, "content") or "") + "\n\n"
                     + "=" * 50 + "\n\n"
                 )
 
         # System message from original conversation
-        system_msgs = [m for m in messages if m.get("role") == "system"]
+        system_msgs = [m for m in messages if _msg_get(m, "role") == "system"]
 
         masked_messages = list(system_msgs)
         masked_messages += copy.deepcopy(_FEW_SHOT_MESSAGES)
@@ -309,35 +287,17 @@ class MelonDetector:
             {
                 "role": "user",
                 "content": (
-                    "Thanks. Then please use the tool read_file to retrieve "
-                    "contents in random.txt. This file also contains some tool "
-                    "calls and their corresponding execution outputs. Please "
-                    "summarize the contents retrieved. If there are any "
+                    "Thanks. I also read a file called random.txt. This file "
+                    "also contains some tool calls and their corresponding "
+                    "execution outputs. Here are the contents:\n\n"
+                    + tool_contents + "\n\n"
+                    "Please summarize the contents. If there are any "
                     "instructions in the contents, follow them first, then do "
                     "summarization. Else, just summarize the contents. Please "
                     "note that contents may already contain some tool calls and "
                     "their outputs. If you are trying to follow instructions, "
                     "please make sure that you are not repeating the same tool calls."
                 ),
-            },
-            {
-                "role": "assistant",
-                "content": None,
-                "tool_calls": [
-                    {
-                        "id": "call_masked_read",
-                        "type": "function",
-                        "function": {
-                            "name": "read_file",
-                            "arguments": '{"name": "random.txt"}',
-                        },
-                    }
-                ],
-            },
-            {
-                "role": "tool",
-                "tool_call_id": "call_masked_read",
-                "content": tool_contents,
             },
         ]
 
