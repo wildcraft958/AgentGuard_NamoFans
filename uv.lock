@@ -15,6 +15,7 @@ dependencies = [
     { name = "autogen-agentchat" },
     { name = "autogen-ext", extra = ["azure"] },
     { name = "azure-ai-contentsafety" },
+    { name = "azure-ai-textanalytics" },
     { name = "azure-identity" },
     { name = "deepteam" },
     { name = "guardrails-ai" },
@@ -36,6 +37,7 @@ requires-dist = [
     { name = "autogen-agentchat", specifier = ">=0.4.0" },
     { name = "autogen-ext", extras = ["azure"], specifier = ">=0.4.0" },
     { name = "azure-ai-contentsafety", specifier = ">=1.0.0" },
+    { name = "azure-ai-textanalytics", specifier = ">=5.3.0" },
     { name = "azure-identity", specifier = ">=1.16.0" },
     { name = "deepteam", specifier = ">=1.0.6" },
     { name = "guardrails-ai", specifier = ">=0.5.0" },
@@ -309,6 +311,21 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/0f/3d/6a7d04f61f3befc74a6f09ad7a0c02e8c701fc6db91ad7151c46da44a902/azure_ai_projects-2.0.0.tar.gz", hash = "sha256:0892f075cf287d747be54c25bea93dc9406ad100d44efc2fdaadb26586ecf4ff", size = 491449, upload-time = "2026-03-06T05:59:51.645Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/20/af/7b218cccab8e22af44844bfc16275b55c1fa48ed494145614b9852950fe6/azure_ai_projects-2.0.0-py3-none-any.whl", hash = "sha256:e655e0e495d0c76077d95cc8e0d606fcdbf3f4dbdf1a8379cbd4bea1e34c401d", size = 236354, upload-time = "2026-03-06T05:59:53.536Z" },
+]
+
+[[package]]
+name = "azure-ai-textanalytics"
+version = "5.4.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "azure-common" },
+    { name = "azure-core" },
+    { name = "isodate" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/0a/85/527ebdb0a64fcc9453aedb5e9217fdc362c9bb1b712f0f7de1b52f133c53/azure_ai_textanalytics-5.4.0.tar.gz", hash = "sha256:5cadfdcd187fabcd75777c9b1d0472ac82898e803712b6dd043c7ae4d017b4e0", size = 378091, upload-time = "2026-03-05T08:00:34.774Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b6/4f/1b618418ebd04bd2896b5f92881343ef960ddcc01fc12f4bd2c87c35cae2/azure_ai_textanalytics-5.4.0-py3-none-any.whl", hash = "sha256:1e36b1a0c67f274d62b5e37d999d3414cc8dfc70f09c2e6e67905c05723787c9", size = 300247, upload-time = "2026-03-05T08:00:36.616Z" },
 ]
 
 [[package]]
