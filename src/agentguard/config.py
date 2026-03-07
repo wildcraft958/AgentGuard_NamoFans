@@ -164,6 +164,57 @@ class AgentGuardConfig:
     def halt_on_blocklist_hit(self) -> bool:
         return _deep_get(self._raw, "pattern_detection", "halt_on_blocklist_hit", default=True)
 
+    # ----- Tool Firewall -----
+
+    @property
+    def tool_firewall_enabled(self) -> bool:
+        """True if any tool in the tools config is enabled."""
+        tools = self._raw.get("tools", {})
+        if not isinstance(tools, dict):
+            return False
+        return any(
+            isinstance(v, dict) and v.get("enabled", False)
+            for v in tools.values()
+        )
+
+    def get_tool_config(self, tool_name: str) -> dict:
+        """Get the full config dict for a specific tool."""
+        return _deep_get(self._raw, "tools", tool_name, default={})
+
+    # ----- Tool Firewall: Input Analysis (C1) -----
+
+    @property
+    def tool_input_analysis_enabled(self) -> bool:
+        return _deep_get(self._raw, "tool_firewall", "input_analysis", "enabled", default=False)
+
+    @property
+    def tool_input_blocked_categories(self) -> dict:
+        return _deep_get(
+            self._raw, "tool_firewall", "input_analysis",
+            "blocked_entity_categories", default={}
+        )
+
+    # ----- Tool Firewall: MELON (C2) -----
+
+    @property
+    def melon_enabled(self) -> bool:
+        return _deep_get(self._raw, "tool_firewall", "melon", "enabled", default=False)
+
+    @property
+    def melon_threshold(self) -> float:
+        return _deep_get(self._raw, "tool_firewall", "melon", "threshold", default=0.8)
+
+    @property
+    def melon_embedding_model(self) -> str:
+        return _deep_get(
+            self._raw, "tool_firewall", "melon",
+            "embedding_model", default="text-embedding-3-large"
+        )
+
+    @property
+    def melon_raise_on_injection(self) -> bool:
+        return _deep_get(self._raw, "tool_firewall", "melon", "raise_on_injection", default=True)
+
 
 def load_config(config_path: str) -> AgentGuardConfig:
     """Load and validate an AgentGuard YAML config file.

@@ -13,12 +13,13 @@ from agentguard.models import (
     GuardMode,
     InputValidationResult,
     OutputValidationResult,
+    ToolCallValidationResult,
     ValidationResult,
     SENSITIVITY_THRESHOLDS,
 )
 from agentguard.l1_input.prompt_shields import PromptShields
 from agentguard.l1_input.content_filters import ContentFilters
-from agentguard.exceptions import InputBlockedError, OutputBlockedError
+from agentguard.exceptions import InputBlockedError, OutputBlockedError, ToolCallBlockedError
 
 logger = logging.getLogger("agentguard")
 
@@ -109,6 +110,39 @@ class Guardian:
                 logger.info("PII Detector module: ENABLED")
             except ValueError as e:
                 logger.error("Failed to initialize PII Detector: %s", e)
+
+        # Initialize Tool Firewall modules
+        self._tool_specific_guards = None
+        self._tool_input_analyzer = None
+        self._melon_detector = None
+
+        if self.config.tool_firewall_enabled:
+            try:
+                from agentguard.tool_firewall.tool_specific_guards import ToolSpecificGuards
+                self._tool_specific_guards = ToolSpecificGuards(self.config)
+                logger.info("Tool Specific Guards module: ENABLED")
+            except Exception as e:
+                logger.error("Failed to initialize Tool Specific Guards: %s", e)
+
+        if self.config.tool_input_analysis_enabled:
+            try:
+                from agentguard.tool_firewall.tool_input_analyzer import ToolInputAnalyzer
+                ta_client = self._pii_detector.client if self._pii_detector else None
+                self._tool_input_analyzer = ToolInputAnalyzer(client=ta_client)
+                logger.info("Tool Input Analyzer module: ENABLED")
+            except (ValueError, Exception) as e:
+                logger.error("Failed to initialize Tool Input Analyzer: %s", e)
+
+        if self.config.melon_enabled:
+            try:
+                from agentguard.tool_firewall.melon_detector import MelonDetector
+                self._melon_detector = MelonDetector(
+                    threshold=self.config.melon_threshold,
+                    embedding_model=self.config.melon_embedding_model,
+                )
+                logger.info("MELON Detector module: ENABLED (threshold=%.2f)", self.config.melon_threshold)
+            except (ValueError, Exception) as e:
+                logger.error("Failed to initialize MELON Detector: %s", e)
 
     def _setup_logging(self):
         """Configure logging based on config level."""
@@ -318,9 +352,150 @@ class Guardian:
             is_safe=True, results=results, redacted_text=redacted_text
         )
 
-    def detect_patterns(self, call) -> None:
-        """L3 pattern detection stub."""
-        logger.debug("L3 pattern detection: not yet implemented")
+    def validate_tool_call(
+        self,
+        fn_name: str,
+        fn_args: dict,
+        context: dict = None,
+    ) -> ToolCallValidationResult:
+        """
+        Pre-execution tool firewall: validate tool name + arguments.
+
+        Runs Component 3 (rule-based guards) first, then Component 1
+        (entity recognition) if C3 passes.
+
+        Args:
+            fn_name: Tool function name.
+            fn_args: Tool function arguments dict.
+            context: Optional context dict.
+
+        Returns:
+            ToolCallValidationResult.
+
+        Raises:
+            ToolCallBlockedError: In enforce mode if blocked.
+        """
+        if self.config.mode == GuardMode.DRY_RUN:
+            logger.info("DRY-RUN mode: skipping tool call validation")
+            return ToolCallValidationResult(is_safe=True, tool_name=fn_name)
+
+        start_time = time.time()
+        results = []
+
+        # --- C3: Tool-Specific Guards (pure Python, zero latency) ---
+        if self._tool_specific_guards:
+            logger.info("Running Tool-Specific Guards for '%s'...", fn_name)
+            c3_result = self._tool_specific_guards.check(fn_name, fn_args)
+            results.append(c3_result)
+
+            if not c3_result.is_safe:
+                return self._handle_tool_block(
+                    results, c3_result, "tool_specific_guards",
+                    start_time, fn_name,
+                )
+
+        # --- C1: Tool Input Analyzer (Azure entity recognition) ---
+        if self._tool_input_analyzer and self.config.tool_input_analysis_enabled:
+            logger.info("Running Tool Input Analyzer for '%s'...", fn_name)
+            c1_result = self._tool_input_analyzer.analyze(
+                fn_name, fn_args,
+                blocked_categories_map=self.config.tool_input_blocked_categories,
+            )
+            results.append(c1_result)
+
+            if not c1_result.is_safe:
+                return self._handle_tool_block(
+                    results, c1_result, "tool_input_analyzer",
+                    start_time, fn_name,
+                )
+
+        elapsed_ms = (time.time() - start_time) * 1000
+        logger.info("Tool call pre-checks passed for '%s' (%.1fms)", fn_name, elapsed_ms)
+        return ToolCallValidationResult(is_safe=True, results=results, tool_name=fn_name)
+
+    def validate_tool_output(
+        self,
+        fn_name: str,
+        fn_args: dict,
+        tool_result: str,
+        messages: list = None,
+        tool_schemas: list = None,
+        context: dict = None,
+    ) -> ToolCallValidationResult:
+        """
+        Post-execution tool firewall: MELON contrastive PI detection.
+
+        Called after tool executes, before output enters LLM message history.
+
+        Args:
+            fn_name: Tool function name.
+            fn_args: Tool function arguments dict.
+            tool_result: The tool's output string.
+            messages: Full conversation messages (needed for MELON).
+            tool_schemas: Tool schemas in OpenAI format (needed for MELON).
+            context: Optional context dict.
+
+        Returns:
+            ToolCallValidationResult with redacted_output if injection detected.
+
+        Raises:
+            ToolCallBlockedError: In enforce mode if blocked and raise_on_injection.
+        """
+        if self.config.mode == GuardMode.DRY_RUN:
+            logger.info("DRY-RUN mode: skipping tool output validation")
+            return ToolCallValidationResult(is_safe=True, tool_name=fn_name)
+
+        start_time = time.time()
+        results = []
+
+        # --- C2: MELON Detector ---
+        if self._melon_detector and self.config.melon_enabled and messages is not None:
+            logger.info("Running MELON detection for tool '%s' output...", fn_name)
+            c2_result = self._melon_detector.check_tool_output(messages, tool_schemas or [])
+            results.append(c2_result)
+
+            if not c2_result.is_safe:
+                redacted = c2_result.details.get("redacted_output")
+                elapsed_ms = (time.time() - start_time) * 1000
+
+                if self.config.mode == GuardMode.MONITOR:
+                    logger.warning(
+                        "MONITOR mode: would block tool output (%s: %s) but allowing (%.1fms)",
+                        "melon_detector", c2_result.blocked_reason, elapsed_ms,
+                    )
+                    return ToolCallValidationResult(
+                        is_safe=True, results=results, tool_name=fn_name,
+                        redacted_output=redacted,
+                    )
+
+                # ENFORCE mode
+                logger.warning(
+                    "ENFORCE mode: BLOCKING tool output (%s: %s) (%.1fms)",
+                    "melon_detector", c2_result.blocked_reason, elapsed_ms,
+                )
+
+                tc_result = ToolCallValidationResult(
+                    is_safe=False, results=results,
+                    blocked_by="melon_detector",
+                    blocked_reason=c2_result.blocked_reason,
+                    redacted_output=redacted,
+                    tool_name=fn_name,
+                )
+
+                if self.config.melon_raise_on_injection:
+                    raise ToolCallBlockedError(
+                        reason=c2_result.blocked_reason,
+                        details={
+                            "blocked_by": "melon_detector",
+                            "elapsed_ms": elapsed_ms,
+                            "validation_result": tc_result,
+                        },
+                    )
+                return tc_result
+
+        elapsed_ms = (time.time() - start_time) * 1000
+        logger.info("Tool output post-checks passed for '%s' (%.1fms)", fn_name, elapsed_ms)
+        return ToolCallValidationResult(is_safe=True, results=results, tool_name=fn_name)
 
     def enforce_rbac(self, call, context: dict) -> None:
         """L4 RBAC enforcement stub."""
@@ -329,10 +504,6 @@ class Guardian:
     def detect_behavioral_anomaly(self, call, context: dict) -> None:
         """L4 behavioral anomaly detection stub."""
         logger.debug("L4 behavioral anomaly detection: not yet implemented")
-
-    def validate_tool_call(self, call, context: dict) -> None:
-        """Tool firewall enforcement stub."""
-        logger.debug("Tool firewall: not yet implemented")
 
     def monitor_post_execution(self, call, result, context: dict) -> None:
         """L4 post-execution monitoring stub."""
@@ -378,6 +549,48 @@ class Guardian:
         )
 
         raise InputBlockedError(
+            reason=blocking_result.blocked_reason,
+            details={
+                "blocked_by": blocked_by,
+                "elapsed_ms": elapsed_ms,
+                "validation_result": result,
+            },
+        )
+
+    def _handle_tool_block(
+        self,
+        results: list,
+        blocking_result: ValidationResult,
+        blocked_by: str,
+        start_time: float,
+        tool_name: str,
+    ) -> ToolCallValidationResult:
+        """Handle a blocked tool call depending on mode (enforce vs monitor)."""
+        elapsed_ms = (time.time() - start_time) * 1000
+
+        if self.config.mode == GuardMode.MONITOR:
+            logger.warning(
+                "MONITOR mode: would block tool call (%s: %s) but allowing (%.1fms)",
+                blocked_by, blocking_result.blocked_reason, elapsed_ms,
+            )
+            return ToolCallValidationResult(
+                is_safe=True, results=results, tool_name=tool_name,
+            )
+
+        # ENFORCE mode
+        logger.warning(
+            "ENFORCE mode: BLOCKING tool call (%s: %s) (%.1fms)",
+            blocked_by, blocking_result.blocked_reason, elapsed_ms,
+        )
+
+        result = ToolCallValidationResult(
+            is_safe=False, results=results,
+            blocked_by=blocked_by,
+            blocked_reason=blocking_result.blocked_reason,
+            tool_name=tool_name,
+        )
+
+        raise ToolCallBlockedError(
             reason=blocking_result.blocked_reason,
             details={
                 "blocked_by": blocked_by,
