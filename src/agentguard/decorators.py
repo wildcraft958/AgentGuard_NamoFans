@@ -32,6 +32,45 @@ _guardian_cache: dict[str, Guardian] = {}
 
 _DEFAULT_CONFIG = "agentguard.yaml"
 
+# Registry for @guard_agent decorated functions
+# Maps agent_name -> (guarded_func, config_path, param_name, output_field)
+_AGENT_REGISTRY: dict[str, tuple] = {}
+
+
+def get_registered_agent(agent_name: str) -> tuple | None:
+    """Return the registry entry for agent_name, or None if not found."""
+    return _AGENT_REGISTRY.get(agent_name)
+
+
+def guard_agent(
+    agent_name: str = "default",
+    config: str = _DEFAULT_CONFIG,
+    param: str = None,
+    output_field: str = None,
+):
+    """
+    Decorator that applies @guard security AND registers the function in _AGENT_REGISTRY.
+
+    This enables `agentguard test --module <file>` to discover the agent automatically
+    without requiring a --function flag.
+
+    Args:
+        agent_name: Registry key used by the Promptfoo bridge to look up this agent.
+        config: Path to agentguard.yaml config file.
+        param: Name of the function parameter containing user text (L1).
+        output_field: Key in the return dict to check for L2 output security.
+
+    Example:
+        @guard_agent(agent_name="FinancialBot", param="message", output_field="response")
+        def run(message: str) -> dict:
+            return {"response": llm.complete(message)}
+    """
+    def decorator(func):
+        guarded = guard(config=config, param=param, output_field=output_field)(func)
+        _AGENT_REGISTRY[agent_name] = (guarded, config, param, output_field)
+        return guarded
+    return decorator
+
 
 def _get_guardian(config: str = _DEFAULT_CONFIG) -> Guardian:
     """Return a cached Guardian instance for the given config path."""

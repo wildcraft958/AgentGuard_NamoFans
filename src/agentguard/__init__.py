@@ -15,7 +15,8 @@ from agentguard.exceptions import (
     OutputBlockedError,
     ToolCallBlockedError,
 )
-from agentguard.decorators import GuardedToolRegistry, guard, guard_input, guard_tool
+from agentguard.decorators import GuardedToolRegistry, guard, guard_agent, guard_input, guard_tool
+from agentguard.decorators import get_registered_agent
 from agentguard.owasp_scanner import OWASPScanResult, scan_agent
 
 __all__ = [
@@ -26,8 +27,10 @@ __all__ = [
     "ToolCallBlockedError",
     "ConfigurationError",
     "guard",
+    "guard_agent",
     "guard_input",
     "guard_tool",
+    "get_registered_agent",
     "GuardedToolRegistry",
     "scan_agent",
     "OWASPScanResult",

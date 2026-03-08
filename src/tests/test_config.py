@@ -118,3 +118,53 @@ input_security:
         config = load_config(path)
         assert config.prompt_shields_sensitivity == Sensitivity.LOW
         os.unlink(path)
+
+
+class TestTestingConfig:
+    def test_testing_config_returns_dict_when_present(self):
+        path = _write_config("""
+global:
+  mode: enforce
+  log_level: standard
+testing:
+  purpose: "Test agent"
+  plugins:
+    - prompt-injection
+  num_tests: 10
+""")
+        config = load_config(path)
+        assert isinstance(config.testing_config, dict)
+        assert config.testing_config["purpose"] == "Test agent"
+        assert config.testing_config["num_tests"] == 10
+        os.unlink(path)
+
+    def test_testing_config_returns_empty_when_absent(self):
+        path = _write_config("""
+global:
+  mode: enforce
+  log_level: standard
+""")
+        config = load_config(path)
+        assert config.testing_config == {}
+        os.unlink(path)
+
+    def test_agent_name_returns_value(self):
+        path = _write_config("""
+global:
+  mode: enforce
+  log_level: standard
+agent_name: "MyBot"
+""")
+        config = load_config(path)
+        assert config.agent_name == "MyBot"
+        os.unlink(path)
+
+    def test_agent_name_defaults_to_default(self):
+        path = _write_config("""
+global:
+  mode: enforce
+  log_level: standard
+""")
+        config = load_config(path)
+        assert config.agent_name == "default"
+        os.unlink(path)

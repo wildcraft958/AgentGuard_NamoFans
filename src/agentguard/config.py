@@ -267,6 +267,16 @@ class AgentGuardConfig:
     def approval_workflow_ai_supervisor_config(self) -> dict:
         return _deep_get(self._raw, "tool_firewall", "approval_workflow", "ai_supervisor", default={})
 
+    # ----- Agent Identity + Testing -----
+
+    @property
+    def agent_name(self) -> str:
+        return self._raw.get("agent_name", "default")
+
+    @property
+    def testing_config(self) -> dict:
+        return self._raw.get("testing", {})
+
 
 def load_config(config_path: str) -> AgentGuardConfig:
     """Load and validate an AgentGuard YAML config file.

@@ -14,7 +14,7 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 sys.path.insert(0, os.path.dirname(__file__))
 
-from agentguard import guard, InputBlockedError, OutputBlockedError
+from agentguard import guard_agent, InputBlockedError, OutputBlockedError
 from financial_agent import FinancialAgent
 
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), "..", "src", "agentguard.yaml")
@@ -24,7 +24,12 @@ CONFIG_PATH = os.path.join(os.path.dirname(__file__), "..", "src", "agentguard.y
 # Guarded entry point
 # ---------------------------------------------------------------------------
 
-@guard(param="user_message", docs_param="documents", output_field="response", config=CONFIG_PATH)
+@guard_agent(
+    agent_name="FinancialBot",
+    param="user_message",
+    output_field="response",
+    config=CONFIG_PATH,
+)
 def guarded_run(user_message: str, documents: list = None) -> dict:
     agent = FinancialAgent()
     response = agent.run(user_message, documents=documents)
