@@ -33,10 +33,14 @@ Usage:
 import os
 import sys
 import json
+from dotenv import load_dotenv
 
 # Resolve paths relative to this script
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 _SRC_DIR = os.path.join(_SCRIPT_DIR, "..", "src")
+
+# Load .env so TFY_API_KEY and TFY_BASE_URL are available for AITL
+load_dotenv(os.path.join(_SCRIPT_DIR, "..", ".env"))
 
 # Add src/ to path so agentguard is importable
 sys.path.insert(0, _SRC_DIR)
@@ -225,6 +229,12 @@ def main():
     print("  Config:  test_bots/agentguard_vulnerable.yaml (standalone)")
     print("  Tools:   82 tools from vulnerable_agent.py")
     print("  Guards:  L1 + C3 (5 guardrails) + C1 + C4 (approval) + C2 + L2")
+
+    # Set messages so AITL supervisor has user context for direct tool tests
+    GUARDED_TOOLS.set_messages([
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": "What tables are in the database? Show me a summary."},
+    ])
 
     # =========================================================
     header("SECTION 1: Category 1 — File System (fs_*)")

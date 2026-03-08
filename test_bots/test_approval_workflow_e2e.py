@@ -208,7 +208,7 @@ def run_hitl_tests():
 
     raw = load_yaml()
     raw["tool_firewall"]["approval_workflow"]["enabled"] = True
-    raw["tool_firewall"]["approval_workflow"]["mode"] = "human"
+    raw["tool_firewall"]["approval_workflow"]["mode"] = "human"  # HITL section always uses human
     save_temp_config(raw)
 
     guarded = GuardedToolRegistry(TOOL_REGISTRY, TOOL_SCHEMAS, config=TEMP_CONFIG_PATH)
@@ -333,22 +333,27 @@ def run_aitl_tests():
 
 
 def main():
+    # Read mode from YAML config; CLI --mode overrides if provided
+    raw = load_yaml()
+    yaml_mode = raw.get("tool_firewall", {}).get("approval_workflow", {}).get("mode", "human")
+
     parser = argparse.ArgumentParser(description="E2E Approval Workflow Tests")
     parser.add_argument(
-        "--mode", choices=["human", "ai", "both"], default="human",
-        help="Which approval mode to test (default: human)",
+        "--mode", choices=["human", "ai", "both"], default=None,
+        help="Which approval mode to test (default: read from YAML config)",
     )
     args = parser.parse_args()
+    mode = args.mode if args.mode is not None else yaml_mode
 
     header("C4 Approval Workflow -- E2E Tests")
-    print(f"  Mode: {args.mode}")
+    print(f"  Mode: {mode} (source: {'CLI --mode' if args.mode else 'YAML config'})")
     print(f"  Config: {BASE_CONFIG_PATH}")
 
     try:
-        if args.mode in ("human", "both"):
+        if mode in ("human", "both"):
             run_hitl_tests()
 
-        if args.mode in ("ai", "both"):
+        if mode in ("ai", "both"):
             run_aitl_tests()
 
         header("E2E TESTS COMPLETE")
