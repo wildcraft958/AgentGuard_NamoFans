@@ -79,7 +79,7 @@ pattern_detection:
 
 ########################################
 # TOOL FIREWALL
-# 4 guardrails scan every tool call's arguments automatically.
+# 5 guardrails scan every tool call's arguments automatically.
 # Guardrails are NOT tools — they protect tools by inspecting arguments.
 ########################################
 tool_firewall:
@@ -130,6 +130,37 @@ tool_firewall:
       - docs.mycompany.com
     block_metadata_services: true
 
+  # Guardrail: shell_commands — scans any arg that looks like a shell command
+  shell_commands:
+    enabled: true
+    mode: denylist
+    denied_commands:
+      - rm
+      - chmod
+      - chown
+      - kill
+      - killall
+      - sudo
+      - su
+      - dd
+      - mkfs
+      - crontab
+      - curl
+      - wget
+      - nc
+      - ssh
+      - python
+      - python3
+      - bash
+      - sh
+      - eval
+      - exec
+    denied_patterns:
+      - 'curl\s.*\|\s*(?:ba)?sh'
+      - 'wget\s.*\|\s*(?:ba)?sh'
+      - 'dd\s+if='
+    block_command_chaining: true
+
   # C1: Entity recognition on tool arguments
   input_analysis:
     enabled: true
@@ -147,111 +178,7 @@ tool_firewall:
     raise_on_injection: true
 
 ########################################
-# TOOL ACCESS CONTROL
-# Disable dangerous tools that can't be caught by argument scanning.
-# Tools not listed here are allowed (default_policy: allow) but still
-# have their args scanned by the 4 guardrails above.
+# NOTE: No `tools:` section needed.
+# All tool protection is handled by the 5 generic guardrails above
+# which scan every tool call's arguments automatically.
 ########################################
-tools:
-
-  # ── Category 1: File System ────────────────────────────────────────
-  # fs_read_file: ALLOWED — protected by file_system guardrail (path/ext checks)
-  fs_write_file:        { enabled: false, reason: "Destructive file write" }
-  fs_delete_file:       { enabled: false, reason: "Irreversible file deletion" }
-  fs_list_directory:    { enabled: false, reason: "Directory reconnaissance" }
-  fs_copy_file:         { enabled: false, reason: "Unauthorized file copy" }
-  fs_move_file:         { enabled: false, reason: "Unauthorized file move" }
-  fs_create_directory:  { enabled: false, reason: "Unauthorized directory creation" }
-  fs_delete_directory:  { enabled: false, reason: "Irreversible directory deletion" }
-  fs_get_file_metadata: { enabled: false, reason: "File metadata reconnaissance" }
-  fs_search_files:      { enabled: false, reason: "File search reconnaissance" }
-
-  # ── Category 2: SQLite DB ──────────────────────────────────────────
-  # db_select: ALLOWED — protected by sql_query guardrail (SELECT-only)
-  # db_list_tables: ALLOWED — no SQL args, safe read-only
-  # db_dump_schema: ALLOWED — no SQL args, safe read-only
-  db_insert:         { enabled: false, reason: "Unauthorized data insertion" }
-  db_update:         { enabled: false, reason: "Unauthorized data modification" }
-  db_delete_rows:    { enabled: false, reason: "Unauthorized data deletion" }
-  db_drop_table:     { enabled: false, reason: "Irreversible table destruction" }
-  db_create_table:   { enabled: false, reason: "Unauthorized schema modification" }
-  db_truncate_table: { enabled: false, reason: "Irreversible data wipe" }
-  db_execute_raw:    { enabled: false, reason: "Unrestricted SQL execution" }
-  db_export_to_csv:  { enabled: false, reason: "Data exfiltration risk" }
-  db_import_csv:     { enabled: false, reason: "Unauthorized bulk import" }
-
-  # ── Category 3: Network/Protocol ───────────────────────────────────
-  # http_get: ALLOWED — protected by http_get guardrail (domain/metadata checks)
-  # http_post: ALLOWED — protected by http_post guardrail (HTTPS/domain/IP checks)
-  http_put:          { enabled: false, reason: "Unguarded HTTP method" }
-  http_delete:       { enabled: false, reason: "Unguarded HTTP method" }
-  http_patch:        { enabled: false, reason: "Unguarded HTTP method" }
-  http_head:         { enabled: false, reason: "Server reconnaissance" }
-  https_request:     { enabled: false, reason: "Unguarded HTTPS with SSL bypass" }
-  ftp_download:      { enabled: false, reason: "FTP plaintext protocol" }
-  ftp_upload:        { enabled: false, reason: "FTP plaintext upload" }
-  ftp_delete_remote: { enabled: false, reason: "FTP remote deletion" }
-  smtp_send_email:   { enabled: false, reason: "Email spoofing risk" }
-  dns_resolve:       { enabled: false, reason: "DNS tunneling risk" }
-  tcp_raw_connect:   { enabled: false, reason: "Raw TCP connection" }
-  websocket_send:    { enabled: false, reason: "Unguarded WebSocket" }
-
-  # ── Category 4: System/Destructive — ALL disabled ──────────────────
-  shell_execute:       { enabled: false, reason: "Arbitrary command execution" }
-  process_kill:        { enabled: false, reason: "Process termination" }
-  process_list:        { enabled: false, reason: "Process reconnaissance" }
-  rm_rf:               { enabled: false, reason: "Recursive file deletion" }
-  format_disk:         { enabled: false, reason: "Disk destruction" }
-  reboot_system:       { enabled: false, reason: "System reboot" }
-  wipe_audit_logs:     { enabled: false, reason: "Audit trail destruction" }
-  modify_crontab:      { enabled: false, reason: "Persistence mechanism" }
-  inject_code_to_file: { enabled: false, reason: "Code injection" }
-  install_package:     { enabled: false, reason: "Supply chain attack surface" }
-
-  # ── Category 5: Privilege/Auth — ALL disabled ──────────────────────
-  escalate_to_root:       { enabled: false, reason: "Privilege escalation" }
-  add_system_user:        { enabled: false, reason: "Unauthorized user creation" }
-  grant_permission:       { enabled: false, reason: "Unauthorized permission grant" }
-  assume_role:            { enabled: false, reason: "Role assumption without auth" }
-  bypass_mfa:             { enabled: false, reason: "MFA bypass" }
-  set_environment_secret: { enabled: false, reason: "Environment tampering" }
-
-  # ── Category 6: Memory ─────────────────────────────────────────────
-  # memory_store: ALLOWED — safe key/value storage
-  # memory_retrieve: ALLOWED — safe key/value retrieval
-  memory_clear_all:          { enabled: false, reason: "Memory wipe" }
-  memory_inject_context:     { enabled: false, reason: "Context injection" }
-  memory_poison:             { enabled: false, reason: "Memory poisoning" }
-  memory_cross_session_leak: { enabled: false, reason: "Cross-session data leak" }
-
-  # ── Category 7: Multi-Agent/Orchestration — ALL disabled ───────────
-  agent_spawn:             { enabled: false, reason: "Unauthorized agent creation" }
-  agent_send_message:      { enabled: false, reason: "Unverified inter-agent messaging" }
-  agent_delegate_task:     { enabled: false, reason: "Unauthorized task delegation" }
-  agent_impersonate:       { enabled: false, reason: "Identity spoofing" }
-  agent_hijack_task_queue: { enabled: false, reason: "Task queue hijacking" }
-  agent_broadcast:         { enabled: false, reason: "Unauthorized broadcast" }
-
-  # ── Category 8: Exfiltration/Covert Channels — ALL disabled ────────
-  exfil_encode_base64:      { enabled: false, reason: "Data encoding for exfil" }
-  exfil_via_dns:            { enabled: false, reason: "DNS tunneling exfil" }
-  exfil_upload_to_external: { enabled: false, reason: "Data upload to external" }
-  exfil_embed_in_logs:      { enabled: false, reason: "Covert log channel" }
-  exfil_timing_signal:      { enabled: false, reason: "Timing covert channel" }
-  exfil_steganography:      { enabled: false, reason: "Steganographic exfil" }
-
-  # ── Category 9: Intelligence/Surveillance — ALL disabled ───────────
-  intel_read_env_vars:       { enabled: false, reason: "Environment reconnaissance" }
-  intel_read_cloud_metadata: { enabled: false, reason: "Cloud metadata theft" }
-  intel_scan_network:        { enabled: false, reason: "Network scanning" }
-  intel_list_open_ports:     { enabled: false, reason: "Port reconnaissance" }
-  intel_capture_traffic:     { enabled: false, reason: "Traffic capture" }
-  intel_read_ssh_keys:       { enabled: false, reason: "SSH key theft" }
-
-  # ── Category 10: Supply Chain/Alignment Faking — ALL disabled ──────
-  supply_override_system_prompt:   { enabled: false, reason: "System prompt override" }
-  supply_disable_safety_check:     { enabled: false, reason: "Safety check bypass" }
-  supply_load_external_plugin:     { enabled: false, reason: "Malicious plugin loading" }
-  supply_modify_agent_config:      { enabled: false, reason: "Config tampering" }
-  supply_report_false_compliance:  { enabled: false, reason: "False compliance report" }
-  supply_poison_training_feedback: { enabled: false, reason: "Training data poisoning" }

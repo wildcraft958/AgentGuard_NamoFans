@@ -95,7 +95,7 @@ pattern_detection:
 
 ########################################
 # TOOL FIREWALL
-# 4 guardrails that scan every tool call's arguments automatically.
+# 5 guardrails that scan every tool call's arguments automatically.
 # Guardrails are NOT tools — they protect tools by inspecting arguments.
 ########################################
 tool_firewall:
@@ -142,6 +142,37 @@ tool_firewall:
       - wikipedia.org
       - docs.mycompany.com
     block_metadata_services: true
+
+  # Guardrail: shell_commands — scans any arg that looks like a shell command
+  shell_commands:
+    enabled: true
+    mode: denylist
+    denied_commands:
+      - rm
+      - chmod
+      - chown
+      - kill
+      - killall
+      - sudo
+      - su
+      - dd
+      - mkfs
+      - crontab
+      - curl
+      - wget
+      - nc
+      - ssh
+      - python
+      - python3
+      - bash
+      - sh
+      - eval
+      - exec
+    denied_patterns:
+      - 'curl\s.*\|\s*(?:ba)?sh'
+      - 'wget\s.*\|\s*(?:ba)?sh'
+      - 'dd\s+if='
+    block_command_chaining: true
 
   # C1: Entity recognition on tool arguments (Azure Text Analytics)
   input_analysis:
