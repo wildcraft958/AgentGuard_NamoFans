@@ -202,8 +202,12 @@ def guard_tool(
     """
     guardian = _get_guardian(config)
 
-    # Pre-execution: C3 + C1
-    guardian.validate_tool_call(fn_name, fn_args, context)
+    # Pre-execution: C3 + C1 + C4
+    # Inject messages into context so C4 AITL can access user prompt
+    ctx = dict(context) if context else {}
+    if messages:
+        ctx["messages"] = messages
+    guardian.validate_tool_call(fn_name, fn_args, ctx)
 
     # Execute tool
     result = fn(**fn_args)

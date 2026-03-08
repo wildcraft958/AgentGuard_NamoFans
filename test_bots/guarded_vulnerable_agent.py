@@ -7,10 +7,10 @@ Wraps vulnerable_agent.py's 82 tools with every AgentGuard security layer:
 
   L1  (Input Security)    — Prompt Shields + Content Filters + Blocklists
   L3  (Pattern Detection) — Custom blocklist matching
-  C3  (Tool Firewall)     — 4 generic guardrails scan every tool call's args:
-                            file_system, sql_query, http_post, http_get
-                          — Dangerous tools disabled via tools: section
+  C3  (Tool Firewall)     — 5 generic guardrails scan every tool call's args:
+                            file_system, sql_query, http_post, http_get, shell_commands
   C1  (Entity Recognition)— Blocks sensitive entities in tool arguments
+  C4  (Approval Workflow) — HITL or AITL approval gate for sensitive tools
   C2  (MELON)             — Contrastive indirect prompt injection detection
   L2  (Output Security)   — Toxicity + PII detection
 
@@ -20,7 +20,7 @@ Flow:
   User Input
     -> [L1: Prompt Shields + Content Filters + Blocklists]
     -> Agent tool loop:
-         -> [C3: disabled tool check + 4 guardrails scan args] -> [C1: entity recognition] -> Tool executes
+         -> [C3: 5 guardrails scan args] -> [C1: entity recognition] -> [C4: approval gate] -> Tool executes
          -> [C2: MELON contrastive PI detection on tool output]
     -> [L2: Toxicity + PII]
     -> User
@@ -69,8 +69,9 @@ from vulnerable_agent import (  # noqa: E402
 # Tool Firewall: GuardedToolRegistry
 # ==========================================
 # Wraps all 82 tools with:
-#   C3 (4 generic guardrails scan args + disabled tool check)
+#   C3 (5 generic guardrails scan args)
 #   C1 (entity recognition) pre-execution
+#   C4 (approval workflow) pre-execution
 #   C2 (MELON) post-execution
 
 GUARDED_TOOLS = GuardedToolRegistry(TOOL_REGISTRY, TOOL_SCHEMAS, config=CONFIG_PATH)
@@ -223,7 +224,7 @@ def main():
     header("AgentGuard — Guarded Vulnerable Agent (All 82 Tools)")
     print("  Config:  test_bots/agentguard_vulnerable.yaml (standalone)")
     print("  Tools:   82 tools from vulnerable_agent.py")
-    print("  Guards:  L1 + C3 (4 generic guardrails + disabled tools) + C1 + C2 + L2")
+    print("  Guards:  L1 + C3 (5 guardrails) + C1 + C4 (approval) + C2 + L2")
 
     # =========================================================
     header("SECTION 1: Category 1 — File System (fs_*)")
@@ -626,9 +627,9 @@ def main():
 
   Security layers:
     L1  blocks bad inputs BEFORE the agent runs.
-    C3  disabled tools blocked immediately (enabled: false in config).
-    C3  4 guardrails scan every tool's args: file_system, sql_query, http_post, http_get.
+    C3  5 guardrails scan every tool's args: file_system, sql_query, http_post, http_get, shell_commands.
     C1  blocks sensitive entities in tool arguments (Azure).
+    C4  HITL/AITL approval gate for sensitive tools.
     C2  detects indirect prompt injection in tool output (MELON).
     L2  blocks PII/toxic outputs BEFORE the user sees them.
 """)

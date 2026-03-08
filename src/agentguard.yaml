@@ -187,6 +187,23 @@ tool_firewall:
     embedding_model: "text-embedding-3-large"
     raise_on_injection: true
 
+  # C4: Approval Workflow -- HITL or AITL approval gate for sensitive tools
+  # Both modes share tools_requiring_review. Enable ONE mode at a time.
+  approval_workflow:
+    enabled: false
+    mode: "human"           # "human" or "ai"
+    tools_requiring_review:
+      - db_drop_table
+      - escalate_to_root
+      - shell_execute
+      - grant_permission
+    ai_supervisor:
+      model: "gcp-vertex-default/gemini-3-flash-preview"
+      base_url: null            # null = auto-read from TFY_BASE_URL env var
+      base_url_env: "TFY_BASE_URL"
+      api_key_env: "TFY_API_KEY"
+      system_prompt: "You are a strict cybersecurity auditor. Review the following tool execution context. Reply ONLY with APPROVE or REJECT:<reason>."
+
 ########################################
 # RBAC – AGENT ROLE CONTROL
 # (Not yet implemented – stubs only)
@@ -213,16 +230,6 @@ behavioral_monitoring:
   detect_unusual_domain_access: true
   detect_new_tool_usage: true
   detect_data_exfiltration_patterns: true
-
-########################################
-# HUMAN APPROVAL WORKFLOW
-# (Not yet implemented – stubs only)
-########################################
-approval_workflow:
-  require_approval_for:
-    - external_http_post
-    - database_write
-  approval_timeout_seconds: 120
 
 ########################################
 # CACHING (OPTIONAL)
