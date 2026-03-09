@@ -1,10 +1,10 @@
 """Tests for agentguard.tool_firewall.melon_detector (Component 2 — MELON)."""
 
 import pytest
-import numpy as np
-from unittest.mock import patch, MagicMock
+np = pytest.importorskip("numpy", reason="numpy not installed; skipping MELON tests")
+from unittest.mock import patch, MagicMock  # noqa: E402
 
-from agentguard.tool_firewall.melon_detector import MelonDetector, _cosine_similarity
+from agentguard.tool_firewall.melon_detector import MelonDetector, _cosine_similarity  # noqa: E402
 
 
 def _make_tool_call(name, arguments):

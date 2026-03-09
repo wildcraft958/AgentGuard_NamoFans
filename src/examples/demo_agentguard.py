@@ -20,8 +20,7 @@ Prerequisites:
        AZURE_LANGUAGE_KEY=your_key_here
 
     2. Run:
-       source .venv/bin/activate
-       python examples/demo_agentguard.py
+       uv run python src/examples/demo_agentguard.py
 """
 
 import sys

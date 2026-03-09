@@ -26,7 +26,7 @@ Flow:
     -> User
 
 Usage:
-    cd /home/exempl4r/coding/projects/AgentGuard_NamoFans
+    cd AgentGuard_NamoFans
     uv run python test_bots/guarded_vulnerable_agent.py
 """
 

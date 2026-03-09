@@ -168,3 +168,50 @@ global:
         config = load_config(path)
         assert config.agent_name == "default"
         os.unlink(path)
+
+
+class TestAuditConfig:
+    def test_audit_enabled_default_true(self):
+        path = _write_config("""
+global:
+  mode: enforce
+  log_level: standard
+""")
+        config = load_config(path)
+        assert config.audit_enabled is True
+        os.unlink(path)
+
+    def test_audit_enabled_explicit_false(self):
+        path = _write_config("""
+global:
+  mode: enforce
+  log_level: standard
+audit:
+  enabled: false
+""")
+        config = load_config(path)
+        assert config.audit_enabled is False
+        os.unlink(path)
+
+    def test_audit_db_path_default(self):
+        path = _write_config("""
+global:
+  mode: enforce
+  log_level: standard
+""")
+        config = load_config(path)
+        assert config.audit_db_path == "~/.agentguard/audit.db"
+        os.unlink(path)
+
+    def test_audit_db_path_custom(self):
+        path = _write_config("""
+global:
+  mode: enforce
+  log_level: standard
+audit:
+  enabled: true
+  db_path: /tmp/test_audit.db
+""")
+        config = load_config(path)
+        assert config.audit_db_path == "/tmp/test_audit.db"
+        os.unlink(path)
