@@ -33,6 +33,11 @@ dev = [
     { name = "ruff" },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "ruff" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "autogen-agentchat", specifier = ">=0.4.0" },
@@ -52,6 +57,9 @@ requires-dist = [
     { name = "sqlparse", specifier = ">=0.5.0" },
 ]
 provides-extras = ["dev"]
+
+[package.metadata.requires-dev]
+dev = [{ name = "ruff", specifier = ">=0.15.5" }]
 
 [[package]]
 name = "aiohappyeyeballs"
