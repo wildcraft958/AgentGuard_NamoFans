@@ -2,8 +2,7 @@
 Tests for C4 Approval Workflow (HITL / AITL).
 """
 
-import pytest
-from unittest.mock import MagicMock, patch, PropertyMock
+from unittest.mock import MagicMock, patch
 
 from agentguard.tool_firewall.approval_workflow import ApprovalWorkflow
 
@@ -164,7 +163,7 @@ class TestAITL:
         workflow._ai_client = mock_client
 
         user_msg = "Please list all database tables"
-        result = workflow.check("shell_execute", {"command": "ls"}, context={
+        workflow.check("shell_execute", {"command": "ls"}, context={
             "messages": [
                 {"role": "system", "content": "You are a helpful assistant."},
                 {"role": "user", "content": user_msg},

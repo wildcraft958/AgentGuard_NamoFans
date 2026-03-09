@@ -1,11 +1,7 @@
 """Tests for agentguard.promptfoo_bridge Promptfoo provider."""
 
-import asyncio
-import os
-import sys
 import textwrap
 import pytest
-from unittest.mock import MagicMock, patch
 
 from agentguard.decorators import _AGENT_REGISTRY, _guardian_cache
 from agentguard.exceptions import InputBlockedError

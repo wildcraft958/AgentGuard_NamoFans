@@ -258,7 +258,7 @@ def scan_agent(
     _check_openai_key()
 
     # Lazy imports – keep deepteam out of the import path unless scan_agent is called
-    from deepteam import RedTeamer
+    from deepteam.red_teamer import RedTeamer
     from deepteam.frameworks import OWASPTop10, OWASP_ASI_2026
 
     callback = _build_callback(agent)

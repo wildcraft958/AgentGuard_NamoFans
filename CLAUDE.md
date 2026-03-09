@@ -84,6 +84,47 @@ Append new entries; do not overwrite previous ones. Use a heading with the date 
 **Example:** ...
 ```
 
+## Promptfoo & DeepTeam — External Requirements
+
+### Promptfoo (CLI red-team testing)
+
+`agentguard test` invokes `npx promptfoo@latest` via subprocess. **Node.js and npm must be installed** on the machine.
+
+```bash
+# Install Node.js (Ubuntu/Debian)
+sudo apt install nodejs npm
+
+# Verify
+node --version   # >= 18 recommended
+npx --version
+```
+
+`npx --yes` auto-installs `promptfoo@latest` on first run (one-time, ~30s). Subsequent runs use the cached version.
+
+**Usage:**
+```bash
+agentguard test --config src/agentguard.yaml --module test_bots/financial_agent.py
+```
+
+### DeepTeam (OWASP scanner)
+
+`scan_agent()` calls the **OpenAI API directly** via DeepTeam — it does NOT use TrueFoundry.
+
+- Requires `OPENAI_API_KEY=sk-...` in `.env`
+- This is separate from `OPENAI_BASE_URL` (TrueFoundry) used for agent LLM calls
+- Cost scales with `attacks_per_vulnerability_type` (default: 1 = ~20 API calls total for "both")
+- Uses `deepteam.red_teamer.RedTeamer` (not `deepteam.RedTeamer` — wrong import path)
+
+```python
+from agentguard.owasp_scanner import scan_agent
+
+def my_agent(prompt: str) -> str:
+    return client.chat.completions.create(...).choices[0].message.content
+
+results = scan_agent(my_agent, target="both", target_purpose="A DevOps assistant.")
+print(f"Pass rate: {results.overall_pass_rate:.0%}")
+```
+
 ## LLM Usage
 
 Use the **OpenAI SDK** for all LLM calls routed through TrueFoundry. Do not use LiteLLM — it strips Gemini `thought_signature` fields from tool call responses, breaking multi-turn ReAct loops with thinking models.
