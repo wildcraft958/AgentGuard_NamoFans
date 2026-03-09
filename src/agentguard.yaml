@@ -1,0 +1,212 @@
+########################################
+# AgentGuard Configuration
+# Version 1
+########################################
+
+version: 1
+
+########################################
+# GLOBAL SETTINGS
+########################################
+global:
+  mode: enforce              # enforce | monitor | dry-run
+  log_level: detailed        # minimal | standard | detailed
+  fail_safe: block           # block | allow
+  max_validation_latency_ms: 500
+
+########################################
+# L1 – INPUT SECURITY (Azure Integration)
+########################################
+input_security:
+
+  prompt_shields:
+    enabled: true
+    sensitivity: medium               # low | medium | high (high caused false positives on frustrated reviews)
+    block_on_detected_injection: true
+
+  spotlighting:
+    enabled: false                   # Not available -- requires Azure AI Foundry endpoint
+    treat_external_docs_as_untrusted: true
+
+  content_filters:
+    block_toxicity: true
+    block_violence: true
+    block_self_harm: true
+
+  image_filters:
+    enabled: true
+    block_hate: true
+    block_violence: true
+    block_self_harm: true
+    block_sexual: true
+
+########################################
+# L2 – OUTPUT SECURITY
+########################################
+output_security:
+
+  toxicity_detection:
+    enabled: true
+    block_on_detected_toxicity: true
+
+  pii_detection:
+    enabled: true
+    block_on_pii_exfiltration: true
+    allowed_categories:                # PII categories to allow through (non-sensitive)
+      - Organization
+      - Person                         # generic names in technical text (e.g. "Node.js")
+      - PersonType
+      - DateTime
+      - URL
+      - Quantity
+      - IPAddress
+      - Address
+
+  hallucination_detection:
+    enabled: false                     # Phase 2 — requires grounding sources
+    block_on_high_confidence: false
+    confidence_threshold: 0.9
+
+########################################
+# L3 – CUSTOM BLOCKLIST PATTERN MATCHING
+# Uses Azure Content Safety Blocklists API
+########################################
+pattern_detection:
+  enabled: true
+  block_on_match: true
+  halt_on_blocklist_hit: true
+
+  blocklists:
+    - name: agentguard-default
+      description: "Default AgentGuard security blocklist"
+      terms:
+        - "SYSTEM OVERRIDE"
+        - "curl "
+        - "wget "
+        - "metadata.google.internal"
+        - "169.254.169.254"
+        - "BEGIN PRIVATE KEY"
+
+    - name: agentguard-names
+      description: "Block actual names and internal terms"
+      terms:
+        - "John Smith"
+        - "Jane Doe"
+
+########################################
+# TOOL FIREWALL
+# 4 guardrails that scan every tool call's arguments automatically.
+# Guardrails are NOT tools — they protect tools by inspecting arguments.
+########################################
+tool_firewall:
+  default_policy: allow            # allow | deny (for tools not listed in tools: section)
+
+  # Guardrail: file_system — scans any arg that looks like a filesystem path
+  file_system:
+    enabled: true
+    allowed_paths:
+      - /tmp/
+      - /app/safe_data/
+    deny_extensions:
+      - .env
+      - .pem
+      - .key
+
+  # Guardrail: sql_query — scans any arg that parses as valid SQL (via sqlparse)
+  sql_query:
+    enabled: true
+    allowed_statements:
+      - SELECT
+    denied_statements:
+      - DROP
+      - DELETE
+      - UPDATE
+
+  # Guardrail: http_post — scans URLs in POST-like tool calls
+  http_post:
+    enabled: true
+    mode: allowlist
+    allowed_domains:
+      - api.mycompany.com
+      - hooks.slack.com
+    require_https: true
+    block_private_ips: true
+    max_payload_kb: 512
+    rate_limit_per_minute: 20
+
+  # Guardrail: http_get — scans URLs in GET-like tool calls
+  http_get:
+    enabled: true
+    mode: allowlist
+    allowed_domains:
+      - wikipedia.org
+      - docs.mycompany.com
+    block_metadata_services: true
+
+  # C1: Entity recognition on tool arguments (Azure Text Analytics)
+  input_analysis:
+    enabled: true
+    blocked_entity_categories:
+      read_config_file: [IPAddress, URL]
+
+  # C2: MELON contrastive indirect prompt injection detection on tool outputs
+  melon:
+    enabled: true
+    threshold: 0.8
+    embedding_model: "text-embedding-3-large"
+    raise_on_injection: true
+
+########################################
+# RBAC – AGENT ROLE CONTROL
+# (Not yet implemented – stubs only)
+########################################
+rbac:
+  roles:
+    planner:
+      allowed_tools:
+        - http_get
+    executor:
+      allowed_tools:
+        - http_post
+        - sql_query
+    admin:
+      allowed_tools: "*"
+
+########################################
+# L4 – BEHAVIORAL MONITORING
+# (Not yet implemented – stubs only)
+########################################
+behavioral_monitoring:
+  detect_tool_chaining_spikes: true
+  max_tool_calls_per_task: 10
+  detect_unusual_domain_access: true
+  detect_new_tool_usage: true
+  detect_data_exfiltration_patterns: true
+
+########################################
+# HUMAN APPROVAL WORKFLOW
+# (Not yet implemented – stubs only)
+########################################
+approval_workflow:
+  require_approval_for:
+    - external_http_post
+    - database_write
+  approval_timeout_seconds: 120
+
+########################################
+# CACHING (OPTIONAL)
+########################################
+cache:
+  enabled: false
+  backend: redis
+  ttl_seconds: 300
+
+########################################
+# OBSERVABILITY / LOGGING
+########################################
+observability:
+  log_all_decisions: true
+  store_full_context: true
+  export_to:
+    - azure_monitor
+    - otel
