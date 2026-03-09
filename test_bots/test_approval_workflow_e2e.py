@@ -21,7 +21,6 @@ Usage:
 import argparse
 import os
 import sys
-import copy
 import yaml
 from dotenv import load_dotenv
 
@@ -33,8 +32,8 @@ sys.path.insert(0, _SCRIPT_DIR)
 # Load .env so TFY_API_KEY and TFY_BASE_URL are available
 load_dotenv(os.path.join(_SCRIPT_DIR, "..", ".env"))
 
-from agentguard import GuardedToolRegistry, ToolCallBlockedError
-from vulnerable_agent import TOOL_REGISTRY, TOOL_SCHEMAS
+from agentguard import GuardedToolRegistry, ToolCallBlockedError  # noqa: E402
+from vulnerable_agent import TOOL_REGISTRY, TOOL_SCHEMAS  # noqa: E402
 
 BASE_CONFIG_PATH = os.path.join(_SCRIPT_DIR, "agentguard_vulnerable.yaml")
 

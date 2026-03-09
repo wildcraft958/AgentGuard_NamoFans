@@ -8,7 +8,11 @@ Components:
 
 from agentguard.tool_firewall.tool_specific_guards import ToolSpecificGuards
 from agentguard.tool_firewall.tool_input_analyzer import ToolInputAnalyzer
-from agentguard.tool_firewall.melon_detector import MelonDetector
+
+try:
+    from agentguard.tool_firewall.melon_detector import MelonDetector
+except ImportError:
+    MelonDetector = None  # type: ignore[assignment,misc]
 
 __all__ = [
     "ToolSpecificGuards",

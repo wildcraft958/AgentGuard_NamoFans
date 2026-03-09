@@ -1,9 +1,7 @@
 """Tests for agentguard.cli — CLI runner and config generation."""
 
 import os
-import sys
 import textwrap
-import pytest
 import yaml
 from unittest.mock import patch, MagicMock
 
@@ -59,7 +57,7 @@ class TestGeneratePromptfooConfig:
         output_path = str(tmp_path / "promptfooconfig.yaml")
 
         from agentguard.cli import generate_promptfoo_config
-        result = generate_promptfoo_config(config_path, None, None, output_path)
+        generate_promptfoo_config(config_path, None, None, output_path)
 
         assert os.path.exists(output_path)
         with open(output_path) as f:

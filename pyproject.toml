@@ -18,6 +18,7 @@ dependencies = [
     "deepteam>=1.0.6",
     "litellm>=1.40.0",
     "sqlparse>=0.5.0",
+    "numpy>=1.26.0",
 ]
 
 [project.optional-dependencies]
