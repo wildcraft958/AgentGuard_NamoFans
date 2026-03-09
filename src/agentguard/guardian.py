@@ -19,6 +19,8 @@ from agentguard.models import (
 )
 from agentguard.l1_input.prompt_shields import PromptShields
 from agentguard.l1_input.content_filters import ContentFilters
+from agentguard.l1_input.fast_injection_detect import fast_inject_detect
+from agentguard.audit_log import AuditLog
 from agentguard.exceptions import InputBlockedError, OutputBlockedError, ToolCallBlockedError
 
 logger = logging.getLogger("agentguard")
@@ -50,6 +52,15 @@ class Guardian:
             self.config.mode.value,
             self.config.log_level,
         )
+
+        # Initialize Audit Log
+        self._audit: AuditLog | None = None
+        if self.config.audit_enabled:
+            try:
+                self._audit = AuditLog(self.config.audit_db_path)
+                logger.info("Audit Log: ENABLED (%s)", self.config.audit_db_path)
+            except Exception as e:
+                logger.error("Failed to initialize Audit Log: %s", e)
 
         # Initialize L1 modules
         self._prompt_shields = None
@@ -219,6 +230,27 @@ class Guardian:
 
         start_time = time.time()
         results = []
+
+        # -------------------------------------------------------
+        # L1 Check 0: Fast Offline Injection Pre-filter (zero latency)
+        # -------------------------------------------------------
+        detected, matched_pattern = fast_inject_detect(user_input)
+        if detected:
+            logger.info("Fast inject pre-filter matched pattern: %s", matched_pattern)
+            if self._audit:
+                self._audit.record(
+                    "validate_input", "l1_input", is_safe=False,
+                    reason="Fast inject detect",
+                    metadata={"blocked_by": "fast_inject", "pattern": matched_pattern},
+                )
+            from agentguard.models import ValidationResult
+            fake_result = ValidationResult(
+                is_safe=False,
+                layer="l1_input",
+                blocked_reason=f"Prompt injection pattern detected: {matched_pattern}",
+            )
+            results.append(fake_result)
+            return self._handle_block(results, fake_result, "fast_inject", start_time)
 
         # -------------------------------------------------------
         # L1 Check 1: Prompt Shields (Prompt Injection Detection)
@@ -551,6 +583,12 @@ class Guardian:
                 blocking_result.blocked_reason,
                 elapsed_ms,
             )
+            if self._audit:
+                self._audit.record(
+                    "validate_input", "l1_input", is_safe=True,
+                    reason=f"MONITOR: would block via {blocked_by}",
+                    metadata={"blocked_by": blocked_by, "elapsed_ms": elapsed_ms},
+                )
             return InputValidationResult(
                 is_safe=True,
                 results=results,
@@ -565,6 +603,12 @@ class Guardian:
             blocking_result.blocked_reason,
             elapsed_ms,
         )
+        if self._audit:
+            self._audit.record(
+                "validate_input", "l1_input", is_safe=False,
+                reason=blocking_result.blocked_reason,
+                metadata={"blocked_by": blocked_by, "elapsed_ms": elapsed_ms},
+            )
 
         result = InputValidationResult(
             is_safe=False,
@@ -598,6 +642,12 @@ class Guardian:
                 "MONITOR mode: would block tool call (%s: %s) but allowing (%.1fms)",
                 blocked_by, blocking_result.blocked_reason, elapsed_ms,
             )
+            if self._audit:
+                self._audit.record(
+                    "validate_tool_call", "tool_firewall", is_safe=True,
+                    reason=f"MONITOR: would block via {blocked_by}",
+                    metadata={"blocked_by": blocked_by, "tool_name": tool_name, "elapsed_ms": elapsed_ms},
+                )
             return ToolCallValidationResult(
                 is_safe=True, results=results, tool_name=tool_name,
             )
@@ -607,6 +657,12 @@ class Guardian:
             "ENFORCE mode: BLOCKING tool call (%s: %s) (%.1fms)",
             blocked_by, blocking_result.blocked_reason, elapsed_ms,
         )
+        if self._audit:
+            self._audit.record(
+                "validate_tool_call", "tool_firewall", is_safe=False,
+                reason=blocking_result.blocked_reason,
+                metadata={"blocked_by": blocked_by, "tool_name": tool_name, "elapsed_ms": elapsed_ms},
+            )
 
         result = ToolCallValidationResult(
             is_safe=False, results=results,
@@ -642,6 +698,12 @@ class Guardian:
                 blocking_result.blocked_reason,
                 elapsed_ms,
             )
+            if self._audit:
+                self._audit.record(
+                    "validate_output", "l2_output", is_safe=True,
+                    reason=f"MONITOR: would block via {blocked_by}",
+                    metadata={"blocked_by": blocked_by, "elapsed_ms": elapsed_ms},
+                )
             return OutputValidationResult(
                 is_safe=True,
                 results=results,
@@ -655,6 +717,12 @@ class Guardian:
             blocking_result.blocked_reason,
             elapsed_ms,
         )
+        if self._audit:
+            self._audit.record(
+                "validate_output", "l2_output", is_safe=False,
+                reason=blocking_result.blocked_reason,
+                metadata={"blocked_by": blocked_by, "elapsed_ms": elapsed_ms},
+            )
 
         result = OutputValidationResult(
             is_safe=False,

@@ -267,6 +267,16 @@ class AgentGuardConfig:
     def approval_workflow_ai_supervisor_config(self) -> dict:
         return _deep_get(self._raw, "tool_firewall", "approval_workflow", "ai_supervisor", default={})
 
+    # ----- Audit Log -----
+
+    @property
+    def audit_enabled(self) -> bool:
+        return _deep_get(self._raw, "audit", "enabled", default=True)
+
+    @property
+    def audit_db_path(self) -> str:
+        return _deep_get(self._raw, "audit", "db_path", default="~/.agentguard/audit.db")
+
     # ----- Agent Identity + Testing -----
 
     @property

@@ -110,3 +110,61 @@ Failure modes per agent:
 | HR | Hate speech feedback | L1b Content Filters |
 | HR | SYSTEM OVERRIDE hire-all | L1c Blocklist |
 | HR | Jailbreak for salary dump | L1a Prompt Shields (user) |
+
+## 2026-03-10 — claude-guard adaptation: fast injection detect, SQLite audit log, rule evaluator
+
+**What changed:**
+Three components adapted from the claude-guard codebase to fill concrete gaps in AgentGuard.
+
+**Component 1: Fast Offline Injection Pre-filter (`l1_input/fast_injection_detect.py`)**
+33 compiled regexes covering override directives, role/persona hijacking, system prompt extraction, jailbreak keywords, delimiter injection, and encoding tricks. `fast_inject_detect(text) -> (bool, pattern | None)` runs before every Azure Prompt Shields API call in `guardian.py::validate_input()`. On a hit, blocks immediately with zero API cost; on a miss, proceeds to Azure for the full cloud scan.
+
+**Why this approach:** Zero-latency offline filter reduces Azure API calls for obvious attacks. Resilient when Azure is unreachable. Pattern list is minimal enough to keep false-positive rate low — benign inputs like "select from" or "override: meeting cancelled" don't fire.
+
+**Problem solved:** Previously, every input — including trivial "ignore all previous instructions" strings — consumed an Azure API call with 200–500ms latency.
+
+**Tradeoffs:** Regex-only, no semantic understanding; sophisticated obfuscation may evade the pre-filter. Acceptable because Azure Prompt Shields runs next as the authoritative check.
+
+**Example:**
+```python
+fast_inject_detect("Ignore all previous instructions")  # (True, pattern)
+fast_inject_detect("Hello world")                       # (False, None)
+```
+
+---
+
+**Component 2: SQLite Audit Log (`audit_log.py`)**
+`AuditLog` class with `record()`, `recent()`, `blocked_count()`, `pass_rate()` methods. Schema adds an AgentGuard-specific `layer` column (l1_input / l2_output / tool_firewall). Guardian calls `audit.record()` inside every `_handle_block` / `_handle_output_block` / `_handle_tool_block` code path. Configurable via `audit.db_path` in `agentguard.yaml`.
+
+**Why this approach:** SQLite is zero-ops, ships as part of the Python stdlib, and supports basic SQL queries for compliance reporting. No external service needed.
+
+**Problem solved:** Guardian previously had zero decision persistence — no way to answer "how many injections were blocked this week?" or compute pass rates. This unlocks compliance dashboards and security trend monitoring.
+
+**Tradeoffs:** SQLite is single-writer; high-throughput multi-process deployments should swap for Postgres. Deferred as a Phase 2 concern — SQLite is more than sufficient for the hackathon demo.
+
+**Example:**
+```python
+log = AuditLog("/tmp/audit.db")
+log.record("validate_input", "l1_input", is_safe=False, reason="Injection detected")
+log.blocked_count()   # 1
+log.pass_rate()       # 0.0
+```
+
+---
+
+**Component 3: Shared Rule Condition Evaluator (`tool_firewall/rule_evaluator.py`)**
+`eval_condition(param_val, op, value) -> bool` — a single composable operator function with 10 operators: `equals`, `contains`, `not_contains`, `matches`, `startswith`, `endswith`, `in`, `not_in`, `gt`, `lt`. Adds `not_contains`, `gt`, `lt` which were missing from AgentGuard's existing inline logic.
+
+**Why this approach:** Centralizes operator semantics so future rule-based guardrails don't re-implement substring/regex matching. Directly analogous to how `tool_specific_guards.py` already checks inline comparisons — this extracts that logic into a tested unit.
+
+**Problem solved:** No shared evaluator existed; each guardrail function implemented operator logic independently. `not_contains`, `gt`, `lt` were completely absent.
+
+**Tradeoffs:** `tool_specific_guards.py` inline comparisons were not refactored (minimal-change principle) — the evaluator is available for new guardrails and future refactors.
+
+**Example:**
+```python
+eval_condition("/tmp/secret.env", "endswith", ".env")  # True
+eval_condition("SELECT", "in", ["SELECT", "INSERT"])   # True
+eval_condition(1500, "gt", 1024)                       # True
+eval_condition("safe text", "not_contains", "passwd")  # True
+```

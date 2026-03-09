@@ -10,5 +10,6 @@ Contains all Layer 1 checks:
 from agentguard.l1_input.prompt_shields import PromptShields
 from agentguard.l1_input.content_filters import ContentFilters
 from agentguard.l1_input.blocklist_manager import BlocklistManager
+from agentguard.l1_input.fast_injection_detect import fast_inject_detect
 
-__all__ = ["PromptShields", "ContentFilters", "BlocklistManager"]
+__all__ = ["PromptShields", "ContentFilters", "BlocklistManager", "fast_inject_detect"]

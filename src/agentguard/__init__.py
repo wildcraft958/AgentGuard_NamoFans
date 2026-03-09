@@ -18,6 +18,7 @@ from agentguard.exceptions import (
 from agentguard.decorators import GuardedToolRegistry, guard, guard_agent, guard_input, guard_tool
 from agentguard.decorators import get_registered_agent
 from agentguard.owasp_scanner import OWASPScanResult, scan_agent
+from agentguard.audit_log import AuditLog
 
 __all__ = [
     "Guardian",
@@ -34,5 +35,6 @@ __all__ = [
     "GuardedToolRegistry",
     "scan_agent",
     "OWASPScanResult",
+    "AuditLog",
 ]
 __version__ = "0.3.0"
