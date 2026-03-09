@@ -4,7 +4,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from agentguard.l2_output.pii_detector import PIIDetector
-from agentguard.models import ValidationResult
 
 
 def _make_mock_entity(text, category, subcategory=None, confidence=0.99):

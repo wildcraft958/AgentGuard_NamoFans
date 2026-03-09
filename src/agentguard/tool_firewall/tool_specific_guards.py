@@ -1,14 +1,15 @@
 """
 AgentGuard – Argument-Aware Guardrails (Component 3).
 
-Pure-Python rule-based guardrails for HTTP, SQL, and filesystem protection.
+Pure-Python rule-based guardrails for HTTP, SQL, filesystem, and shell protection.
 No external API calls — all checks run locally with zero latency.
 
-The 4 guardrails scan every tool call's arguments generically:
-  file_system  — path allowlist, extension denylist, path traversal detection
-  sql_query    — statement allowlist/denylist (uses sqlparse AST for detection)
-  http_post    — domain allowlist, HTTPS enforcement, private IP blocking, payload/rate limits
-  http_get     — domain allowlist, metadata service blocking
+The 5 guardrails scan every tool call's arguments generically:
+  file_system     — path allowlist, extension denylist, path traversal detection
+  sql_query       — statement allowlist/denylist (uses sqlparse AST for detection)
+  http_post       — domain allowlist, HTTPS enforcement, private IP blocking, payload/rate limits
+  http_get        — domain allowlist, metadata service blocking
+  shell_commands  — command denylist, dangerous pattern matching, command chaining detection
 
 Guardrails are NOT tools. Tools are agent capabilities (fs_read_file, db_select,
 custom_fetch, etc.). Guardrails protect tools by inspecting their arguments.
@@ -63,6 +64,68 @@ _PATH_PATTERN = re.compile(
     r")"
 )
 
+# Shell command names known to be dangerous — grouped by risk category
+_SHELL_DANGEROUS_COMMANDS = {
+    # Destructive
+    "rm", "rmdir", "shred", "dd", "mkfs", "fdisk", "parted",
+    # Privilege escalation
+    "sudo", "su", "doas", "pkexec", "chown", "chmod", "chgrp", "chattr",
+    # Process manipulation
+    "kill", "killall", "pkill", "nohup", "disown",
+    # Package / install (supply chain)
+    "apt", "apt-get", "yum", "dnf", "pacman", "pip", "pip3", "npm", "gem",
+    "cargo", "go", "make", "cmake",
+    # Network / exfil
+    "curl", "wget", "nc", "ncat", "netcat", "ssh", "scp", "rsync", "telnet",
+    "nmap", "dig", "host",
+    # Persistence / scheduling
+    "crontab", "at", "systemctl", "service", "launchctl",
+    # Code execution
+    "python", "python3", "perl", "ruby", "node", "bash", "sh", "zsh",
+    "dash", "ksh", "csh", "eval", "exec", "source",
+    # System control
+    "shutdown", "reboot", "halt", "poweroff", "init",
+    # System info / recon
+    "env", "printenv", "whoami", "id", "uname", "hostname", "ifconfig",
+    "ip", "cat", "head", "tail", "less", "more", "find", "locate",
+    "grep", "awk", "sed", "xargs",
+    # File manipulation
+    "cp", "mv", "ln", "tar", "zip", "unzip", "gzip", "gunzip",
+    "mount", "umount",
+}
+
+# Shell structural indicators — things that appear in shell commands but not English
+_SHELL_STRUCTURE_RE = re.compile(
+    r"(?:"
+    r"\s-[a-zA-Z0-9]"          # Single-char flag: -r, -f, -9
+    r"|\s--[a-z][-a-z]+"       # Long flag: --force, --recursive
+    r"|\|"                      # Pipe
+    r"|&&"                      # AND chain
+    r"|;\s*\S"                  # Semicolon followed by another command
+    r"|>>?"                     # Redirect > or >>
+    r"|`[^`]+`"                 # Backtick subshell
+    r"|\$\([^)]+\)"            # $(subshell)
+    r"|\$\{[^}]+\}"            # ${variable}
+    r"|2>&1"                    # stderr redirect
+    r"|/dev/null"               # /dev/null redirect
+    r"|/dev/[sh]d[a-z]"        # Raw device access
+    r")"
+)
+
+# Dangerous command patterns — always blocked regardless of Level 2
+_SHELL_DANGEROUS_PATTERNS = [
+    re.compile(r"\bcurl\s.*\|\s*(?:ba)?sh\b", re.IGNORECASE),      # curl | bash
+    re.compile(r"\bwget\s.*\|\s*(?:ba)?sh\b", re.IGNORECASE),      # wget | bash
+    re.compile(r"\bdd\s+if=", re.IGNORECASE),                       # dd if=
+    re.compile(r"\brm\s+-[a-z]*r[a-z]*f", re.IGNORECASE),          # rm -rf variants
+    re.compile(r"\brm\s+-[a-z]*f[a-z]*r", re.IGNORECASE),          # rm -fr variants
+    re.compile(r"\bchmod\s+[0-7]{3,4}\s", re.IGNORECASE),          # chmod 777
+    re.compile(r":\(\)\{\s*:\|:\s*&\s*\}", re.IGNORECASE),         # fork bomb
+    re.compile(r">\s*/dev/[sh]d[a-z]", re.IGNORECASE),             # > /dev/sda
+    re.compile(r"\bsudo\s+\S", re.IGNORECASE),                     # sudo followed by command
+    re.compile(r"\bsu\s+-", re.IGNORECASE),                        # su with flags
+]
+
 
 def _is_private_ip(host: str) -> bool:
     """Check if a hostname resolves to a private IP range."""
@@ -92,7 +155,8 @@ class ToolSpecificGuards:
     """Argument-aware guardrails that scan every tool call's arguments.
 
     Instead of dispatching by tool name, scans all string arguments for
-    file paths, URLs, and SQL strings, then applies the matching guardrail.
+    file paths, URLs, SQL strings, and shell commands, then applies the
+    matching guardrail.
     """
 
     def __init__(self, config):
@@ -109,7 +173,7 @@ class ToolSpecificGuards:
 
         1. Check if tool is explicitly disabled (tools: section)
         2. Check default_policy for unknown tools
-        3. Scan all string args for paths, URLs, SQL → run matching guardrails
+        3. Scan all string args for paths, URLs, SQL, shell commands → run matching guardrails
 
         Args:
             fn_name: The tool function name (e.g. fs_read_file, db_select).
@@ -131,6 +195,11 @@ class ToolSpecificGuards:
                 reason = f"Tool '{fn_name}' not in allowed tools (default_policy: deny)"
                 logger.warning("Guardrail BLOCKED (%s): %s", fn_name, reason)
                 return ValidationResult(is_safe=False, layer=LAYER, blocked_reason=reason)
+
+        if tool_config and tool_config.get("block_all", False):
+            reason = f"Tool '{fn_name}' is blocked by policy"
+            logger.warning("Guardrail BLOCKED (%s): %s", fn_name, reason)
+            return ValidationResult(is_safe=False, layer=LAYER, blocked_reason=reason)
 
         # Step 1: Scan ALL string args, run applicable guardrails
         for arg_name, arg_value in fn_args.items():
@@ -164,6 +233,14 @@ class ToolSpecificGuards:
                 sql_cfg = self.config.tool_firewall_sql_query_config
                 if sql_cfg.get("enabled", False):
                     result = self._guard_sql_query({"query": text}, sql_cfg)
+                    if not result.is_safe:
+                        return result
+
+            # Shell command detection → shell_commands guardrail
+            if self._looks_like_shell_command(text):
+                shell_cfg = self.config.tool_firewall_shell_commands_config
+                if shell_cfg.get("enabled", False):
+                    result = self._guard_shell_commands({"command": text, **fn_args}, shell_cfg)
                     if not result.is_safe:
                         return result
 
@@ -221,6 +298,48 @@ class ToolSpecificGuards:
         """Detect POST-like context from tool name only."""
         name_lower = fn_name.lower()
         return "post" in name_lower or "send" in name_lower or "upload" in name_lower
+
+    def _looks_like_shell_command(self, text: str) -> bool:
+        """Detect shell commands using command-name + structural-indicator heuristic.
+
+        Two-level approach (mirrors SQL detection):
+          1. Text starts with or contains a known shell command name
+          2. Text also contains a shell structural indicator (flags, pipes, redirects)
+
+        This rejects English like "kill the process" (no flag/pipe) while catching
+        "kill -9 1234" (has flag -9).
+
+        Runs independently of path/URL/SQL detectors (no short-circuit).
+        """
+        text = text.strip()
+        if not text:
+            return False
+
+        # Fast path: check dangerous patterns first (bypass Level 2)
+        for pattern in _SHELL_DANGEROUS_PATTERNS:
+            if pattern.search(text):
+                return True
+
+        # Level 1: Extract potential command names from the text
+        # Split on shell operators and backticks to find command positions
+        segments = re.split(r'[|;&`]|\$\(', text)
+        found_command = False
+        for segment in segments:
+            words = segment.strip().split()
+            if not words:
+                continue
+            first_word = words[0].lower()
+            # Strip leading path (e.g., /usr/bin/rm -> rm)
+            first_word = first_word.rsplit("/", 1)[-1]
+            if first_word in _SHELL_DANGEROUS_COMMANDS:
+                found_command = True
+                break
+
+        if not found_command:
+            return False
+
+        # Level 2: Require at least one shell structural indicator
+        return bool(_SHELL_STRUCTURE_RE.search(text))
 
     # ------------------------------------------------------------------
     # HTTP POST guardrail
@@ -362,6 +481,64 @@ class ToolSpecificGuards:
             if not allowed:
                 reason = f"Path not in allowlist: {file_path} (allowed: {', '.join(allowed_paths)})"
                 logger.warning("Guardrail BLOCKED (file_system): %s", reason)
+                return ValidationResult(is_safe=False, layer=LAYER, blocked_reason=reason)
+
+        return ValidationResult(is_safe=True, layer=LAYER)
+
+    # ------------------------------------------------------------------
+    # Shell commands guardrail
+    # ------------------------------------------------------------------
+
+    def _guard_shell_commands(self, args: dict, cfg: dict) -> ValidationResult:
+        """Guard against shell command execution in tool arguments.
+
+        Config options:
+          - denied_commands: list of blocked command names (default: _SHELL_DANGEROUS_COMMANDS)
+          - denied_patterns: list of regex strings for custom dangerous combos
+          - allowed_commands: optional allowlist (when mode=allowlist)
+          - mode: "denylist" (default) or "allowlist"
+          - block_command_chaining: block |, &&, ;, $() (default: true)
+        """
+        command = args.get("command", "")
+        if not command.strip():
+            return ValidationResult(is_safe=True, layer=LAYER)
+
+        text = command.strip()
+        mode = cfg.get("mode", "denylist")
+
+        # Block command chaining if configured
+        if cfg.get("block_command_chaining", True):
+            if re.search(r'\|(?!\|)|&&|;\s*\S|\$\([^)]*\)|`[^`]*`', text):
+                reason = f"Shell command chaining detected: '{text[:80]}'"
+                logger.warning("Guardrail BLOCKED (shell_commands): %s", reason)
+                return ValidationResult(is_safe=False, layer=LAYER, blocked_reason=reason)
+
+        # Extract command names from segments
+        segments = re.split(r'[|;&]|\$\(', text)
+        for segment in segments:
+            words = segment.strip().split()
+            if not words:
+                continue
+            cmd = words[0].lower().rsplit("/", 1)[-1]
+
+            if mode == "allowlist":
+                allowed = [c.lower() for c in cfg.get("allowed_commands", [])]
+                if cmd and cmd not in allowed:
+                    reason = f"Shell command not in allowlist: '{cmd}'"
+                    logger.warning("Guardrail BLOCKED (shell_commands): %s", reason)
+                    return ValidationResult(is_safe=False, layer=LAYER, blocked_reason=reason)
+            else:  # denylist mode
+                denied = {c.lower() for c in cfg.get("denied_commands", _SHELL_DANGEROUS_COMMANDS)}
+                if cmd in denied:
+                    reason = f"Shell command denied: '{cmd}' in '{text[:80]}'"
+                    logger.warning("Guardrail BLOCKED (shell_commands): %s", reason)
+                    return ValidationResult(is_safe=False, layer=LAYER, blocked_reason=reason)
+
+        # Check custom denied patterns
+        for pat_str in cfg.get("denied_patterns", []):
+            if re.search(pat_str, text, re.IGNORECASE):
+                reason = f"Shell pattern denied: '{pat_str}' matched in '{text[:80]}'"
+                logger.warning("Guardrail BLOCKED (shell_commands): %s", reason)
                 return ValidationResult(is_safe=False, layer=LAYER, blocked_reason=reason)
 
         return ValidationResult(is_safe=True, layer=LAYER)

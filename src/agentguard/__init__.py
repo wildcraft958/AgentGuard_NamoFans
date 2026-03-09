@@ -3,14 +3,21 @@ AgentGuard - A Guardian Agent middleware for AI agent security.
 
 Layer 1 (Input Security): Prompt injection detection, content filtering.
 Layer 2 (Output Security): Output toxicity detection, PII detection.
+OWASP Scanner: DeepTeam-powered red-team scan against OWASP Top 10 for LLMs
+               and OWASP Top 10 for Agentic Applications.
 """
 
 from agentguard.guardian import Guardian
 from agentguard.exceptions import (
-    AgentGuardError, InputBlockedError, OutputBlockedError,
-    ToolCallBlockedError, ConfigurationError,
+    AgentGuardError,
+    ConfigurationError,
+    InputBlockedError,
+    OutputBlockedError,
+    ToolCallBlockedError,
 )
-from agentguard.decorators import guard, guard_input, guard_tool, GuardedToolRegistry
+from agentguard.decorators import GuardedToolRegistry, guard, guard_agent, guard_input, guard_tool
+from agentguard.decorators import get_registered_agent
+from agentguard.owasp_scanner import OWASPScanResult, scan_agent
 
 __all__ = [
     "Guardian",
@@ -20,8 +27,12 @@ __all__ = [
     "ToolCallBlockedError",
     "ConfigurationError",
     "guard",
+    "guard_agent",
     "guard_input",
     "guard_tool",
+    "get_registered_agent",
     "GuardedToolRegistry",
+    "scan_agent",
+    "OWASPScanResult",
 ]
 __version__ = "0.3.0"

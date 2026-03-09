@@ -172,8 +172,8 @@ class AgentGuardConfig:
         tf = self._raw.get("tool_firewall", {})
         if not isinstance(tf, dict):
             return False
-        # Check if any of the 4 guardrails are enabled
-        guardrails = ["file_system", "sql_query", "http_post", "http_get"]
+        # Check if any of the 5 guardrails are enabled
+        guardrails = ["file_system", "sql_query", "http_post", "http_get", "shell_commands", "approval_workflow"]
         for g in guardrails:
             cfg = tf.get(g)
             if isinstance(cfg, dict) and cfg.get("enabled", False):
@@ -244,6 +244,38 @@ class AgentGuardConfig:
     @property
     def tool_firewall_http_get_config(self) -> dict:
         return _deep_get(self._raw, "tool_firewall", "http_get", default={})
+
+    @property
+    def tool_firewall_shell_commands_config(self) -> dict:
+        return _deep_get(self._raw, "tool_firewall", "shell_commands", default={})
+
+    # ----- Tool Firewall: C4 Approval Workflow -----
+
+    @property
+    def approval_workflow_enabled(self) -> bool:
+        return _deep_get(self._raw, "tool_firewall", "approval_workflow", "enabled", default=False)
+
+    @property
+    def approval_workflow_mode(self) -> str:
+        return _deep_get(self._raw, "tool_firewall", "approval_workflow", "mode", default="human")
+
+    @property
+    def approval_workflow_tools_requiring_review(self) -> list:
+        return _deep_get(self._raw, "tool_firewall", "approval_workflow", "tools_requiring_review", default=[])
+
+    @property
+    def approval_workflow_ai_supervisor_config(self) -> dict:
+        return _deep_get(self._raw, "tool_firewall", "approval_workflow", "ai_supervisor", default={})
+
+    # ----- Agent Identity + Testing -----
+
+    @property
+    def agent_name(self) -> str:
+        return self._raw.get("agent_name", "default")
+
+    @property
+    def testing_config(self) -> dict:
+        return self._raw.get("testing", {})
 
 
 def load_config(config_path: str) -> AgentGuardConfig:

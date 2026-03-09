@@ -8,7 +8,7 @@ and provides the validate_input() / validate_output() interface.
 import logging
 import time
 
-from agentguard.config import load_config, AgentGuardConfig
+from agentguard.config import load_config
 from agentguard.models import (
     GuardMode,
     InputValidationResult,
@@ -143,6 +143,19 @@ class Guardian:
                 logger.info("MELON Detector module: ENABLED (threshold=%.2f)", self.config.melon_threshold)
             except (ValueError, Exception) as e:
                 logger.error("Failed to initialize MELON Detector: %s", e)
+
+        # Initialize C4: Approval Workflow (HITL / AITL)
+        self._approval_workflow = None
+        if self.config.approval_workflow_enabled:
+            try:
+                from agentguard.tool_firewall.approval_workflow import ApprovalWorkflow
+                self._approval_workflow = ApprovalWorkflow(self.config)
+                logger.info(
+                    "Approval Workflow module: ENABLED (mode=%s)",
+                    self.config.approval_workflow_mode,
+                )
+            except Exception as e:
+                logger.error("Failed to initialize Approval Workflow: %s", e)
 
     def _setup_logging(self):
         """Configure logging based on config level."""
@@ -406,6 +419,18 @@ class Guardian:
             if not c1_result.is_safe:
                 return self._handle_tool_block(
                     results, c1_result, "tool_input_analyzer",
+                    start_time, fn_name,
+                )
+
+        # --- C4: Approval Workflow (HITL / AITL) ---
+        if self._approval_workflow and self.config.approval_workflow_enabled:
+            logger.info("Running Approval Workflow for '%s'...", fn_name)
+            c4_result = self._approval_workflow.check(fn_name, fn_args, context)
+            results.append(c4_result)
+
+            if not c4_result.is_safe:
+                return self._handle_tool_block(
+                    results, c4_result, "approval_workflow",
                     start_time, fn_name,
                 )
 

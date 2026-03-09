@@ -43,13 +43,13 @@ sys.path.insert(0, _SCRIPT_DIR)
 # Absolute path to config so it works from any CWD
 CONFIG_PATH = os.path.join(_SRC_DIR, "agentguard.yaml")
 
-from agentguard import (
+from agentguard import (  # noqa: E402
     guard, GuardedToolRegistry,
     InputBlockedError, OutputBlockedError, ToolCallBlockedError,
 )
 
 # Import the vulnerable agent's components
-from basic_agent import (
+from basic_agent import (  # noqa: E402
     run_agent, TOOL_REGISTRY, TOOL_SCHEMAS,
     client, TFY_MODEL, SYSTEM_PROMPT, EXTRA_HEADERS,
 )
