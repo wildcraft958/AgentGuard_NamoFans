@@ -487,8 +487,8 @@ class Guardian:
                 if rbac_decision.value == "deny":
                     rbac_result = ValidationResult(
                         is_safe=False,
+                        layer="l4_rbac",
                         blocked_reason=f"L4 RBAC: role '{rbac_ctx.agent_role}' denied {rbac_ctx.action_verb} on {rbac_ctx.resource_sensitivity} resource via {fn_name}",
-                        blocked_by="l4_rbac",
                     )
                     results.append(rbac_result)
                     return self._handle_tool_block(
@@ -517,8 +517,8 @@ class Guardian:
                     block_reason = f"L4 Behavioral: {', '.join(s.name for s in ba_result.signals)} (score={ba_result.composite_score:.2f})"
                     ba_block = ValidationResult(
                         is_safe=False,
+                        layer="l4_behavioral",
                         blocked_reason=block_reason,
-                        blocked_by="l4_behavioral",
                     )
                     results.append(ba_block)
                     return self._handle_tool_block(
