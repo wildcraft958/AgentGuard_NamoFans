@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import importlib.util
+import json
 import sys
 import time
 import uuid
@@ -112,16 +113,100 @@ def _invoke_agent(agent_id: str, mode: str, message: str, documents: list | None
 
 
 # ---------------------------------------------------------------------------
+# MELON direct mode
+# ---------------------------------------------------------------------------
+
+
+def _run_melon_direct(agent_id: str, tool_name: str, tool_args: dict, user_message: str) -> str:
+    """
+    Bypass the agent LLM: call the named tool directly, then run MELON on the output.
+
+    Constructs synthetic messages (system→user→assistant tool_call→tool result) and
+    passes them to Guardian.validate_tool_output() so MELON runs without requiring
+    the agent LLM to decide whether to call the tool.
+
+    Returns plain-text description of the tool output if MELON passes.
+    Raises ToolCallBlockedError if MELON detects injection.
+    """
+    from agentguard.decorators import _get_guardian  # noqa: PLC0415
+
+    cfg = get_agent(agent_id)
+    if cfg is None:
+        raise ValueError(f"Unknown agent: {agent_id!r}")
+
+    # Load the unguarded module for TOOL_REGISTRY, TOOL_SCHEMAS, SYSTEM_PROMPT
+    mod = _load_module(cfg["unguarded_module"])
+    tool_registry = getattr(mod, "TOOL_REGISTRY")
+    tool_schemas = getattr(mod, "TOOL_SCHEMAS")
+    system_prompt = getattr(mod, "SYSTEM_PROMPT")
+
+    # Step 1: Call the poisoned tool directly (no agent LLM decision needed)
+    fn = tool_registry.get(tool_name)
+    if fn is None:
+        raise ValueError(f"Tool {tool_name!r} not found in {agent_id} registry")
+    tool_result = fn(**tool_args)
+
+    # Step 2: Build synthetic conversation messages for MELON
+    # Simulates: system → user → assistant (called the tool) → tool (result)
+    tool_call_id = "demo_melon_direct_001"
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_message},
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": tool_call_id,
+                    "type": "function",
+                    "function": {
+                        "name": tool_name,
+                        "arguments": json.dumps(tool_args),
+                    },
+                }
+            ],
+        },
+        {"role": "tool", "content": str(tool_result), "tool_call_id": tool_call_id},
+    ]
+
+    # Step 3: Run validate_tool_output (C2 MELON only — skips C3/C1 pre-checks)
+    config_path = str(PROJECT_ROOT / "src" / "agentguard.yaml")
+    guardian = _get_guardian(config_path)
+    guardian.validate_tool_output(
+        fn_name=tool_name,
+        fn_args=tool_args,
+        tool_result=str(tool_result),
+        messages=messages,
+        tool_schemas=tool_schemas,
+    )
+
+    # MELON passed — return the raw tool output for display
+    return f"Tool output (MELON: no injection detected):\n{tool_result}"
+
+
+# ---------------------------------------------------------------------------
 # Background execution
 # ---------------------------------------------------------------------------
 
 
-def _execute_run(run_id: str, agent_id: str, mode: str, message: str, documents: list | None) -> None:
+def _execute_run(
+    run_id: str,
+    agent_id: str,
+    mode: str,
+    message: str,
+    documents: list | None,
+    melon_direct: bool = False,
+    tool_name: str | None = None,
+    tool_args: dict | None = None,
+) -> None:
     """Run the agent synchronously (called from a thread). Writes result to _run_results."""
     start = time.time()
     result: dict = {"status": "complete"}
     try:
-        response = _invoke_agent(agent_id, mode, message, documents)
+        if melon_direct and tool_name:
+            response = _run_melon_direct(agent_id, tool_name, tool_args or {}, message)
+        else:
+            response = _invoke_agent(agent_id, mode, message, documents)
         result["blocked"] = False
         result["response"] = response
     except (InputBlockedError, OutputBlockedError, ToolCallBlockedError) as e:
@@ -147,6 +232,9 @@ class RunRequest(BaseModel):
     mode: str = "guarded"
     message: str
     documents: list[str] | None = None
+    melon_direct: bool = False
+    tool_name: str | None = None
+    tool_args: dict | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -174,7 +262,9 @@ async def post_run(body: RunRequest):
     _run_results[run_id] = {"status": "pending"}
     asyncio.create_task(
         asyncio.to_thread(
-            _execute_run, run_id, body.agent_id, body.mode, body.message, body.documents
+            _execute_run,
+            run_id, body.agent_id, body.mode, body.message, body.documents,
+            body.melon_direct, body.tool_name, body.tool_args,
         )
     )
     return {"run_id": run_id}

@@ -1000,7 +1000,7 @@ function renderTests(testCases) {
 
     card.addEventListener('click', () => {
       const docs = tc.documents || null;
-      runTest(tc.message, docs, card);
+      runTest(tc.message, docs, card, tc.melon_direct || false, tc.tool_name || null, tc.tool_args || null);
     });
 
     grid.appendChild(card);
@@ -1038,7 +1038,7 @@ function runCustom() {
 //  RUN TEST
 // =========================================================
 
-async function runTest(message, documents, cardEl) {
+async function runTest(message, documents, cardEl, melonDirect = false, toolName = null, toolArgs = null) {
   if (!currentAgentId) return;
 
   // Prevent concurrent runs
@@ -1053,15 +1053,21 @@ async function runTest(message, documents, cardEl) {
   if (cardEl) cardEl.classList.add('running');
 
   try {
+    const body = {
+      agent_id: currentAgentId,
+      mode: currentMode,
+      message,
+      documents,
+    };
+    if (melonDirect) {
+      body.melon_direct = true;
+      body.tool_name = toolName;
+      body.tool_args = toolArgs;
+    }
     const resp = await fetch('/api/demo/run', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        agent_id: currentAgentId,
-        mode: currentMode,
-        message,
-        documents,
-      }),
+      body: JSON.stringify(body),
     });
 
     if (!resp.ok) throw new Error('Run request failed');

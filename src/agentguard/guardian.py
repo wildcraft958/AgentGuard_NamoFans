@@ -620,9 +620,19 @@ class Guardian:
             # --- C2: MELON Detector ---
             if self._melon_detector and self.config.melon_enabled and messages is not None:
                 logger.info("Running MELON detection for tool '%s' output...", fn_name)
+                # Ensure the tool result is in the messages list so MELON's
+                # role check (messages[-1]["role"] == "tool") passes.
+                melon_messages = list(messages)
+                if not melon_messages or (
+                    isinstance(melon_messages[-1], dict)
+                    and melon_messages[-1].get("role") != "tool"
+                ):
+                    melon_messages = melon_messages + [
+                        {"role": "tool", "content": tool_result, "tool_call_id": "agentguard_synthetic"}
+                    ]
                 with self._span("agentguard.check.melon_detector"):
                     c2_result = self._melon_detector.check_tool_output(
-                        messages, tool_schemas or []
+                        melon_messages, tool_schemas or []
                     )
                 results.append(c2_result)
 
