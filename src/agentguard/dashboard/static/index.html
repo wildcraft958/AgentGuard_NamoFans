@@ -1,0 +1,1070 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AgentGuard — OTel Live Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+
+  <style>
+    /* =========================================================
+       DESIGN TOKENS
+    ========================================================= */
+    :root {
+      --black:    #0a0a0a;
+      --black2:   #111111;
+      --black3:   #1a1a1a;
+      --black4:   #242424;
+      --border:   #2a2a2a;
+      --border2:  #333333;
+      --text:     #e8e8e8;
+      --muted:    #777777;
+      --orange:   #e8400c;
+      --orange2:  #ff5a2b;
+      --red:      #e83c3c;
+      --green:    #2ecc71;
+      --green2:   #27ae60;
+      --blue:     #3498db;
+      --mono:     'JetBrains Mono', monospace;
+      --sans:     'Manrope', sans-serif;
+      --display:  'Bebas Neue', sans-serif;
+      --radius:   4px;
+      --nav-h:    64px;
+    }
+
+    /* =========================================================
+       RESET + BASE
+    ========================================================= */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: var(--black);
+      color: var(--text);
+      font-family: var(--sans);
+      font-size: 14px;
+      line-height: 1.6;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* grain overlay */
+    body::after {
+      content: '';
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 9999;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+      opacity: 0.4;
+    }
+
+    a { color: inherit; text-decoration: none; }
+
+    /* =========================================================
+       SCROLLBAR
+    ========================================================= */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: var(--black2); }
+    ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+
+    /* =========================================================
+       KEYFRAMES
+    ========================================================= */
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50%       { opacity: 0.4; transform: scale(0.8); }
+    }
+
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(8px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes growWidth {
+      from { width: 0%; }
+      to   { width: var(--target-w, 0%); }
+    }
+
+    /* =========================================================
+       NAVBAR
+    ========================================================= */
+    .navbar {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      height: var(--nav-h);
+      background: rgba(10,10,10,0.92);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--border);
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      padding: 0 24px;
+      gap: 16px;
+    }
+
+    .nav-logo {
+      font-family: var(--mono);
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      color: var(--text);
+      white-space: nowrap;
+    }
+
+    .nav-logo span { color: var(--orange); }
+
+    .nav-live {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-family: var(--mono);
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: 0.12em;
+      color: var(--muted);
+      text-transform: uppercase;
+    }
+
+    .nav-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--orange);
+      animation: pulse 2s ease-in-out infinite;
+      flex-shrink: 0;
+    }
+
+    .nav-dot.green { background: var(--green); }
+    .nav-dot.red   { background: var(--red); animation: pulse 1s ease-in-out infinite; }
+
+    .nav-spacer { flex: 1; }
+
+    .nav-badge {
+      font-family: var(--mono);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.15em;
+      padding: 3px 8px;
+      border-radius: var(--radius);
+      text-transform: uppercase;
+    }
+
+    .badge-enforce  { background: rgba(232,64,12,0.15); color: var(--orange); border: 1px solid rgba(232,64,12,0.3); }
+    .badge-monitor  { background: rgba(52,152,219,0.15); color: var(--blue); border: 1px solid rgba(52,152,219,0.3); }
+    .badge-dryrun   { background: rgba(119,119,119,0.15); color: var(--muted); border: 1px solid rgba(119,119,119,0.3); }
+
+    .nav-service {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--muted);
+      letter-spacing: 0.08em;
+    }
+
+    /* =========================================================
+       LAYOUT
+    ========================================================= */
+    .page {
+      padding-top: calc(var(--nav-h) + 24px);
+      padding-bottom: 48px;
+      max-width: 1400px;
+      margin: 0 auto;
+      padding-left: 24px;
+      padding-right: 24px;
+    }
+
+    /* =========================================================
+       EYEBROW
+    ========================================================= */
+    .eyebrow {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-family: var(--mono);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.2em;
+      color: var(--muted);
+      text-transform: uppercase;
+      margin-bottom: 16px;
+    }
+
+    .eyebrow::before {
+      content: '';
+      display: inline-block;
+      width: 24px; height: 1px;
+      background: var(--orange);
+      flex-shrink: 0;
+    }
+
+    /* =========================================================
+       STATS STRIP
+    ========================================================= */
+    .stats-strip {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1px;
+      background: var(--border);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      margin-bottom: 32px;
+    }
+
+    .stat-card {
+      background: var(--black2);
+      padding: 20px 24px;
+      transition: background 0.2s ease;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .stat-card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 2px;
+      background: transparent;
+      transition: background 0.2s ease;
+    }
+
+    .stat-card:hover::before   { background: var(--orange); }
+    .stat-card:hover           { background: var(--black3); }
+
+    .stat-label {
+      font-family: var(--mono);
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+
+    .stat-value {
+      font-family: var(--display);
+      font-size: 42px;
+      line-height: 1;
+      letter-spacing: 0.02em;
+    }
+
+    .stat-value.white  { color: var(--text); }
+    .stat-value.red    { color: var(--red); }
+    .stat-value.green  { color: var(--green); }
+    .stat-value.orange { color: var(--orange); }
+
+    .stat-sub {
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--muted);
+      margin-top: 4px;
+    }
+
+    /* =========================================================
+       TWO-COLUMN SPLIT
+    ========================================================= */
+    .two-col {
+      display: grid;
+      grid-template-columns: 60fr 40fr;
+      gap: 24px;
+      margin-bottom: 32px;
+    }
+
+    @media (max-width: 900px) {
+      .two-col { grid-template-columns: 1fr; }
+      .stats-strip { grid-template-columns: repeat(2, 1fr); }
+    }
+
+    /* =========================================================
+       PANEL / CARD BASE
+    ========================================================= */
+    .panel {
+      background: var(--black2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+
+    .panel-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .panel-body {
+      padding: 0;
+      overflow: hidden;
+    }
+
+    /* =========================================================
+       LIVE FEED
+    ========================================================= */
+    .feed-list {
+      list-style: none;
+      max-height: 420px;
+      overflow-y: auto;
+    }
+
+    .feed-row {
+      display: grid;
+      grid-template-columns: 90px 1fr 80px 72px 64px;
+      gap: 0;
+      padding: 10px 20px;
+      border-bottom: 1px solid var(--border);
+      align-items: center;
+      animation: fadeUp 0.25s ease both;
+      transition: background 0.15s ease;
+      cursor: default;
+    }
+
+    .feed-row:hover { background: var(--black3); }
+
+    .feed-ts {
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--muted);
+    }
+
+    .feed-op {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .feed-layer { justify-self: center; }
+    .feed-status { justify-self: center; }
+
+    .feed-dur {
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--muted);
+      text-align: right;
+    }
+
+    /* Layer tag */
+    .layer-tag {
+      font-family: var(--mono);
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      padding: 2px 6px;
+      border-radius: 2px;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .layer-l1    { background: rgba(52,152,219,0.12); color: var(--blue); }
+    .layer-l2    { background: rgba(155,89,182,0.12); color: #9b59b6; }
+    .layer-tool  { background: rgba(232,64,12,0.12);  color: var(--orange); }
+    .layer-unk   { background: rgba(119,119,119,0.12); color: var(--muted); }
+
+    /* Status pill */
+    .pill {
+      font-family: var(--mono);
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      padding: 2px 8px;
+      border-radius: 20px;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .pill-safe    { background: rgba(46,204,113,0.12); color: var(--green); border: 1px solid rgba(46,204,113,0.25); }
+    .pill-blocked { background: rgba(232,60,60,0.12);  color: var(--red);   border: 1px solid rgba(232,60,60,0.25); }
+
+    /* =========================================================
+       LAYER BREAKDOWN
+    ========================================================= */
+    .breakdown-list {
+      list-style: none;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    .breakdown-item {}
+
+    .breakdown-meta {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    .breakdown-label {
+      font-family: var(--mono);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+    }
+
+    .breakdown-counts {
+      display: flex;
+      gap: 8px;
+    }
+
+    .count-badge {
+      font-family: var(--mono);
+      font-size: 10px;
+      padding: 1px 7px;
+      border-radius: 20px;
+    }
+
+    .count-pass  { background: rgba(46,204,113,0.12); color: var(--green); }
+    .count-block { background: rgba(232,60,60,0.12);  color: var(--red); }
+
+    .bar-track {
+      height: 8px;
+      background: var(--black4);
+      border-radius: 4px;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .bar-fill {
+      position: absolute;
+      top: 0; left: 0;
+      height: 100%;
+      border-radius: 4px;
+    }
+
+    .bar-pass  { background: var(--green2); }
+    .bar-block { background: var(--red); }
+
+    /* =========================================================
+       TABLES
+    ========================================================= */
+    .section { margin-bottom: 32px; }
+
+    .table-wrap {
+      overflow-x: auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    thead tr {
+      background: var(--black3);
+      border-bottom: 1px solid var(--border);
+    }
+
+    th {
+      font-family: var(--mono);
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--muted);
+      padding: 10px 16px;
+      text-align: left;
+      white-space: nowrap;
+    }
+
+    tbody tr {
+      border-bottom: 1px solid var(--border);
+      cursor: pointer;
+      transition: background 0.12s ease;
+    }
+
+    tbody tr:hover { background: var(--black3); }
+
+    tbody tr:last-child { border-bottom: none; }
+
+    td {
+      padding: 10px 16px;
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--text);
+      vertical-align: middle;
+    }
+
+    .td-muted { color: var(--muted); }
+    .td-orange { color: var(--orange); }
+
+    /* Expandable row */
+    .span-detail-row {
+      display: none;
+      background: var(--black);
+    }
+
+    .span-detail-row.open { display: table-row; }
+
+    .span-detail-inner {
+      padding: 12px 16px 16px 16px;
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--muted);
+      line-height: 1.8;
+      border-top: 1px solid var(--border);
+    }
+
+    .span-detail-inner strong {
+      color: var(--orange);
+      font-weight: 600;
+    }
+
+    /* =========================================================
+       DECORATIVE BRACKETS
+    ========================================================= */
+    .brackets {
+      position: relative;
+    }
+
+    .brackets::before,
+    .brackets::after {
+      content: attr(data-bracket);
+      position: absolute;
+      font-family: var(--mono);
+      font-size: 200px;
+      line-height: 1;
+      color: rgba(232,64,12,0.04);
+      pointer-events: none;
+      user-select: none;
+      top: -40px;
+    }
+
+    .brackets::before { content: '['; left: -40px; }
+    .brackets::after  { content: ']'; right: -40px; }
+
+    /* =========================================================
+       STATUS PILL VARIANTS
+    ========================================================= */
+    .s-success   { background: rgba(46,204,113,0.12); color: var(--green); border: 1px solid rgba(46,204,113,0.25); }
+    .s-highlight { background: rgba(232,60,60,0.12);  color: var(--red);   border: 1px solid rgba(232,60,60,0.25); }
+
+    /* =========================================================
+       EMPTY STATE
+    ========================================================= */
+    .empty-state {
+      padding: 48px 24px;
+      text-align: center;
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--muted);
+      letter-spacing: 0.1em;
+    }
+
+    /* =========================================================
+       CONNECTION STATUS
+    ========================================================= */
+    #conn-status {
+      font-family: var(--mono);
+      font-size: 9px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      transition: color 0.3s;
+    }
+
+  </style>
+</head>
+<body>
+
+<!-- =========================================================
+     NAVBAR
+========================================================= -->
+<nav class="navbar">
+  <div class="nav-logo">
+    <span>⌐◨</span> AGENTGUARD <span>◨¬</span>
+  </div>
+
+  <div class="nav-live">
+    <div class="nav-dot" id="live-dot"></div>
+    OTEL LIVE
+  </div>
+
+  <a href="/demo" style="font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:0.12em;color:var(--muted);text-transform:uppercase;text-decoration:none;padding:4px 0;border-bottom:2px solid transparent;transition:color 0.15s,border-color 0.15s;" onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--muted)'">DEMO</a>
+
+  <span id="conn-status" style="color: var(--muted);">connecting...</span>
+
+  <div class="nav-spacer"></div>
+
+  <span id="nav-mode-badge" class="nav-badge badge-enforce">ENFORCE</span>
+  <span class="nav-service" id="nav-service">agentguard</span>
+</nav>
+
+<!-- =========================================================
+     PAGE
+========================================================= -->
+<main class="page brackets">
+
+  <!-- STATS STRIP -->
+  <div class="stats-strip" style="margin-top:8px;">
+    <div class="stat-card">
+      <div class="stat-label">Total Checks</div>
+      <div class="stat-value white" id="stat-total">—</div>
+      <div class="stat-sub">all time</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Blocked</div>
+      <div class="stat-value red" id="stat-blocked">—</div>
+      <div class="stat-sub">all time</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">24h Pass Rate</div>
+      <div class="stat-value green" id="stat-passrate">—</div>
+      <div class="stat-sub">last 24 hours</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Avg Latency</div>
+      <div class="stat-value orange" id="stat-latency">—</div>
+      <div class="stat-sub">milliseconds</div>
+    </div>
+  </div>
+
+  <!-- TWO-COLUMN LAYOUT -->
+  <div class="two-col">
+
+    <!-- LEFT: LIVE FEED -->
+    <div class="panel">
+      <div class="panel-header">
+        <div class="eyebrow" style="margin:0;">LIVE TRACE STREAM</div>
+        <div class="nav-dot" style="margin-left:4px;"></div>
+      </div>
+      <div class="panel-body">
+        <ul class="feed-list" id="feed-list">
+          <li class="empty-state" id="feed-empty">Waiting for traces...</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- RIGHT: LAYER BREAKDOWN -->
+    <div class="panel">
+      <div class="panel-header">
+        <div class="eyebrow" style="margin:0;">LAYER BREAKDOWN</div>
+      </div>
+      <div class="panel-body">
+        <ul class="breakdown-list">
+
+          <li class="breakdown-item">
+            <div class="breakdown-meta">
+              <span class="breakdown-label" style="color:var(--blue);">L1 INPUT</span>
+              <div class="breakdown-counts">
+                <span class="count-badge count-pass" id="l1-pass">0 PASS</span>
+                <span class="count-badge count-block" id="l1-block">0 BLOCK</span>
+              </div>
+            </div>
+            <div class="bar-track">
+              <div class="bar-fill bar-pass" id="l1-bar-pass" style="width:0%;"></div>
+            </div>
+          </li>
+
+          <li class="breakdown-item">
+            <div class="breakdown-meta">
+              <span class="breakdown-label" style="color:#9b59b6;">L2 OUTPUT</span>
+              <div class="breakdown-counts">
+                <span class="count-badge count-pass" id="l2-pass">0 PASS</span>
+                <span class="count-badge count-block" id="l2-block">0 BLOCK</span>
+              </div>
+            </div>
+            <div class="bar-track">
+              <div class="bar-fill bar-pass" id="l2-bar-pass" style="width:0%;"></div>
+            </div>
+          </li>
+
+          <li class="breakdown-item">
+            <div class="breakdown-meta">
+              <span class="breakdown-label" style="color:var(--orange);">TOOL FIREWALL</span>
+              <div class="breakdown-counts">
+                <span class="count-badge count-pass" id="tf-pass">0 PASS</span>
+                <span class="count-badge count-block" id="tf-block">0 BLOCK</span>
+              </div>
+            </div>
+            <div class="bar-track">
+              <div class="bar-fill bar-pass" id="tf-bar-pass" style="width:0%;"></div>
+            </div>
+          </li>
+
+        </ul>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- OTEL SPANS TABLE -->
+  <div class="section panel">
+    <div class="panel-header">
+      <div class="eyebrow" style="margin:0;">OPENTELEMETRY TRACES</div>
+    </div>
+    <div class="panel-body table-wrap">
+      <table id="spans-table">
+        <thead>
+          <tr>
+            <th>Trace ID</th>
+            <th>Operation</th>
+            <th>Layer</th>
+            <th>Status</th>
+            <th>Duration</th>
+            <th>Blocked By</th>
+          </tr>
+        </thead>
+        <tbody id="spans-tbody">
+          <tr><td colspan="6" class="empty-state">Loading spans...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- AUDIT LOG TABLE -->
+  <div class="section panel">
+    <div class="panel-header">
+      <div class="eyebrow" style="margin:0;">AUDIT LOG</div>
+    </div>
+    <div class="panel-body table-wrap">
+      <table id="audit-table">
+        <thead>
+          <tr>
+            <th>Timestamp</th>
+            <th>Action</th>
+            <th>Layer</th>
+            <th>Result</th>
+            <th>Reason</th>
+          </tr>
+        </thead>
+        <tbody id="audit-tbody">
+          <tr><td colspan="5" class="empty-state">Loading audit log...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</main>
+
+<script>
+// =========================================================
+//  UTILITIES
+// =========================================================
+
+const $ = id => document.getElementById(id);
+
+function fmtTime(ms) {
+  const d = new Date(ms);
+  return d.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
+function fmtTs(isoStr) {
+  try {
+    const d = new Date(isoStr);
+    return d.toLocaleTimeString('en-US', { hour12: false });
+  } catch { return isoStr; }
+}
+
+function layerClass(layer) {
+  if (layer === 'l1_input')     return 'layer-l1';
+  if (layer === 'l2_output')    return 'layer-l2';
+  if (layer === 'tool_firewall') return 'layer-tool';
+  return 'layer-unk';
+}
+
+function layerLabel(layer) {
+  if (layer === 'l1_input')     return 'L1';
+  if (layer === 'l2_output')    return 'L2';
+  if (layer === 'tool_firewall') return 'TOOL';
+  return layer || '—';
+}
+
+function pillHtml(status) {
+  if (status === 'blocked') return '<span class="pill pill-blocked">BLOCKED</span>';
+  return '<span class="pill pill-safe">SAFE</span>';
+}
+
+function shortId(id) {
+  return id ? id.slice(0, 12) + '…' : '—';
+}
+
+// =========================================================
+//  STATS CARDS
+// =========================================================
+
+function handleStats(data) {
+  $('stat-total').textContent   = data.total_spans ?? '—';
+  $('stat-blocked').textContent = data.blocked_spans ?? '—';
+
+  const pr = data.pass_rate_24h;
+  $('stat-passrate').textContent = (pr != null) ? (pr * 100).toFixed(1) + '%' : '—';
+
+  const lat = data.avg_duration_ms;
+  $('stat-latency').textContent = (lat != null) ? lat + 'ms' : '—';
+
+  // Layer breakdown bars
+  const lb = data.layer_breakdown || {};
+
+  function updateLayer(prefix, layerData) {
+    if (!layerData) return;
+    const pass  = layerData.pass  || 0;
+    const block = layerData.block || 0;
+    const total = pass + block;
+    const passW = total > 0 ? Math.round((pass / total) * 100) : 0;
+
+    $(prefix + '-pass').textContent  = pass  + ' PASS';
+    $(prefix + '-block').textContent = block + ' BLOCK';
+
+    const bar = $(prefix + '-bar-pass');
+    bar.style.width = passW + '%';
+    bar.style.animation = 'none';
+    bar.getBoundingClientRect(); // reflow
+    bar.style.animation = '';
+  }
+
+  updateLayer('l1', lb.l1_input);
+  updateLayer('l2', lb.l2_output);
+  updateLayer('tf', lb.tool_firewall);
+}
+
+// =========================================================
+//  LIVE FEED
+// =========================================================
+
+let feedCount = 0;
+const MAX_FEED = 50;
+
+function handleSpan(data) {
+  const list = $('feed-list');
+  const empty = $('feed-empty');
+  if (empty) empty.remove();
+
+  const li = document.createElement('li');
+  li.className = 'feed-row';
+
+  const ts = data.start_ms ? fmtTime(data.start_ms) : '—';
+  const op = data.operation_name || '—';
+  const layer = data.layer || 'unknown';
+  const status = data.status || 'safe';
+  const dur = data.duration_ms != null ? data.duration_ms + 'ms' : '—';
+  const blockedBy = data.blocked_by || '';
+
+  li.innerHTML = `
+    <span class="feed-ts">${ts}</span>
+    <span class="feed-op" title="${op}">${op}</span>
+    <span class="feed-layer"><span class="layer-tag ${layerClass(layer)}">${layerLabel(layer)}</span></span>
+    <span class="feed-status">${pillHtml(status)}</span>
+    <span class="feed-dur">${dur}</span>
+  `;
+
+  if (status === 'blocked' && blockedBy) {
+    const byEl = document.createElement('span');
+    byEl.style.cssText = 'display:block;font-family:var(--mono);font-size:9px;color:var(--orange);margin-top:2px;';
+    byEl.textContent = '↳ ' + blockedBy;
+    li.querySelector('.feed-op').after(byEl);
+  }
+
+  list.prepend(li);
+  feedCount++;
+
+  // Trim oldest rows
+  while (list.children.length > MAX_FEED) {
+    list.removeChild(list.lastChild);
+  }
+}
+
+// =========================================================
+//  SPANS TABLE
+// =========================================================
+
+let openDetailRow = null;
+
+function renderSpans(spans) {
+  const tbody = $('spans-tbody');
+  if (!spans || spans.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="6" class="empty-state">No spans yet — run an agent to generate traces.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = '';
+  spans.slice(0, 100).forEach((span, i) => {
+    const row = document.createElement('tr');
+    row.dataset.spanId = span.span_id;
+
+    const layer = span.layer || 'unknown';
+    const status = span.status || 'safe';
+
+    row.innerHTML = `
+      <td class="td-muted">${shortId(span.trace_id)}</td>
+      <td>${span.operation_name || '—'}</td>
+      <td><span class="layer-tag ${layerClass(layer)}">${layerLabel(layer)}</span></td>
+      <td>${pillHtml(status)}</td>
+      <td class="td-muted">${span.duration_ms != null ? span.duration_ms + 'ms' : '—'}</td>
+      <td class="td-orange">${span.blocked_by || '—'}</td>
+    `;
+
+    // Detail row
+    const detailRow = document.createElement('tr');
+    detailRow.className = 'span-detail-row';
+    detailRow.id = 'detail-' + i;
+
+    const tagLines = Object.entries(span.tags || {})
+      .map(([k, v]) => `<strong>${k}</strong>=${v}`)
+      .join('<br>');
+
+    detailRow.innerHTML = `<td colspan="6">
+      <div class="span-detail-inner">
+        <strong style="color:var(--muted);font-size:9px;letter-spacing:0.15em;">TRACE ID</strong><br>
+        ${span.trace_id || '—'}<br><br>
+        <strong style="color:var(--muted);font-size:9px;letter-spacing:0.15em;">SPAN ID</strong><br>
+        ${span.span_id || '—'}<br><br>
+        <strong style="color:var(--muted);font-size:9px;letter-spacing:0.15em;">TAGS</strong><br>
+        ${tagLines || '(none)'}
+      </div>
+    </td>`;
+
+    row.addEventListener('click', () => {
+      if (openDetailRow && openDetailRow !== detailRow) {
+        openDetailRow.classList.remove('open');
+      }
+      detailRow.classList.toggle('open');
+      openDetailRow = detailRow.classList.contains('open') ? detailRow : null;
+    });
+
+    tbody.appendChild(row);
+    tbody.appendChild(detailRow);
+  });
+}
+
+async function loadSpans() {
+  try {
+    const resp = await fetch('/api/spans?limit=100');
+    if (!resp.ok) return;
+    const spans = await resp.json();
+    renderSpans(spans);
+  } catch (e) {
+    console.warn('Failed to load spans:', e);
+  }
+}
+
+// =========================================================
+//  AUDIT TABLE
+// =========================================================
+
+function renderAudit(records) {
+  const tbody = $('audit-tbody');
+  if (!records || records.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="5" class="empty-state">No audit records yet.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = '';
+  records.slice(0, 50).forEach(rec => {
+    const row = document.createElement('tr');
+    const safe = rec.safe === 1 || rec.safe === true;
+    const pillClass = safe ? 's-success' : 's-highlight';
+    const pillText  = safe ? 'ALLOWED' : 'BLOCKED';
+    const layer = rec.layer || '—';
+    const reason = rec.reason || '—';
+    const ts = fmtTs(rec.ts);
+
+    row.innerHTML = `
+      <td class="td-muted">${ts}</td>
+      <td>${rec.action || '—'}</td>
+      <td><span class="layer-tag ${layerClass(layer)}">${layerLabel(layer)}</span></td>
+      <td><span class="pill ${pillClass}">${pillText}</span></td>
+      <td class="td-muted">${reason}</td>
+    `;
+    tbody.appendChild(row);
+  });
+}
+
+async function loadAudit() {
+  try {
+    const resp = await fetch('/api/audit?limit=50');
+    if (!resp.ok) return;
+    const records = await resp.json();
+    renderAudit(records);
+  } catch (e) {
+    console.warn('Failed to load audit:', e);
+  }
+}
+
+// =========================================================
+//  INITIAL STATS LOAD
+// =========================================================
+
+async function loadStats() {
+  try {
+    const resp = await fetch('/api/stats');
+    if (!resp.ok) return;
+    const stats = await resp.json();
+    handleStats(stats);
+  } catch (e) {
+    console.warn('Failed to load initial stats:', e);
+  }
+}
+
+// =========================================================
+//  SSE CONNECTION
+// =========================================================
+
+let evtSource = null;
+let reconnectTimer = null;
+
+function connectSSE() {
+  if (evtSource) evtSource.close();
+
+  evtSource = new EventSource('/events');
+
+  evtSource.addEventListener('span', e => {
+    try {
+      const data = JSON.parse(e.data);
+      handleSpan(data);
+    } catch { /* ignore parse errors */ }
+  });
+
+  evtSource.addEventListener('stats', e => {
+    try {
+      const data = JSON.parse(e.data);
+      handleStats(data);
+      // Refresh tables on stats update
+      loadSpans();
+      loadAudit();
+    } catch { /* ignore */ }
+  });
+
+  evtSource.onopen = () => {
+    const dot = $('live-dot');
+    dot.classList.add('green');
+    dot.classList.remove('red');
+    $('conn-status').textContent = 'connected';
+    $('conn-status').style.color = 'var(--green)';
+    if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+  };
+
+  evtSource.onerror = () => {
+    const dot = $('live-dot');
+    dot.classList.add('red');
+    dot.classList.remove('green');
+    $('conn-status').textContent = 'reconnecting...';
+    $('conn-status').style.color = 'var(--red)';
+    evtSource.close();
+    if (!reconnectTimer) {
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null;
+        connectSSE();
+      }, 3000);
+    }
+  };
+}
+
+// =========================================================
+//  BOOT
+// =========================================================
+
+document.addEventListener('DOMContentLoaded', () => {
+  loadStats();
+  loadSpans();
+  loadAudit();
+  connectSSE();
+});
+</script>
+</body>
+</html>

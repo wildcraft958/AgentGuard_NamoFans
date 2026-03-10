@@ -16,10 +16,25 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 sys.path.insert(0, os.path.dirname(__file__))
 
-from agentguard import guard, InputBlockedError, OutputBlockedError
-from medical_agent import MedicalAgent
+from agentguard import guard, GuardedToolRegistry, InputBlockedError, OutputBlockedError
+from medical_agent import MedicalAgent, TOOL_REGISTRY, TOOL_SCHEMAS
 
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), "..", "src", "agentguard.yaml")
+
+# GuardedToolRegistry: C3 + C1 pre-execution, C2 (MELON) post-execution.
+_GUARDED_TOOLS = GuardedToolRegistry(TOOL_REGISTRY, TOOL_SCHEMAS, config=CONFIG_PATH)
+
+
+class _GuardedMedicalAgent(MedicalAgent):
+    """MedicalAgent subclass that routes all tool calls through GuardedToolRegistry."""
+
+    def _dispatch_tool(self, name: str, args: dict) -> str:
+        _GUARDED_TOOLS.set_messages(self.messages)
+        fn = _GUARDED_TOOLS.get(name)
+        if fn:
+            return fn(**args)
+        return f"Unknown tool: {name}"
+
 
 # ---------------------------------------------------------------------------
 # Guarded entry point
@@ -27,7 +42,7 @@ CONFIG_PATH = os.path.join(os.path.dirname(__file__), "..", "src", "agentguard.y
 
 @guard(param="user_message", docs_param="documents", output_field="response", config=CONFIG_PATH)
 def guarded_run(user_message: str, documents: list = None) -> dict:
-    agent = MedicalAgent()
+    agent = _GuardedMedicalAgent()
     response = agent.run(user_message, documents=documents)
     return {"response": response}
 
