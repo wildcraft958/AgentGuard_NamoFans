@@ -129,11 +129,17 @@ def _run_melon_direct(agent_id: str, tool_name: str, tool_args: dict, user_messa
     instructions found in file contents. If the masked run produces tool calls, the tool
     output contains an injection attempting to drive agent behavior.
 
-    This bypasses the original run and raises ToolCallBlockedError directly when the
-    masked run follows injected instructions.
+    Uses OPENAI_* env vars directly (same gateway as the agents) — does not require
+    separate TFY_* credentials.
     """
-    from agentguard.decorators import _get_guardian  # noqa: PLC0415
+    import os  # noqa: PLC0415
+
+    from dotenv import load_dotenv  # noqa: PLC0415
+    from openai import OpenAI  # noqa: PLC0415
+
     from agentguard.tool_firewall.melon_detector import _FEW_SHOT_MESSAGES  # noqa: PLC0415
+
+    load_dotenv(PROJECT_ROOT / ".env")
 
     cfg = get_agent(agent_id)
     if cfg is None:
@@ -150,13 +156,12 @@ def _run_melon_direct(agent_id: str, tool_name: str, tool_args: dict, user_messa
         raise ValueError(f"Tool {tool_name!r} not found in {agent_id} registry")
     tool_result = fn(**tool_args)
 
-    # Step 2: Get the MelonDetector instance from the guardian
-    config_path = str(PROJECT_ROOT / "src" / "agentguard.yaml")
-    guardian = _get_guardian(config_path)
-    melon = guardian._melon_detector
-    if melon is None:
-        # MELON not configured — fall back to returning the raw output
-        return f"Tool output (MELON not configured):\n{tool_result}"
+    # Step 2: Build an OpenAI client using the same gateway as the agents
+    client = OpenAI(
+        api_key=os.environ.get("OPENAI_API_KEY", ""),
+        base_url=os.environ.get("OPENAI_BASE_URL", ""),
+    )
+    model = os.environ.get("OPENAI_MODEL", "")
 
     # Step 3: Build MELON masked messages
     # Format the tool output as a file for the masked context (same format as melon_detector.py)
@@ -189,8 +194,8 @@ def _run_melon_direct(agent_id: str, tool_name: str, tool_args: dict, user_messa
     })
 
     # Step 4: Run masked LLM call
-    masked_response = melon.client.chat.completions.create(
-        model=melon.model,
+    masked_response = client.chat.completions.create(
+        model=model,
         messages=masked_messages,
         tools=tool_schemas,
     )
