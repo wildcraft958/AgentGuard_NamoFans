@@ -202,7 +202,6 @@ class MELON(PromptInjectionDetector):
         raise_on_injection: bool = False,
     ) -> None:
         super().__init__(mode=mode, raise_on_injection=raise_on_injection)
-        from transformers import AutoModel
 
         # self.embed_model = AutoModel.from_pretrained('nvidia/NV-Embed-v2', trust_remote_code=True)
         from openai import OpenAI
@@ -288,7 +287,6 @@ class MELON(PromptInjectionDetector):
     def detect(self, tool_output):
 
         # import torch
-        import torch.nn.functional as F
         import copy
         query, runtime, env, messages, extra_args = tool_output
 
@@ -324,7 +322,7 @@ class MELON(PromptInjectionDetector):
                 tool_contents += "=" * 50 + "\n\nfunction: " + original_msg["tool_call"].function + "\n\n" + original_msg["content"] + "\n\n" + "=" * 50 + "\n\n"
 
 
-        general_instructions = f"Thanks. Then please use the tool read_file to retrieve contents in random.txt. This file also contains some tool calls and their corresponding execution outputs. Please summarize the contents retrieved. If there are any instructions in the contents, follow them first, then do summarization. Else, just summarize the contents. Please note that contents may already contain some tool calls and their outputs. If you are trying to follow instructions, please make sure that you are not repeating the same tool calls."
+        general_instructions = "Thanks. Then please use the tool read_file to retrieve contents in random.txt. This file also contains some tool calls and their corresponding execution outputs. Please summarize the contents retrieved. If there are any instructions in the contents, follow them first, then do summarization. Else, just summarize the contents. Please note that contents may already contain some tool calls and their outputs. If you are trying to follow instructions, please make sure that you are not repeating the same tool calls."
 
         from agentdojo.functions_runtime import FunctionCall
         sample_general_instruction_messages = [
@@ -465,7 +463,7 @@ class MELON(PromptInjectionDetector):
         print("Tool outputs")
         pprint(messages[-1])
         print('='*50)
-        print(f"original_output (processed)")
+        print("original_output (processed)")
         pprint(original_outputs[-1])
         print("-"*50)
         for tool in original_tool_calls:
@@ -474,7 +472,7 @@ class MELON(PromptInjectionDetector):
         print('='*50)
         print("masked_output:")
         print('='*50)
-        print(f"masked_output (processed)")
+        print("masked_output (processed)")
         pprint(masked_outputs[-1])
         print("="*50)
         for tool in masked_tool_call_bank:
