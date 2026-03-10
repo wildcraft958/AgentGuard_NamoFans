@@ -89,6 +89,8 @@ AgentGuard_NamoFans/
 │   ├── vulnerable_agent.py         # 82-tool maximally dangerous agent
 │   ├── guarded_vulnerable_agent.py # vulnerable_agent wrapped with AgentGuard
 │   └── agentguard_vulnerable.yaml  # Config for the 82-tool vulnerable agent
+├── notebooks/
+│   └── llm_as_a_judge_eval.ipynb   # Kaggle GPU: AITL candidate evaluation (6 safety LLMs)
 ├── writeup.md                      # Architecture & design decision log
 ├── PPT.md                          # 6-slide presentation deck (Microsoft UNLOCKED template)
 └── pyproject.toml                  # Project config (managed by uv)
@@ -154,7 +156,7 @@ agentguard test --config src/agentguard.yaml --module test_bots/financial_agent.
 | L4 RBAC | Pure-Python ABAC engine — ALLOW / DENY / ELEVATE outcomes |
 | L4 Behavioral | 5-signal anomaly detector: Z-score, Levenshtein, read→exfil chain, domain, entropy |
 | Tool Firewall C2 | MELON contrastive embedding (OpenAI embeddings) |
-| Tool Firewall C4 | HITL (stdin prompt) / AITL (LLM auditor via TrueFoundry) |
+| Tool Firewall C4 | HITL (stdin prompt) / AITL — open-source safety LLM supervisor (Llama Guard 3, ShieldGemma, WildGuard, Granite Guardian); evaluated in `notebooks/llm_as_a_judge_eval.ipynb` |
 | Audit Log | SQLite (stdlib) — persistent decision log |
 | OWASP Scanner | DeepTeam red-teamer (OpenAI API) |
 | Red-Team Testing | Promptfoo CLI (Node.js) |
@@ -214,6 +216,35 @@ def my_agent(prompt: str) -> str:
 results = scan_agent(my_agent, target="both", target_purpose="A DevOps assistant.")
 print(f"Pass rate: {results.overall_pass_rate:.0%}")
 ```
+
+---
+
+## AITL Candidate Evaluation
+
+The C4 Approval Workflow (`mode: ai`) uses an **AI-in-the-Loop supervisor** that reviews flagged tool calls and decides APPROVE or REJECT. `notebooks/llm_as_a_judge_eval.ipynb` evaluates open-source safety LLMs as candidates for this role on a Kaggle GPU.
+
+### Why open-source fine-tuned models over frontier LLMs
+
+| Concern | Detail |
+|---|---|
+| **Data privacy** | Tool args (SQL queries, file paths, API payloads) never leave your infrastructure |
+| **Cost** | No per-call API charge — every ELEVATE fires the supervisor; frontier APIs add up at scale |
+| **Latency** | <500 ms local inference on T4 vs 1–3 s cloud API round trip |
+| **Purpose-built** | Models like Llama Guard 3 and ShieldGemma are fine-tuned on adversarial safety datasets (Meta's 14-category harm taxonomy, Google's content policies, AI2's WildGuardMix) — not general reasoners |
+| **Reproducibility** | Deterministic at `temperature=0`; cloud APIs are non-deterministic |
+
+### Candidates evaluated
+
+| Model | HF ID | Params | License | Why |
+|---|---|---|---|---|
+| Llama Guard 3 | `meta-llama/Llama-Guard-3-8B` | 8B | Meta Llama | Fine-tuned on Llama-3.1-8B; full S1–S14 (incl. Code Interpreter Abuse) |
+| Llama Guard 3 (small) | `meta-llama/Llama-Guard-3-1B` | 1B | Meta Llama | Fine-tuned on Llama-3.2-1B; covers S1–S13 only (S14 absent) |
+| ShieldGemma | `google/shieldgemma-9b` | 9B | Gemma (gated) | Google's safety model; 4 harm categories (hate, harassment, dangerous content, sexual) |
+| ShieldGemma (small) | `google/shieldgemma-2b` | 2B | Gemma (gated) | Lightweight; same policy as 9B |
+| WildGuard | `allenai/wildguard` | 7B | Apache 2.0 | Fine-tuned Mistral-7B; covers prompt harm, response harm + refusal detection |
+| Granite Guardian | `ibm-granite/granite-guardian-3.0-8b` | 8B | Apache 2.0 | IBM enterprise; AITL + RAG hallucination detection (groundedness, context relevance) |
+
+Composite fitness score: `TPR×0.55 + FPR×0.20 + Judge×0.15 + Latency×0.10`
 
 ---
 

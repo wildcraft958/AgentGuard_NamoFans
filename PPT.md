@@ -283,6 +283,14 @@ with awareness of who called it, why, and whether its argument came from a malic
   │                          │  disabled by default.         │  Enabled for medical /     │
   │                          │  Enable in agentguard.yaml    │  financial agents only.    │
   ├──────────────────────────┼──────────────────────────────┼────────────────────────────┤
+  │  AITL: open-source       │  C4 supervisor uses fine-     │  Frontier LLMs (GPT-4o)    │
+  │  safety LLMs, not        │  tuned safety classifiers     │  add cost per ELEVATE,     │
+  │  frontier models         │  (Llama Guard 3, ShieldGemma, │  send tool args off-net,   │
+  │                          │  WildGuard, Granite Guardian) │  and are non-deterministic.│
+  │                          │  Self-hosted: data stays in-  │  Safety LLMs are purpose-  │
+  │                          │  network, <500ms, zero API    │  built for binary APPROVE/ │
+  │                          │  cost. Evaluated on Kaggle.   │  REJECT — not reasoning.   │
+  ├──────────────────────────┼──────────────────────────────┼────────────────────────────┤
   │  Dual observability      │  OTel for live SRE metrics.   │  Single store is simpler   │
   │  (OTel + SQLite)         │  SQLite for compliance         │  but OTel is ephemeral;    │
   │                          │  forensics — tamper-evident,  │  compliance audits need    │
@@ -321,6 +329,7 @@ with awareness of who called it, why, and whether its argument came from a malic
   ─────────────────────────────────────────────────────────────────────────
   CLI       │ agentguard init · agentguard test · agentguard dashboard
   Red-team  │ Promptfoo (25+ attack scenarios) + DeepTeam (OWASP Top 10)
+  AITL eval │ notebooks/llm_as_a_judge_eval.ipynb — 6 open-source safety LLM candidates on Kaggle GPU
   Audit     │ SQLite compliance log + OpenTelemetry → Jaeger
   Dashboard │ https://agentguard.exempl4r.xyz/ (live, deployed)
   Tests     │ 410 unit tests · 0 failures
