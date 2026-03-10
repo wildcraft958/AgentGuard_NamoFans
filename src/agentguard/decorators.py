@@ -46,6 +46,7 @@ def guard_agent(
     agent_name: str = "default",
     config: str = _DEFAULT_CONFIG,
     param: str = None,
+    docs_param: str = None,
     output_field: str = None,
 ):
     """
@@ -58,6 +59,7 @@ def guard_agent(
         agent_name: Registry key used by the Promptfoo bridge to look up this agent.
         config: Path to agentguard.yaml config file.
         param: Name of the function parameter containing user text (L1).
+        docs_param: Name of the parameter containing documents list (L1 Prompt Shields).
         output_field: Key in the return dict to check for L2 output security.
 
     Example:
@@ -66,7 +68,7 @@ def guard_agent(
             return {"response": llm.complete(message)}
     """
     def decorator(func):
-        guarded = guard(config=config, param=param, output_field=output_field)(func)
+        guarded = guard(config=config, param=param, docs_param=docs_param, output_field=output_field)(func)
         _AGENT_REGISTRY[agent_name] = (guarded, config, param, output_field)
         return guarded
     return decorator

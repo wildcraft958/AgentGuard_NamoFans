@@ -42,6 +42,7 @@ class _GuardedFinancialAgent(FinancialAgent):
 @guard_agent(
     agent_name="FinancialBot",
     param="user_message",
+    docs_param="documents",
     output_field="response",
     config=CONFIG_PATH,
 )
