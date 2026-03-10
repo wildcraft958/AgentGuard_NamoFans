@@ -222,6 +222,10 @@
       display: inline-block;
       margin-bottom: 6px;
     }
+    .agent-badge.badge-vuln {
+      background: rgba(232,60,60,0.15);
+      color: var(--red);
+    }
 
     .agent-name {
       font-family: var(--sans);
@@ -417,6 +421,8 @@
     .tag-safe    { background: rgba(46,204,113,0.10); color: var(--green); }
     .tag-l1      { background: rgba(52,152,219,0.10); color: var(--blue); }
     .tag-l2      { background: rgba(155,89,182,0.10); color: #9b59b6; }
+    .tag-melon   { background: rgba(255,165,0,0.12); color: #f39c12; }
+    .tag-c3      { background: rgba(232,64,12,0.10); color: var(--orange); }
     .tag-other   { background: rgba(232,64,12,0.10); color: var(--orange); }
 
     .test-expect-pill {
@@ -867,6 +873,8 @@ function testLayerClass(layer) {
   if (!layer || layer === 'SAFE') return 'tag-safe';
   if (layer.startsWith('L1'))    return 'tag-l1';
   if (layer.startsWith('L2'))    return 'tag-l2';
+  if (layer.startsWith('C2'))    return 'tag-melon';
+  if (layer.startsWith('C3'))    return 'tag-c3';
   return 'tag-other';
 }
 
@@ -898,8 +906,9 @@ async function loadAgents() {
       const card = document.createElement('div');
       card.className = 'agent-card';
       card.dataset.agentId = agent.id;
+      const badgeCls = agent.id === 'vulnerable' ? 'agent-badge badge-vuln' : 'agent-badge';
       card.innerHTML = `
-        <div class="agent-badge">${escapeHtml(agent.badge)}</div>
+        <div class="${badgeCls}">${escapeHtml(agent.badge)}</div>
         <div class="agent-name">${escapeHtml(agent.name)}</div>
         <div class="agent-desc">${escapeHtml(agent.description)}</div>
       `;

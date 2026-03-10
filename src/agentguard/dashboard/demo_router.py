@@ -43,7 +43,7 @@ if _bots not in sys.path:
 # ---------------------------------------------------------------------------
 
 from agentguard.dashboard.agent_registry import get_agent, public_registry  # noqa: E402
-from agentguard.exceptions import InputBlockedError, OutputBlockedError  # noqa: E402
+from agentguard.exceptions import InputBlockedError, OutputBlockedError, ToolCallBlockedError  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # In-memory state
@@ -90,17 +90,25 @@ def _invoke_agent(agent_id: str, mode: str, message: str, documents: list | None
     if cfg is None:
         raise ValueError(f"Unknown agent: {agent_id!r}")
 
+    supports_docs = cfg.get("supports_documents", True)
+
     if mode == "guarded":
         mod = _load_module(cfg["guarded_module"])
         fn = getattr(mod, cfg["guarded_fn"])
-        result = fn(user_message=message, documents=documents)
+        result = fn(user_message=message, documents=documents) if supports_docs else fn(user_message=message)
         if isinstance(result, dict):
             return result.get("response", str(result))
         return str(result)
     else:
         mod = _load_module(cfg["unguarded_module"])
-        cls = getattr(mod, cfg["unguarded_class"])
-        return cls().run(message, documents=documents)
+        if "unguarded_fn" in cfg:
+            # Function-based unguarded agent (e.g. vulnerable_agent.run_agent)
+            fn = getattr(mod, cfg["unguarded_fn"])
+            return fn(message)
+        else:
+            # Class-based unguarded agent
+            cls = getattr(mod, cfg["unguarded_class"])
+            return cls().run(message, documents=documents) if supports_docs else cls().run(message)
 
 
 # ---------------------------------------------------------------------------
@@ -116,7 +124,7 @@ def _execute_run(run_id: str, agent_id: str, mode: str, message: str, documents:
         response = _invoke_agent(agent_id, mode, message, documents)
         result["blocked"] = False
         result["response"] = response
-    except (InputBlockedError, OutputBlockedError) as e:
+    except (InputBlockedError, OutputBlockedError, ToolCallBlockedError) as e:
         result["blocked"] = True
         result["blocked_reason"] = e.reason
         result["blocked_by"] = e.details.get("blocked_by") if hasattr(e, "details") else None

@@ -26,16 +26,16 @@ def _get_app():
 # ---------------------------------------------------------------------------
 
 
-def test_agents_list_returns_three_agents():
+def test_agents_list_returns_four_agents():
     app = _get_app()
     client = TestClient(app)
     resp = client.get("/api/demo/agents")
     assert resp.status_code == 200
     data = resp.json()
     assert isinstance(data, list)
-    assert len(data) == 3
+    assert len(data) == 4
     ids = {a["id"] for a in data}
-    assert ids == {"financial", "hr", "medical"}
+    assert ids == {"financial", "hr", "medical", "vulnerable"}
 
 
 def test_agents_list_test_case_shape():

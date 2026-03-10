@@ -14,10 +14,25 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 sys.path.insert(0, os.path.dirname(__file__))
 
-from agentguard import guard_agent, InputBlockedError, OutputBlockedError
-from financial_agent import FinancialAgent
+from agentguard import guard_agent, GuardedToolRegistry, InputBlockedError, OutputBlockedError
+from financial_agent import FinancialAgent, TOOL_REGISTRY, TOOL_SCHEMAS
 
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), "..", "src", "agentguard.yaml")
+
+# GuardedToolRegistry: runs C3 (rule-based guards) + C1 (entity recognition)
+# pre-tool-execution, and C2 (MELON contrastive PI detection) post-execution.
+_GUARDED_TOOLS = GuardedToolRegistry(TOOL_REGISTRY, TOOL_SCHEMAS, config=CONFIG_PATH)
+
+
+class _GuardedFinancialAgent(FinancialAgent):
+    """FinancialAgent subclass that routes all tool calls through GuardedToolRegistry."""
+
+    def _dispatch_tool(self, name: str, args: dict) -> str:
+        _GUARDED_TOOLS.set_messages(self.messages)
+        fn = _GUARDED_TOOLS.get(name)
+        if fn:
+            return fn(**args)
+        return f"Unknown tool: {name}"
 
 
 # ---------------------------------------------------------------------------
@@ -31,7 +46,7 @@ CONFIG_PATH = os.path.join(os.path.dirname(__file__), "..", "src", "agentguard.y
     config=CONFIG_PATH,
 )
 def guarded_run(user_message: str, documents: list = None) -> dict:
-    agent = FinancialAgent()
+    agent = _GuardedFinancialAgent()
     response = agent.run(user_message, documents=documents)
     return {"response": response}
 
