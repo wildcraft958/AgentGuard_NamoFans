@@ -54,12 +54,20 @@ def run(user_message: str) -> dict:
 
 **Proven results:** 95–97.5% attack block rate across 40 adversarial tests. CRITICAL severity: 96% block rate.
 
+**Live demo:** https://agentguard.exempl4r.xyz/ — toggle Guarded/Unguarded on real attacks in the browser.
+
 ---
 
 ## Slide 3: Key Features & User Flow
 
-**Feature 1 — L1 Input Shielding**
-Fast offline regex (33 patterns, <1ms, zero API cost) fires first — catches `SYSTEM OVERRIDE`, `curl `, `/etc/passwd`, jailbreak scaffolds. Azure AI Content Safety Prompt Shields runs second for confirmed cloud-backed injection detection.
+**Feature 1 — L1 Input Shielding (Tiered Cost Optimization)**
+L1 runs in 4 tiers — cheapest first, cloud only when needed:
+- Tier 0: Exact blocklist match (<0.1ms, zero cost) — `SYSTEM OVERRIDE`, `ignore previous instructions`
+- Tier 1: 33-pattern compiled regex (<1ms, zero cost) — jailbreak scaffolds, shell injection strings, path traversal
+- Tier 2: Azure AI Content Safety Prompt Shields (~40–60ms, API cost) — only reached if Tier 0/1 pass
+- Tier 3: MELON contrastive detection (~5ms CPU, opt-in) — for high-security deployments
+
+Result: ~40–60% of adversarial inputs blocked offline with zero API cost.
 
 **Feature 2 — L2 Output Guardrails**
 Azure AI Language PII detection scrubs agent responses before they reach the user — blocks SSNs, API keys, email addresses. Azure Content Safety toxicity filter blocks harmful completions.
@@ -76,13 +84,20 @@ C1: Azure entity recognition on tool arguments (detects injected credentials)
 C2: MELON contrastive detection — re-runs tool output through a masked prompt; if tool call sequence diverges, indirect injection confirmed (optional, for high-security deployments)
 C4: Human-in-the-loop / AI-in-the-loop approval workflow for sensitive tool calls
 
-**Feature 4 — L4 RBAC + Behavioral Anomaly**
-ABAC policy engine: role × verb × resource sensitivity × upstream risk score → ALLOW / DENY / ELEVATE
-5-signal behavioral anomaly scorer: Z-score tool frequency, Levenshtein sequence divergence, read→exfil chain detection (CRITICAL), unapproved domain, Shannon entropy spike
+**Feature 4 — L4 RBAC + Behavioral Anomaly (Three-State Decision)**
+ABAC policy engine: role × verb × resource sensitivity × upstream risk score → **ALLOW / DENY / ELEVATE**
 
-**Feature 5 — Observability + Red-Team CLI**
-SQLite audit log: every blocking decision stored for compliance forensics.
-OpenTelemetry spans → Jaeger live trace dashboard at `localhost:8765`.
+The ELEVATE third-state is the key differentiator: instead of binary block/allow, medium-risk tool calls are routed to the C4 Human-in-the-Loop (or AI-in-the-Loop) approval workflow. Neither Guardrails AI nor Microsoft's Agent Governance Toolkit PolicyEngine implements this outcome.
+
+5-signal behavioral anomaly scorer: Z-score tool frequency, Levenshtein sequence divergence, read→exfil chain (CRITICAL), unapproved external domain, Shannon entropy spike
+
+**Feature 5 — Live Dashboard + Red-Team CLI**
+Live deployment: **https://agentguard.exempl4r.xyz/**
+
+- **`/` (OTel Monitor):** Real-time trace stream via Server-Sent Events — stats strip (Total Checks, Blocked, 24h Pass Rate, Avg Latency), layer breakdown (L1/L2/Tool Firewall pass+block counts), full audit log table, expandable trace rows with span IDs and blocking reason.
+- **`/demo` (Attack Playground):** Select an agent → toggle Guarded/Unguarded → run pre-built attack tests (L1 Input, L2 Output, Tool Firewall) or enter a custom prompt → verdict panel shows BLOCKED/SAFE + which layer + duration + live trace feed.
+
+SQLite audit log: every blocking decision stored locally for compliance forensics.
 `agentguard test` auto-generates Promptfoo red-team config and fires 25+ attack scenarios against your agent.
 
 **User flow (step by step):**
@@ -92,6 +107,7 @@ agentguard init          →  generates agentguard.yaml + .env.example
 @guard_agent decorator   →  L1/L2/L3/L4 active on next run
 agentguard test          →  adversarial red-team suite runs
 agentguard dashboard     →  live OTel traces + demo UI at localhost:8765
+                         →  (or live: https://agentguard.exempl4r.xyz/)
 ```
 
 ```

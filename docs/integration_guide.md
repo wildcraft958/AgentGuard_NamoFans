@@ -329,12 +329,17 @@ print(f"{log.pass_rate():.0%}")  # 24h pass rate
 
 ## OTel Dashboard
 
-```bash
-# Start the live dashboard (requires Jaeger for full trace view)
-agentguard dashboard --port 8765
+**Live deployment:** https://agentguard.exempl4r.xyz/
 
-# With Jaeger:
+- `/` — Real-time OTel trace stream (Server-Sent Events): stats strip (Total Checks, Blocked, 24h Pass Rate, Avg Latency), layer breakdown (L1/L2/Tool Firewall), full audit log, expandable trace rows
+- `/demo` — Attack playground: select an agent, toggle Guarded/Unguarded, run pre-built attack tests or custom prompts, see BLOCKED/SAFE verdict with layer + duration
+
+```bash
+# Run locally
+agentguard dashboard --port 8765
+# Open http://localhost:8765
+
+# With Jaeger for full trace view:
 docker compose -f docker-compose.jaeger.yml up -d
 agentguard dashboard --jaeger-url http://localhost:16686
-# Open http://localhost:8765
 ```
