@@ -38,13 +38,17 @@ class AuditLog:
 
     _CREATE_TABLE = """
     CREATE TABLE IF NOT EXISTS audit_log (
-        id       INTEGER PRIMARY KEY AUTOINCREMENT,
-        ts       TEXT    NOT NULL,
-        action   TEXT    NOT NULL,
-        layer    TEXT,
-        safe     INTEGER NOT NULL,
-        reason   TEXT,
-        metadata TEXT
+        id                INTEGER PRIMARY KEY AUTOINCREMENT,
+        ts                TEXT    NOT NULL,
+        action            TEXT    NOT NULL,
+        layer             TEXT,
+        safe              INTEGER NOT NULL,
+        reason            TEXT,
+        metadata          TEXT,
+        l4_rbac_decision  TEXT    DEFAULT '',
+        l4_signals        TEXT    DEFAULT '[]',
+        l4_composite      REAL    DEFAULT 0.0,
+        l4_action         TEXT    DEFAULT ''
     )
     """
 
@@ -73,11 +77,25 @@ class AuditLog:
         self._init_db()
 
     def _init_db(self) -> None:
-        """Create tables and indexes if they do not exist."""
+        """Create tables and indexes if they do not exist, migrate L4 columns if missing."""
         with self._conn:
             self._conn.execute(self._CREATE_TABLE)
             self._conn.execute(self._CREATE_IDX_TS)
             self._conn.execute(self._CREATE_IDX_ACTION)
+            # Migrate: add L4 columns to existing databases that pre-date this schema
+            existing = {
+                row[1]
+                for row in self._conn.execute("PRAGMA table_info(audit_log)").fetchall()
+            }
+            migrations = [
+                ("l4_rbac_decision", "TEXT DEFAULT ''"),
+                ("l4_signals", "TEXT DEFAULT '[]'"),
+                ("l4_composite", "REAL DEFAULT 0.0"),
+                ("l4_action", "TEXT DEFAULT ''"),
+            ]
+            for col, col_def in migrations:
+                if col not in existing:
+                    self._conn.execute(f"ALTER TABLE audit_log ADD COLUMN {col} {col_def}")
 
     def record(
         self,
@@ -86,27 +104,38 @@ class AuditLog:
         is_safe: bool,
         reason: str | None = None,
         metadata: dict | None = None,
+        l4_rbac_decision: str = "",
+        l4_signals: str = "[]",
+        l4_composite: float = 0.0,
+        l4_action: str = "",
     ) -> int:
         """
         Insert one audit row.
 
         Args:
-            action:   High-level action name ('validate_input', 'validate_tool_call', etc.)
-            layer:    Security layer ('l1_input', 'l2_output', 'tool_firewall', etc.)
-            is_safe:  True if the request was allowed through, False if blocked.
-            reason:   Human-readable block reason (None if safe).
-            metadata: Optional dict (blocked_by, params_hash, tool_name, etc.).
+            action:           High-level action name.
+            layer:            Security layer (l1_input, l2_output, tool_firewall, etc.)
+            is_safe:          True if allowed, False if blocked.
+            reason:           Human-readable block reason.
+            metadata:         Optional dict for extra context.
+            l4_rbac_decision: ALLOW | DENY | ELEVATE from L4a RBAC engine.
+            l4_signals:       JSON list of L4b anomaly signals.
+            l4_composite:     L4b composite anomaly score (0.0–1.0).
+            l4_action:        L4b action: ALLOW | WARN | ELEVATE | BLOCK.
 
         Returns:
-            The row id of the inserted record.
+            Row id of the inserted record.
         """
         ts = datetime.now(timezone.utc).isoformat()
         meta_json = json.dumps(metadata) if metadata else None
 
         cursor = self._conn.execute(
-            "INSERT INTO audit_log (ts, action, layer, safe, reason, metadata) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (ts, action, layer, int(is_safe), reason, meta_json),
+            "INSERT INTO audit_log "
+            "(ts, action, layer, safe, reason, metadata, "
+            " l4_rbac_decision, l4_signals, l4_composite, l4_action) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (ts, action, layer, int(is_safe), reason, meta_json,
+             l4_rbac_decision, l4_signals, l4_composite, l4_action),
         )
         self._conn.commit()
         return cursor.lastrowid
