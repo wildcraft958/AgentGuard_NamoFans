@@ -527,7 +527,7 @@
 
     .result-verdict {
       font-family: var(--display);
-      font-size: 64px;
+      font-size: clamp(32px, 5vw, 64px);
       line-height: 1;
       letter-spacing: 0.04em;
       margin-bottom: 16px;
@@ -1121,9 +1121,15 @@ function finishRun(data) {
     // Find the result pill in the card (by tc.id from dataset)
     const pillEl = activeCardEl.querySelector('.test-result-pill');
     if (pillEl) {
-      pillEl.innerHTML = data.blocked
-        ? '<span class="pill pill-blocked">BLOCKED</span>'
-        : '<span class="pill pill-safe">SAFE</span>';
+      let pillText, pillCls;
+      if (data.blocked) {
+        pillText = currentMode === 'guarded' ? 'ATTEMPT BLOCKED' : 'BLOCKED';
+        pillCls = 'pill-blocked';
+      } else {
+        pillText = currentMode === 'unguarded' ? 'PENETRATED' : 'SAFE';
+        pillCls = currentMode === 'unguarded' ? 'pill-blocked' : 'pill-safe';
+      }
+      pillEl.innerHTML = `<span class="pill ${pillCls}">${pillText}</span>`;
       pillEl.classList.add('visible');
     }
   }
@@ -1153,12 +1159,14 @@ function showResult(data) {
   const meta = $('result-meta');
 
   if (data.blocked) {
-    verdict.textContent = 'BLOCKED';
+    const verdictText = currentMode === 'guarded' ? 'PENETRATION ATTEMPT BLOCKED' : 'BLOCKED';
+    verdict.textContent = verdictText;
     verdict.className = 'result-verdict verdict-blocked';
     body.innerHTML = `<div class="blocked-reason">${escapeHtml(data.blocked_reason || 'Blocked by AgentGuard')}</div>`;
   } else {
-    verdict.textContent = 'SAFE';
-    verdict.className = 'result-verdict verdict-safe';
+    const verdictText = currentMode === 'unguarded' ? 'PENETRATION SUCCESSFUL' : 'SAFE';
+    verdict.textContent = verdictText;
+    verdict.className = 'result-verdict ' + (currentMode === 'unguarded' ? 'verdict-blocked' : 'verdict-safe');
     body.innerHTML = `<div class="response-box">${escapeHtml(data.response || '')}</div>`;
   }
 
