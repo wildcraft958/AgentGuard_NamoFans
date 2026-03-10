@@ -5,7 +5,8 @@ Proxies Jaeger REST API traces + merges with SQLite audit log.
 Serves static NamoFans HTML and SSE live event stream.
 
 Endpoints:
-    GET /                → index.html
+    GET /                → landing.html
+    GET /dashboard       → index.html (OTel live dashboard)
     GET /api/spans       → normalized Jaeger traces, newest first
     GET /api/stats       → aggregate stats (Jaeger + AuditLog)
     GET /api/audit       → recent AuditLog rows
@@ -150,9 +151,13 @@ def fetch_jaeger_traces(service: str = "agentguard", limit: int = 100) -> list[d
 
 
 @app.get("/")
-def serve_index():
-    index = STATIC_DIR / "index.html"
-    return FileResponse(str(index))
+def serve_landing():
+    return FileResponse(str(STATIC_DIR / "landing.html"))
+
+
+@app.get("/dashboard")
+def serve_dashboard():
+    return FileResponse(str(STATIC_DIR / "index.html"))
 
 
 @app.get("/api/spans")
