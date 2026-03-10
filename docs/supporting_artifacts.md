@@ -1,4 +1,7 @@
 # AgentGuard — Supporting Artifacts
+
+![AgentGuard Logo](../assets/logo.png)
+
 ## Architecture & Design
 
 **AI Unlocked 2026 · Track 5: Trustworthy AI · IIT Kharagpur**

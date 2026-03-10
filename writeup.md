@@ -1,3 +1,7 @@
+# AgentGuard — Developer Writeup
+
+![AgentGuard Logo](assets/logo.png)
+
 ## 2026-03-10 — OpenTelemetry Integration (spans + metrics for all Guardian methods)
 
 **What changed:**

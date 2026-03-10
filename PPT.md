@@ -1,4 +1,7 @@
 # AgentGuard — Presentation Deck
+
+![AgentGuard Logo](assets/logo.png)
+
 **AI Unlocked 2026 · Track 5: Trustworthy AI · IIT Kharagpur · Team NamoFans**
 
 | Animesh Raj | Atul Singh | Devansh Gupta | Prem Agarwal | Mohd Faizan Khan |

@@ -1,5 +1,7 @@
 # AgentGuard
 
+![AgentGuard Logo](assets/logo.png)
+
 > **Multi-Agent Security & Governance Platform for Enterprise AI**
 > Team NamoFans | IIT Kharagpur | AI Unlocked 2026 — Track 5: Trustworthy AI
 
