@@ -312,11 +312,11 @@ class AgentGuardConfig:
 
     @property
     def telemetry_endpoint(self) -> str | None:
-        """OTLP endpoint from config or OTEL_EXPORTER_OTLP_ENDPOINT env var."""
-        cfg_val = _deep_get(self._raw, "observability", "otel_endpoint", default=None)
-        if cfg_val is not None:
-            return cfg_val
-        return os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT")
+        """OTLP endpoint — env var takes priority over config (OTel standard)."""
+        env_val = os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT")
+        if env_val:
+            return env_val
+        return _deep_get(self._raw, "observability", "otel_endpoint", default=None)
 
     @property
     def telemetry_service_name(self) -> str:
