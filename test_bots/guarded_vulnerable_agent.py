@@ -142,13 +142,15 @@ def run_guarded_agent(user_message: str, max_turns: int = 10) -> str:
 # ==========================================
 
 
-@guard(param="user_message", output_field="response", config=CONFIG_PATH)
-def guarded_call(user_message: str) -> dict:
+@guard(param="user_message", docs_param="documents", output_field="response", config=CONFIG_PATH)
+def guarded_call(user_message: str, documents: list = None) -> dict:
     """
     Full security stack:
       L1 checks user_message BEFORE the agent runs.
       Tool Firewall checks EVERY tool call inside the agent loop.
       L2 checks the agent's final response AFTER it completes.
+         - Groundedness detection verifies output against documents (if provided)
+           or against the user's query (input-grounded mode).
     """
     response = run_guarded_agent(user_message)
     return {"response": response}

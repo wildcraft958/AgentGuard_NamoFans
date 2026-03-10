@@ -148,6 +148,28 @@ class AgentGuardConfig:
             "allowed_categories", default=[]
         )
 
+    # ----- Output Security: Groundedness / Hallucination Detection -----
+
+    @property
+    def groundedness_enabled(self) -> bool:
+        return _deep_get(
+            self._raw, "output_security", "hallucination_detection", "enabled", default=False
+        )
+
+    @property
+    def groundedness_block_on_high_confidence(self) -> bool:
+        return _deep_get(
+            self._raw, "output_security", "hallucination_detection",
+            "block_on_high_confidence", default=False
+        )
+
+    @property
+    def groundedness_confidence_threshold(self) -> float:
+        return _deep_get(
+            self._raw, "output_security", "hallucination_detection",
+            "confidence_threshold", default=3.0
+        )
+
     # ----- Pattern Detection: Custom Blocklists -----
 
     @property

