@@ -158,6 +158,36 @@ def run_tests(
     subprocess.run(cmd, check=False)
 
 
+def run_dashboard(
+    host: str = "0.0.0.0",
+    port: int = 8765,
+    jaeger_url: str | None = None,
+) -> None:
+    """
+    Start the AgentGuard OTel dashboard server.
+
+    Args:
+        host:       Host to bind to.
+        port:       Port to listen on.
+        jaeger_url: Override Jaeger query URL (sets JAEGER_QUERY_URL env var).
+    """
+    import uvicorn
+
+    if jaeger_url:
+        os.environ["JAEGER_QUERY_URL"] = jaeger_url
+
+    print(f"[agentguard] Starting dashboard at http://{host}:{port}")
+    if jaeger_url:
+        print(f"[agentguard] Jaeger query URL: {jaeger_url}")
+
+    uvicorn.run(
+        "agentguard.dashboard.server:app",
+        host=host,
+        port=port,
+        log_level="info",
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Build and return the argparse parser. Separated for testability."""
     parser = argparse.ArgumentParser(
@@ -193,6 +223,34 @@ def build_parser() -> argparse.ArgumentParser:
         dest="promptfoo_config",
         help="Escape hatch: path to a user-authored promptfooconfig.yaml (skips auto-generation)",
     )
+
+    dash_parser = subparsers.add_parser(
+        "dashboard",
+        help="Start the OTel live dashboard",
+    )
+    dash_parser.add_argument(
+        "--config",
+        default="agentguard.yaml",
+        help="Path to agentguard.yaml (default: agentguard.yaml)",
+    )
+    dash_parser.add_argument(
+        "--port",
+        type=int,
+        default=8765,
+        help="Port to listen on (default: 8765)",
+    )
+    dash_parser.add_argument(
+        "--host",
+        default="0.0.0.0",
+        help="Host to bind to (default: 0.0.0.0)",
+    )
+    dash_parser.add_argument(
+        "--jaeger-url",
+        default=None,
+        dest="jaeger_url",
+        help="Jaeger query URL (default: http://localhost:16686)",
+    )
+
     return parser
 
 
@@ -209,6 +267,12 @@ def main():
             agent_module=args.module,
             function_name=args.function,
             promptfoo_config=args.promptfoo_config,
+        )
+    elif args.command == "dashboard":
+        run_dashboard(
+            host=args.host,
+            port=args.port,
+            jaeger_url=args.jaeger_url,
         )
     else:
         parser.print_help()

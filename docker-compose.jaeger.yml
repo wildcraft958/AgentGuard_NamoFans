@@ -1,0 +1,9 @@
+services:
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    ports:
+      - "4317:4317"   # OTLP gRPC (AgentGuard writes here)
+      - "4318:4318"   # OTLP HTTP
+      - "16686:16686" # Jaeger UI + query API (dashboard reads here)
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
