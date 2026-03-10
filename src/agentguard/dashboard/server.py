@@ -24,6 +24,7 @@ from fastapi.responses import FileResponse
 from sse_starlette.sse import EventSourceResponse
 
 from agentguard.audit_log import AuditLog
+from agentguard.dashboard.demo_router import router as demo_router
 
 logger = logging.getLogger("agentguard.dashboard")
 
@@ -31,6 +32,7 @@ JAEGER_BASE = os.environ.get("JAEGER_QUERY_URL", "http://localhost:16686")
 STATIC_DIR = Path(__file__).parent / "static"
 
 app = FastAPI(title="AgentGuard Dashboard")
+app.include_router(demo_router)
 
 # ---------------------------------------------------------------------------
 # Singleton audit log (lazy-init, one per process)

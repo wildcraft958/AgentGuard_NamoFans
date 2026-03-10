@@ -1,0 +1,1293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AgentGuard — Demo Playground</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+
+  <style>
+    /* =========================================================
+       DESIGN TOKENS
+    ========================================================= */
+    :root {
+      --black:    #0a0a0a;
+      --black2:   #111111;
+      --black3:   #1a1a1a;
+      --black4:   #242424;
+      --border:   #2a2a2a;
+      --border2:  #333333;
+      --text:     #e8e8e8;
+      --muted:    #777777;
+      --orange:   #e8400c;
+      --orange2:  #ff5a2b;
+      --red:      #e83c3c;
+      --green:    #2ecc71;
+      --green2:   #27ae60;
+      --blue:     #3498db;
+      --mono:     'JetBrains Mono', monospace;
+      --sans:     'Manrope', sans-serif;
+      --display:  'Bebas Neue', sans-serif;
+      --radius:   4px;
+      --nav-h:    64px;
+      --sidebar-w: 260px;
+    }
+
+    /* =========================================================
+       RESET + BASE
+    ========================================================= */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      background: var(--black);
+      color: var(--text);
+      font-family: var(--sans);
+      font-size: 14px;
+      line-height: 1.6;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* grain overlay */
+    body::after {
+      content: '';
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 9999;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+      opacity: 0.4;
+    }
+
+    a { color: inherit; text-decoration: none; }
+
+    /* =========================================================
+       SCROLLBAR
+    ========================================================= */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: var(--black2); }
+    ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+
+    /* =========================================================
+       KEYFRAMES
+    ========================================================= */
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50%       { opacity: 0.4; transform: scale(0.8); }
+    }
+
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(8px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes borderPulse {
+      0%, 100% { border-color: var(--orange); box-shadow: 0 0 0 0 rgba(232,64,12,0); }
+      50%       { border-color: var(--orange2); box-shadow: 0 0 0 4px rgba(232,64,12,0.15); }
+    }
+
+    /* =========================================================
+       NAVBAR
+    ========================================================= */
+    .navbar {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      height: var(--nav-h);
+      background: rgba(10,10,10,0.92);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--border);
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      padding: 0 24px;
+      gap: 16px;
+    }
+
+    .nav-logo {
+      font-family: var(--mono);
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      color: var(--text);
+      white-space: nowrap;
+    }
+    .nav-logo span { color: var(--orange); }
+
+    .nav-link {
+      font-family: var(--mono);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      color: var(--muted);
+      text-transform: uppercase;
+      padding: 4px 0;
+      border-bottom: 2px solid transparent;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    .nav-link:hover { color: var(--text); }
+    .nav-link.active { color: var(--orange); border-bottom-color: var(--orange); }
+
+    .nav-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--orange);
+      animation: pulse 2s ease-in-out infinite;
+      flex-shrink: 0;
+    }
+    .nav-dot.green { background: var(--green); }
+    .nav-dot.red   { background: var(--red); animation: pulse 1s ease-in-out infinite; }
+
+    .nav-spacer { flex: 1; }
+
+    .nav-badge {
+      font-family: var(--mono);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.15em;
+      padding: 3px 8px;
+      border-radius: var(--radius);
+      text-transform: uppercase;
+    }
+    .badge-enforce { background: rgba(232,64,12,0.15); color: var(--orange); border: 1px solid rgba(232,64,12,0.3); }
+
+    /* =========================================================
+       LAYOUT — sidebar + main
+    ========================================================= */
+    .demo-layout {
+      display: flex;
+      padding-top: var(--nav-h);
+      min-height: 100vh;
+    }
+
+    /* =========================================================
+       SIDEBAR
+    ========================================================= */
+    .sidebar {
+      position: fixed;
+      top: var(--nav-h);
+      left: 0;
+      bottom: 0;
+      width: var(--sidebar-w);
+      background: var(--black2);
+      border-right: 1px solid var(--border);
+      overflow-y: auto;
+      z-index: 50;
+    }
+
+    .sidebar-eyebrow {
+      font-family: var(--mono);
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.2em;
+      color: var(--muted);
+      text-transform: uppercase;
+      padding: 16px 20px 10px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .sidebar-eyebrow::before {
+      content: '';
+      display: inline-block;
+      width: 20px; height: 1px;
+      background: var(--orange);
+      flex-shrink: 0;
+    }
+
+    .agent-card {
+      padding: 14px 20px;
+      border-bottom: 1px solid var(--border);
+      cursor: pointer;
+      transition: background 0.12s ease;
+      border-left: 3px solid transparent;
+    }
+    .agent-card:hover { background: var(--black3); }
+    .agent-card.selected {
+      background: var(--black3);
+      border-left-color: var(--orange);
+    }
+
+    .agent-badge {
+      font-family: var(--mono);
+      font-size: 8px;
+      font-weight: 700;
+      letter-spacing: 0.15em;
+      padding: 2px 6px;
+      border-radius: 2px;
+      background: rgba(232,64,12,0.12);
+      color: var(--orange);
+      display: inline-block;
+      margin-bottom: 6px;
+    }
+
+    .agent-name {
+      font-family: var(--sans);
+      font-weight: 600;
+      font-size: 13px;
+      color: var(--text);
+      margin-bottom: 3px;
+    }
+
+    .agent-desc {
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--muted);
+      line-height: 1.4;
+    }
+
+    /* =========================================================
+       MAIN CONTENT
+    ========================================================= */
+    .main {
+      margin-left: var(--sidebar-w);
+      flex: 1;
+      padding: 32px;
+      min-height: calc(100vh - var(--nav-h));
+      max-width: calc(100vw - var(--sidebar-w));
+    }
+
+    /* =========================================================
+       EYEBROW
+    ========================================================= */
+    .eyebrow {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-family: var(--mono);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.2em;
+      color: var(--muted);
+      text-transform: uppercase;
+      margin-bottom: 16px;
+    }
+    .eyebrow::before {
+      content: '';
+      display: inline-block;
+      width: 24px; height: 1px;
+      background: var(--orange);
+      flex-shrink: 0;
+    }
+
+    /* =========================================================
+       AGENT HEADER
+    ========================================================= */
+    .agent-header {
+      margin-bottom: 28px;
+    }
+
+    .agent-title {
+      font-family: var(--display);
+      font-size: 56px;
+      line-height: 1;
+      letter-spacing: 0.02em;
+      margin-bottom: 8px;
+    }
+
+    .agent-subtitle {
+      font-family: var(--sans);
+      font-size: 14px;
+      color: var(--muted);
+      margin-bottom: 20px;
+    }
+
+    /* =========================================================
+       MODE TOGGLE
+    ========================================================= */
+    .mode-toggle-row {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .toggle-label {
+      font-family: var(--mono);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      transition: color 0.2s;
+    }
+    .toggle-label.active-label { color: var(--green); }
+    .toggle-label.inactive-label { color: var(--muted); }
+
+    /* pill toggle */
+    .toggle-pill {
+      position: relative;
+      display: inline-block;
+      width: 48px;
+      height: 24px;
+    }
+    .toggle-pill input { opacity: 0; width: 0; height: 0; }
+    .toggle-slider {
+      position: absolute;
+      inset: 0;
+      background: var(--green2);
+      border-radius: 24px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .toggle-slider::before {
+      content: '';
+      position: absolute;
+      height: 18px; width: 18px;
+      left: 3px; bottom: 3px;
+      background: white;
+      border-radius: 50%;
+      transition: transform 0.2s;
+    }
+    .toggle-pill input:checked + .toggle-slider { background: var(--muted); }
+    .toggle-pill input:checked + .toggle-slider::before { transform: translateX(24px); }
+
+    /* =========================================================
+       PANEL
+    ========================================================= */
+    .panel {
+      background: var(--black2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      margin-bottom: 24px;
+      overflow: hidden;
+    }
+
+    .panel-header {
+      padding: 14px 20px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .panel-body { padding: 20px; }
+
+    /* =========================================================
+       TEST CARDS GRID
+    ========================================================= */
+    .tests-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+    }
+
+    @media (max-width: 800px) {
+      .tests-grid { grid-template-columns: 1fr; }
+    }
+
+    .test-card {
+      background: var(--black3);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px 16px;
+      cursor: pointer;
+      transition: transform 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+      position: relative;
+    }
+    .test-card:hover {
+      transform: translateY(-2px);
+      background: var(--black4);
+      border-color: var(--border2);
+    }
+    .test-card.running {
+      animation: borderPulse 1.2s ease-in-out infinite;
+      pointer-events: none;
+    }
+    .test-card.safe   { border-color: rgba(46,204,113,0.4); }
+    .test-card.blocked { border-color: rgba(232,60,60,0.4); }
+
+    .test-card-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+
+    .test-layer-tag {
+      font-family: var(--mono);
+      font-size: 8px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      padding: 2px 7px;
+      border-radius: 2px;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+    .tag-safe    { background: rgba(46,204,113,0.10); color: var(--green); }
+    .tag-l1      { background: rgba(52,152,219,0.10); color: var(--blue); }
+    .tag-l2      { background: rgba(155,89,182,0.10); color: #9b59b6; }
+    .tag-other   { background: rgba(232,64,12,0.10); color: var(--orange); }
+
+    .test-expect-pill {
+      font-family: var(--mono);
+      font-size: 8px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      padding: 2px 8px;
+      border-radius: 20px;
+      text-transform: uppercase;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .expect-safe    { background: rgba(46,204,113,0.10); color: var(--green); border: 1px solid rgba(46,204,113,0.2); }
+    .expect-blocked { background: rgba(232,60,60,0.10); color: var(--red); border: 1px solid rgba(232,60,60,0.2); }
+
+    .test-name {
+      font-family: var(--sans);
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text);
+      line-height: 1.4;
+    }
+
+    .test-result-pill {
+      margin-top: 8px;
+      display: none;
+    }
+    .test-result-pill.visible { display: inline-block; }
+
+    /* =========================================================
+       CUSTOM MESSAGE
+    ========================================================= */
+    .custom-textarea {
+      width: 100%;
+      height: 100px;
+      background: var(--black);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: 12px;
+      padding: 12px;
+      resize: vertical;
+      outline: none;
+      transition: border-color 0.15s;
+      line-height: 1.5;
+    }
+    .custom-textarea:focus { border-color: var(--border2); }
+
+    .docs-toggle-btn {
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      padding: 6px 12px;
+      border-radius: var(--radius);
+      cursor: pointer;
+      margin-top: 10px;
+      transition: border-color 0.15s, color 0.15s;
+    }
+    .docs-toggle-btn:hover { border-color: var(--border2); color: var(--text); }
+
+    .docs-area { margin-top: 10px; display: none; }
+    .docs-area.open { display: block; }
+
+    .docs-label {
+      font-family: var(--mono);
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.15em;
+      color: var(--muted);
+      text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+
+    .run-btn {
+      margin-top: 14px;
+      background: var(--orange);
+      border: none;
+      color: white;
+      font-family: var(--display);
+      font-size: 18px;
+      letter-spacing: 0.08em;
+      padding: 10px 28px;
+      border-radius: var(--radius);
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .run-btn:hover { background: var(--orange2); }
+    .run-btn:disabled {
+      background: var(--border2);
+      color: var(--muted);
+      cursor: not-allowed;
+    }
+
+    /* =========================================================
+       RESULT PANEL
+    ========================================================= */
+    #result-panel {
+      display: none;
+      animation: fadeUp 0.3s ease;
+    }
+    #result-panel.visible { display: block; }
+
+    .result-verdict {
+      font-family: var(--display);
+      font-size: 64px;
+      line-height: 1;
+      letter-spacing: 0.04em;
+      margin-bottom: 16px;
+    }
+    .verdict-safe    { color: var(--green); }
+    .verdict-blocked { color: var(--red); }
+
+    .response-box {
+      background: var(--black3);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px;
+      font-family: var(--mono);
+      font-size: 11px;
+      line-height: 1.6;
+      color: var(--text);
+      max-height: 180px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .blocked-reason {
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--red);
+      line-height: 1.5;
+      padding: 12px 0;
+    }
+
+    .result-meta {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 14px;
+    }
+
+    .meta-tag {
+      font-family: var(--mono);
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      padding: 2px 8px;
+      border-radius: 2px;
+      text-transform: uppercase;
+    }
+    .meta-safe    { background: rgba(46,204,113,0.12); color: var(--green); }
+    .meta-blocked { background: rgba(232,60,60,0.12); color: var(--red); }
+    .meta-info    { background: rgba(119,119,119,0.12); color: var(--muted); }
+
+    .meta-dot { color: var(--border2); }
+
+    /* =========================================================
+       LIVE TELEMETRY
+    ========================================================= */
+    .feed-list {
+      list-style: none;
+      max-height: 280px;
+      overflow-y: auto;
+    }
+
+    .feed-row {
+      display: grid;
+      grid-template-columns: 90px 1fr 80px 72px 64px;
+      gap: 0;
+      padding: 9px 20px;
+      border-bottom: 1px solid var(--border);
+      align-items: center;
+      animation: fadeUp 0.25s ease both;
+      transition: background 0.15s ease;
+    }
+    .feed-row:hover { background: var(--black3); }
+
+    .feed-ts  { font-family: var(--mono); font-size: 10px; color: var(--muted); }
+    .feed-op  { font-family: var(--mono); font-size: 11px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .feed-layer { justify-self: center; }
+    .feed-status { justify-self: center; }
+    .feed-dur { font-family: var(--mono); font-size: 10px; color: var(--muted); text-align: right; }
+
+    .layer-tag {
+      font-family: var(--mono);
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      padding: 2px 6px;
+      border-radius: 2px;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+    .layer-l1   { background: rgba(52,152,219,0.12); color: var(--blue); }
+    .layer-l2   { background: rgba(155,89,182,0.12); color: #9b59b6; }
+    .layer-tool { background: rgba(232,64,12,0.12);  color: var(--orange); }
+    .layer-unk  { background: rgba(119,119,119,0.12); color: var(--muted); }
+
+    .pill {
+      font-family: var(--mono);
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      padding: 2px 8px;
+      border-radius: 20px;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+    .pill-safe    { background: rgba(46,204,113,0.12); color: var(--green); border: 1px solid rgba(46,204,113,0.25); }
+    .pill-blocked { background: rgba(232,60,60,0.12);  color: var(--red);   border: 1px solid rgba(232,60,60,0.25); }
+
+    .empty-state {
+      padding: 32px 20px;
+      text-align: center;
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--muted);
+      letter-spacing: 0.1em;
+    }
+
+    /* =========================================================
+       EMPTY PLACEHOLDER
+    ========================================================= */
+    #agent-placeholder {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 60vh;
+      gap: 16px;
+      color: var(--muted);
+    }
+    .placeholder-bracket {
+      font-family: var(--mono);
+      font-size: 80px;
+      line-height: 1;
+      color: rgba(232,64,12,0.08);
+      user-select: none;
+    }
+    .placeholder-text {
+      font-family: var(--mono);
+      font-size: 11px;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+    }
+
+    /* connection status inline */
+    #sse-status {
+      font-family: var(--mono);
+      font-size: 9px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      transition: color 0.3s;
+      color: var(--muted);
+    }
+
+    #agent-content { display: none; }
+    #agent-content.visible { display: block; }
+
+  </style>
+</head>
+<body>
+
+<!-- =========================================================
+     NAVBAR
+========================================================= -->
+<nav class="navbar">
+  <div class="nav-logo">
+    <span>⌐◨</span> AGENTGUARD <span>◨¬</span>
+  </div>
+
+  <a href="/" class="nav-link">DASHBOARD</a>
+  <a href="/demo" class="nav-link active">DEMO</a>
+
+  <div class="nav-spacer"></div>
+
+  <div style="display:flex;align-items:center;gap:8px;">
+    <div class="nav-dot" id="sse-dot"></div>
+    <span id="sse-status">connecting...</span>
+  </div>
+
+  <span id="nav-mode-badge" class="nav-badge badge-enforce">ENFORCE</span>
+</nav>
+
+<!-- =========================================================
+     LAYOUT
+========================================================= -->
+<div class="demo-layout">
+
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+    <div class="sidebar-eyebrow">AGENTS</div>
+    <div id="agent-list">
+      <div class="empty-state">Loading agents...</div>
+    </div>
+  </aside>
+
+  <!-- MAIN -->
+  <main class="main">
+
+    <!-- Placeholder when no agent selected -->
+    <div id="agent-placeholder">
+      <div class="placeholder-bracket">[ ]</div>
+      <div class="placeholder-text">Select an agent from the sidebar</div>
+    </div>
+
+    <!-- Agent content (hidden until selection) -->
+    <div id="agent-content">
+
+      <!-- AGENT HEADER -->
+      <div class="agent-header">
+        <div class="agent-title" id="agent-title">—</div>
+        <div class="agent-subtitle" id="agent-desc">—</div>
+
+        <!-- Mode toggle -->
+        <div class="mode-toggle-row">
+          <span class="toggle-label active-label" id="label-guarded">GUARDED</span>
+          <label class="toggle-pill">
+            <input type="checkbox" id="guard-toggle" onchange="toggleMode()">
+            <span class="toggle-slider"></span>
+          </label>
+          <span class="toggle-label inactive-label" id="label-unguarded">UNGUARDED</span>
+        </div>
+      </div>
+
+      <!-- PREDEFINED TESTS -->
+      <div class="panel">
+        <div class="panel-header">
+          <div class="eyebrow" style="margin:0;">PREDEFINED TESTS</div>
+        </div>
+        <div class="panel-body">
+          <div class="tests-grid" id="tests-grid">
+            <!-- populated by JS -->
+          </div>
+        </div>
+      </div>
+
+      <!-- CUSTOM MESSAGE -->
+      <div class="panel">
+        <div class="panel-header">
+          <div class="eyebrow" style="margin:0;">CUSTOM MESSAGE</div>
+        </div>
+        <div class="panel-body">
+          <textarea
+            class="custom-textarea"
+            id="custom-message"
+            placeholder="Type a message to the agent..."
+          ></textarea>
+
+          <button class="docs-toggle-btn" onclick="toggleDocs()">+ Attach Documents</button>
+
+          <div class="docs-area" id="docs-area">
+            <div class="docs-label" style="margin-top:10px;">Document content (one document)</div>
+            <textarea
+              class="custom-textarea"
+              id="custom-docs"
+              placeholder="Paste document text here..."
+              style="height:80px;"
+            ></textarea>
+          </div>
+
+          <div>
+            <button class="run-btn" id="run-btn" onclick="runCustom()">RUN →</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- RUN RESULT -->
+      <div class="panel" id="result-panel">
+        <div class="panel-header">
+          <div class="eyebrow" style="margin:0;">RUN RESULT</div>
+        </div>
+        <div class="panel-body">
+          <div class="result-verdict" id="result-verdict"></div>
+          <div id="result-body"></div>
+          <div class="result-meta" id="result-meta"></div>
+        </div>
+      </div>
+
+      <!-- LIVE TELEMETRY -->
+      <div class="panel">
+        <div class="panel-header">
+          <div class="eyebrow" style="margin:0;">LIVE TRACE STREAM</div>
+          <div class="nav-dot" style="margin-left:4px;"></div>
+        </div>
+        <div class="panel-body" style="padding:0;">
+          <ul class="feed-list" id="feed-list">
+            <li class="empty-state" id="feed-empty">Waiting for traces...</li>
+          </ul>
+        </div>
+      </div>
+
+    </div><!-- /agent-content -->
+  </main>
+</div>
+
+<script>
+// =========================================================
+//  STATE
+// =========================================================
+
+let currentAgentId = null;
+let currentMode = 'guarded';   // 'guarded' | 'unguarded'
+let activeRunId = null;
+let activeCardEl = null;       // the test card that triggered the active run
+let pollTimer = null;
+let agentData = {};            // id -> agent object from /api/demo/agents
+
+// =========================================================
+//  UTILS
+// =========================================================
+
+const $ = id => document.getElementById(id);
+
+function fmtTime(ms) {
+  const d = new Date(ms);
+  return d.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
+function layerClass(layer) {
+  if (layer === 'l1_input')      return 'layer-l1';
+  if (layer === 'l2_output')     return 'layer-l2';
+  if (layer === 'tool_firewall') return 'layer-tool';
+  return 'layer-unk';
+}
+
+function layerLabel(layer) {
+  if (layer === 'l1_input')      return 'L1';
+  if (layer === 'l2_output')     return 'L2';
+  if (layer === 'tool_firewall') return 'TOOL';
+  return layer || '—';
+}
+
+function pillHtml(status) {
+  if (status === 'blocked') return '<span class="pill pill-blocked">BLOCKED</span>';
+  return '<span class="pill pill-safe">SAFE</span>';
+}
+
+function testLayerClass(layer) {
+  if (!layer || layer === 'SAFE') return 'tag-safe';
+  if (layer.startsWith('L1'))    return 'tag-l1';
+  if (layer.startsWith('L2'))    return 'tag-l2';
+  return 'tag-other';
+}
+
+function escapeHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+// =========================================================
+//  LOAD AGENTS
+// =========================================================
+
+async function loadAgents() {
+  try {
+    const resp = await fetch('/api/demo/agents');
+    if (!resp.ok) throw new Error('API error');
+    const agents = await resp.json();
+
+    // Store by id
+    agents.forEach(a => { agentData[a.id] = a; });
+
+    // Render sidebar
+    const list = $('agent-list');
+    list.innerHTML = '';
+    agents.forEach(agent => {
+      const card = document.createElement('div');
+      card.className = 'agent-card';
+      card.dataset.agentId = agent.id;
+      card.innerHTML = `
+        <div class="agent-badge">${escapeHtml(agent.badge)}</div>
+        <div class="agent-name">${escapeHtml(agent.name)}</div>
+        <div class="agent-desc">${escapeHtml(agent.description)}</div>
+      `;
+      card.addEventListener('click', () => selectAgent(agent.id));
+      list.appendChild(card);
+    });
+  } catch (e) {
+    console.error('Failed to load agents:', e);
+    $('agent-list').innerHTML = '<div class="empty-state">Failed to load agents</div>';
+  }
+}
+
+// =========================================================
+//  SELECT AGENT
+// =========================================================
+
+function selectAgent(agentId) {
+  currentAgentId = agentId;
+  const agent = agentData[agentId];
+  if (!agent) return;
+
+  // Sidebar highlight
+  document.querySelectorAll('.agent-card').forEach(el => {
+    el.classList.toggle('selected', el.dataset.agentId === agentId);
+  });
+
+  // Show main content
+  $('agent-placeholder').style.display = 'none';
+  $('agent-content').classList.add('visible');
+
+  // Header
+  $('agent-title').textContent = agent.name;
+  $('agent-desc').textContent = agent.description;
+
+  // Reset toggle to guarded
+  $('guard-toggle').checked = false;
+  currentMode = 'guarded';
+  updateToggleLabels();
+
+  // Reset result panel
+  hideResult();
+  clearPoll();
+
+  // Render test cases
+  renderTests(agent.test_cases);
+}
+
+// =========================================================
+//  MODE TOGGLE
+// =========================================================
+
+function toggleMode() {
+  const checked = $('guard-toggle').checked;
+  currentMode = checked ? 'unguarded' : 'guarded';
+  updateToggleLabels();
+}
+
+function updateToggleLabels() {
+  const guarded = currentMode === 'guarded';
+  $('label-guarded').className   = 'toggle-label ' + (guarded ? 'active-label' : 'inactive-label');
+  $('label-unguarded').className = 'toggle-label ' + (!guarded ? 'active-label' : 'inactive-label');
+}
+
+// =========================================================
+//  RENDER TEST CARDS
+// =========================================================
+
+function renderTests(testCases) {
+  const grid = $('tests-grid');
+  grid.innerHTML = '';
+
+  testCases.forEach(tc => {
+    const card = document.createElement('div');
+    card.className = 'test-card';
+    card.dataset.tcId = tc.id;
+
+    const layerCls = testLayerClass(tc.layer);
+    const expectCls = tc.expect_blocked ? 'expect-blocked' : 'expect-safe';
+    const expectLabel = tc.expect_blocked ? 'BLOCKED EXPECTED' : 'SAFE EXPECTED';
+
+    card.innerHTML = `
+      <div class="test-card-top">
+        <span class="test-layer-tag ${layerCls}">${escapeHtml(tc.layer)}</span>
+        <span class="test-expect-pill ${expectCls}">${expectLabel}</span>
+      </div>
+      <div class="test-name">${escapeHtml(tc.name)}</div>
+      <div class="test-result-pill" id="pill-${escapeHtml(tc.id)}"></div>
+    `;
+
+    card.addEventListener('click', () => {
+      const docs = tc.documents || null;
+      runTest(tc.message, docs, card);
+    });
+
+    grid.appendChild(card);
+  });
+}
+
+// =========================================================
+//  DOCS TOGGLE
+// =========================================================
+
+function toggleDocs() {
+  const area = $('docs-area');
+  const btn = document.querySelector('.docs-toggle-btn');
+  const open = area.classList.toggle('open');
+  btn.textContent = open ? '− Hide Documents' : '+ Attach Documents';
+}
+
+// =========================================================
+//  RUN CUSTOM
+// =========================================================
+
+function runCustom() {
+  if (!currentAgentId) return;
+
+  const message = $('custom-message').value.trim();
+  if (!message) return;
+
+  const docsText = $('custom-docs').value.trim();
+  const documents = docsText ? [docsText] : null;
+
+  runTest(message, documents, null);
+}
+
+// =========================================================
+//  RUN TEST
+// =========================================================
+
+async function runTest(message, documents, cardEl) {
+  if (!currentAgentId) return;
+
+  // Prevent concurrent runs
+  clearPoll();
+  hideResult();
+  setRunBtnDisabled(true);
+
+  if (activeCardEl) {
+    activeCardEl.classList.remove('running', 'safe', 'blocked');
+  }
+  activeCardEl = cardEl;
+  if (cardEl) cardEl.classList.add('running');
+
+  try {
+    const resp = await fetch('/api/demo/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        agent_id: currentAgentId,
+        mode: currentMode,
+        message,
+        documents,
+      }),
+    });
+
+    if (!resp.ok) throw new Error('Run request failed');
+    const data = await resp.json();
+    activeRunId = data.run_id;
+    pollResult();
+  } catch (e) {
+    console.error('Run failed:', e);
+    showError('Failed to submit run: ' + e.message);
+    if (cardEl) cardEl.classList.remove('running');
+    setRunBtnDisabled(false);
+  }
+}
+
+// =========================================================
+//  POLL RESULT
+// =========================================================
+
+function pollResult() {
+  if (!activeRunId) return;
+
+  pollTimer = setTimeout(async () => {
+    try {
+      const resp = await fetch('/api/demo/result/' + activeRunId);
+      if (!resp.ok) {
+        showError('Result not found (run_id may have expired)');
+        finishRun(null);
+        return;
+      }
+      const data = await resp.json();
+
+      if (data.status === 'pending') {
+        pollResult(); // keep polling
+        return;
+      }
+
+      finishRun(data);
+    } catch (e) {
+      console.error('Poll error:', e);
+      showError('Polling error: ' + e.message);
+      finishRun(null);
+    }
+  }, 500);
+}
+
+function finishRun(data) {
+  clearPoll();
+  setRunBtnDisabled(false);
+
+  if (!data) {
+    if (activeCardEl) activeCardEl.classList.remove('running');
+    return;
+  }
+
+  if (data.status === 'error') {
+    showError(data.error || 'Unknown error');
+    if (activeCardEl) activeCardEl.classList.remove('running');
+    return;
+  }
+
+  // Update card state
+  if (activeCardEl) {
+    activeCardEl.classList.remove('running');
+    activeCardEl.classList.add(data.blocked ? 'blocked' : 'safe');
+
+    // Find the result pill in the card (by tc.id from dataset)
+    const pillEl = activeCardEl.querySelector('.test-result-pill');
+    if (pillEl) {
+      pillEl.innerHTML = data.blocked
+        ? '<span class="pill pill-blocked">BLOCKED</span>'
+        : '<span class="pill pill-safe">SAFE</span>';
+      pillEl.classList.add('visible');
+    }
+  }
+
+  showResult(data);
+}
+
+function clearPoll() {
+  if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }
+  activeRunId = null;
+}
+
+function setRunBtnDisabled(disabled) {
+  const btn = $('run-btn');
+  btn.disabled = disabled;
+  btn.textContent = disabled ? 'RUNNING...' : 'RUN →';
+}
+
+// =========================================================
+//  SHOW RESULT
+// =========================================================
+
+function showResult(data) {
+  const panel = $('result-panel');
+  const verdict = $('result-verdict');
+  const body = $('result-body');
+  const meta = $('result-meta');
+
+  if (data.blocked) {
+    verdict.textContent = 'BLOCKED';
+    verdict.className = 'result-verdict verdict-blocked';
+    body.innerHTML = `<div class="blocked-reason">${escapeHtml(data.blocked_reason || 'Blocked by AgentGuard')}</div>`;
+  } else {
+    verdict.textContent = 'SAFE';
+    verdict.className = 'result-verdict verdict-safe';
+    body.innerHTML = `<div class="response-box">${escapeHtml(data.response || '')}</div>`;
+  }
+
+  // Metadata row
+  const metaParts = [];
+  if (data.blocked_by) {
+    metaParts.push(`<span class="meta-tag meta-blocked">${escapeHtml(data.blocked_by)}</span>`);
+  }
+  if (data.layer) {
+    metaParts.push(`<span class="meta-tag meta-info">${escapeHtml(data.layer)}</span>`);
+  }
+  if (data.duration_ms != null) {
+    metaParts.push(`<span class="meta-tag meta-info">${data.duration_ms}ms</span>`);
+  }
+  meta.innerHTML = metaParts.join('<span class="meta-dot"> · </span>');
+
+  panel.classList.add('visible');
+  panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function showError(msg) {
+  const panel = $('result-panel');
+  $('result-verdict').textContent = 'ERROR';
+  $('result-verdict').className = 'result-verdict verdict-blocked';
+  $('result-body').innerHTML = `<div class="blocked-reason">${escapeHtml(msg)}</div>`;
+  $('result-meta').innerHTML = '';
+  panel.classList.add('visible');
+}
+
+function hideResult() {
+  $('result-panel').classList.remove('visible');
+}
+
+// =========================================================
+//  LIVE TELEMETRY
+// =========================================================
+
+let feedCount = 0;
+const MAX_FEED = 20;
+
+function handleSpan(data) {
+  const list = $('feed-list');
+  const empty = $('feed-empty');
+  if (empty) empty.remove();
+
+  const li = document.createElement('li');
+  li.className = 'feed-row';
+
+  const ts = data.start_ms ? fmtTime(data.start_ms) : '—';
+  const op = data.operation_name || '—';
+  const layer = data.layer || 'unknown';
+  const status = data.status || 'safe';
+  const dur = data.duration_ms != null ? data.duration_ms + 'ms' : '—';
+  const blockedBy = data.blocked_by || '';
+
+  li.innerHTML = `
+    <span class="feed-ts">${escapeHtml(ts)}</span>
+    <span class="feed-op" title="${escapeHtml(op)}">${escapeHtml(op)}</span>
+    <span class="feed-layer"><span class="layer-tag ${layerClass(layer)}">${layerLabel(layer)}</span></span>
+    <span class="feed-status">${pillHtml(status)}</span>
+    <span class="feed-dur">${escapeHtml(dur)}</span>
+  `;
+
+  if (status === 'blocked' && blockedBy) {
+    const byEl = document.createElement('span');
+    byEl.style.cssText = 'display:block;font-family:var(--mono);font-size:9px;color:var(--orange);margin-top:2px;';
+    byEl.textContent = '↳ ' + blockedBy;
+    li.querySelector('.feed-op').after(byEl);
+  }
+
+  list.prepend(li);
+  feedCount++;
+  while (list.children.length > MAX_FEED) {
+    list.removeChild(list.lastChild);
+  }
+}
+
+// =========================================================
+//  SSE CONNECTION
+// =========================================================
+
+let evtSource = null;
+let reconnectTimer = null;
+
+function connectSSE() {
+  if (evtSource) evtSource.close();
+
+  evtSource = new EventSource('/events');
+
+  evtSource.addEventListener('span', e => {
+    try {
+      const data = JSON.parse(e.data);
+      handleSpan(data);
+    } catch { /* ignore */ }
+  });
+
+  evtSource.onopen = () => {
+    const dot = $('sse-dot');
+    dot.classList.add('green');
+    dot.classList.remove('red');
+    $('sse-status').textContent = 'connected';
+    $('sse-status').style.color = 'var(--green)';
+    if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+  };
+
+  evtSource.onerror = () => {
+    const dot = $('sse-dot');
+    dot.classList.add('red');
+    dot.classList.remove('green');
+    $('sse-status').textContent = 'reconnecting...';
+    $('sse-status').style.color = 'var(--red)';
+    evtSource.close();
+    if (!reconnectTimer) {
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null;
+        connectSSE();
+      }, 3000);
+    }
+  };
+}
+
+// =========================================================
+//  BOOT
+// =========================================================
+
+document.addEventListener('DOMContentLoaded', () => {
+  loadAgents();
+  connectSSE();
+});
+</script>
+</body>
+</html>
