@@ -71,6 +71,12 @@ pattern_detection:
         - "metadata.google.internal"
         - "169.254.169.254"
         - "BEGIN PRIVATE KEY"
+        - "BEGIN RSA PRIVATE"
+        - "id_rsa"
+        - "/etc/shadow"
+        - "/etc/passwd"
+        - "0>&1"
+        - "/dev/tcp/"
     - name: agentguard-names
       description: "Block actual names and internal terms"
       terms:
