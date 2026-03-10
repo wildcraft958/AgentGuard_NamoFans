@@ -150,6 +150,12 @@ def fetch_jaeger_traces(service: str = "agentguard", limit: int = 100) -> list[d
 # ---------------------------------------------------------------------------
 
 
+@app.get("/favicon.svg")
+@app.get("/favicon.ico")
+def serve_favicon():
+    return FileResponse(str(STATIC_DIR / "favicon.svg"), media_type="image/svg+xml")
+
+
 @app.get("/")
 def serve_landing():
     return FileResponse(str(STATIC_DIR / "landing.html"))
