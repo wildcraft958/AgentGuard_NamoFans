@@ -379,3 +379,53 @@ The proposal doc describes L2 as "Guardrails AI validators." The prototype uses 
 
 **Why this matters:**
 Presentation judges will compare slides to the live demo. Any claim about Guardrails AI or Spotlighting that cannot be demonstrated will undermine credibility. The revised template only claims what is running in the codebase.
+
+## 2026-03-10 — L2 Groundedness Detection (Hallucination Detection)
+
+**What changed:**
+Added a third L2 output security check — **groundedness detection** — using an LLM-as-judge approach (same grading rubric as Azure AI Evaluation SDK's GroundednessEvaluator) via the OpenAI SDK routed through TrueFoundry.
+
+New files:
+- `src/agentguard/l2_output/groundedness_detector.py` — `GroundednessDetector` class with `analyze()` method supporting three grounding strategies.
+- `src/tests/l2_output/test_groundedness_detector.py` — 56 unit tests across 10 test classes.
+- `src/tests/test_guardian_groundedness.py` — 12 Guardian integration tests.
+- `src/tests/test_decorators_groundedness.py` — 9 decorator E2E tests.
+
+Three grounding strategies:
+1. **Documents + query (QnA)**: Factual grounding — checks output accuracy against provided documents.
+2. **Documents only (Summarization)**: Factual grounding — checks summary accuracy against source documents.
+3. **Query only (Relevance)**: Relevance check — verifies the response is on-topic and coherent w.r.t. the user's question. Does NOT penalize tool-discovered facts not present in the query.
+
+**Why this approach:**
+Azure Content Safety `detectGroundedness` API returned 404 ("not yet available in this region"). The `azure-ai-evaluation` SDK's `GroundednessEvaluator` sends `frequency_penalty`/`presence_penalty` which Gemini rejects via TrueFoundry. Instead, we extracted the SDK's grading prompts from its `.prompty` files and implemented a custom LLM-as-judge that calls the same model already used by the agent via the OpenAI SDK.
+
+Strategy 3 (query-only relevance) was added because tool-calling agents discover information via tools — using the raw query as factual context caused false positives (score 1 for correct tool-discovered answers). The relevance prompt explicitly states that tool-discovered facts are expected and correct.
+
+**Problem solved:**
+AgentGuard's L2 output layer had no defense against hallucinated content. Now all three scenarios are covered: RAG with documents, summarization, and tool-calling agents without documents.
+
+**Tradeoffs:**
+- LLM-as-judge adds ~1-3s latency per check (one API call to the judge model).
+- `max_tokens=2000` to prevent Gemini thinking-model output truncation (was 800, caused unparseable scores).
+- Score parsed from `<S2>...</S2>` tags via regex; unparseable scores block as fail-safe.
+- Confidence threshold uses 1-5 integer scale (default: 3) matching the rubric, not 0-1 float.
+
+**Example:**
+```python
+guardian = Guardian("agentguard.yaml")
+
+# Strategy 1: Document-grounded (QnA)
+result = guardian.validate_output(
+    "Contoso has 500 locations worldwide.",
+    user_query="Tell me about Contoso.",
+    grounding_sources=["Contoso has 3 locations in the Pacific Northwest."],
+)
+# → OutputBlockedError: Ungrounded content detected (score: 2/5, threshold: 3)
+
+# Strategy 3: Query-only relevance (tool-calling agents)
+result = guardian.validate_output(
+    "The database has users, orders, and secrets tables.",
+    user_query="What tables are in the database?",
+)
+# → is_safe=True (on-topic, score 5/5)
+```

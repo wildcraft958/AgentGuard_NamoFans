@@ -157,7 +157,11 @@ def guard(
                 output_text = _resolve_output(result, output_field)
                 if output_text is not None:
                     logger.debug("guard: L2 validating output '%s...'", str(output_text)[:50])
-                    guardian.validate_output(output_text)
+                    guardian.validate_output(
+                        output_text,
+                        user_query=user_text,
+                        grounding_sources=documents,
+                    )
 
             return result
 
@@ -182,7 +186,11 @@ def guard(
                 output_text = _resolve_output(result, output_field)
                 if output_text is not None:
                     logger.debug("guard: L2 validating output '%s...'", str(output_text)[:50])
-                    guardian.validate_output(output_text)
+                    guardian.validate_output(
+                        output_text,
+                        user_query=user_text,
+                        grounding_sources=documents,
+                    )
 
             return result
 

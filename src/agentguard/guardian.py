@@ -125,6 +125,7 @@ class Guardian:
         # Initialize L2 modules
         self._output_toxicity = None
         self._pii_detector = None
+        self._groundedness_detector = None
 
         if self.config.output_toxicity_enabled and self._content_filters:
             from agentguard.l2_output.output_toxicity import OutputToxicity
@@ -138,6 +139,14 @@ class Guardian:
                 logger.info("PII Detector module: ENABLED")
             except ValueError as e:
                 logger.error("Failed to initialize PII Detector: %s", e)
+
+        if self.config.groundedness_enabled:
+            try:
+                from agentguard.l2_output.groundedness_detector import GroundednessDetector
+                self._groundedness_detector = GroundednessDetector()
+                logger.info("Groundedness Detector module: ENABLED")
+            except ValueError as e:
+                logger.error("Failed to initialize Groundedness Detector: %s", e)
 
         # Initialize Tool Firewall modules
         self._tool_specific_guards = None
@@ -361,16 +370,24 @@ class Guardian:
 
         return InputValidationResult(is_safe=True, results=results)
 
-    def validate_output(self, model_output: str) -> OutputValidationResult:
+    def validate_output(
+        self,
+        model_output: str,
+        user_query: str = None,
+        grounding_sources: list = None,
+    ) -> OutputValidationResult:
         """
         Validate model output through L2 (Output Security) checks.
 
         Runs checks in order:
         1. Output Toxicity -- detect harmful content in LLM output
         2. PII Detection -- detect and flag PII leakage in output
+        3. Groundedness Detection -- detect hallucinated content
 
         Args:
             model_output: The LLM's output text to validate.
+            user_query: Optional user query for groundedness checking.
+            grounding_sources: Optional list of document strings for groundedness.
 
         Returns:
             OutputValidationResult indicating whether output is safe.
@@ -429,6 +446,37 @@ class Guardian:
                     return self._handle_output_block(
                         results, pii_result, "pii_detector", start_time, redacted_text, span=parent_span
                     )
+
+            # -------------------------------------------------------
+            # L2 Check 3: Groundedness Detection (Hallucination Detection)
+            # -------------------------------------------------------
+            if self._groundedness_detector and self.config.groundedness_enabled:
+                if user_query or grounding_sources:
+                    logger.info("Running Groundedness Detection check...")
+                    with self._span("agentguard.check.groundedness_detector"):
+                        ground_result = self._groundedness_detector.analyze(
+                            text=model_output,
+                            user_query=user_query,
+                            grounding_sources=grounding_sources,
+                            confidence_threshold=self.config.groundedness_confidence_threshold,
+                            block_on_high_confidence=self.config.groundedness_block_on_high_confidence,
+                        )
+                    results.append(ground_result)
+
+                    if not ground_result.is_safe:
+                        self._set_span_attrs(
+                            parent_span,
+                            is_safe=False,
+                            blocked_by="groundedness_detector",
+                            blocked_reason=ground_result.blocked_reason,
+                        )
+                        self._record_metrics(
+                            "l2_output", "groundedness_detector", "block", start_time
+                        )
+                        return self._handle_output_block(
+                            results, ground_result, "groundedness_detector",
+                            start_time, redacted_text
+                        )
 
             elapsed_ms = (time.time() - start_time) * 1000
             logger.info("All L2 checks passed (%.1fms)", elapsed_ms)
