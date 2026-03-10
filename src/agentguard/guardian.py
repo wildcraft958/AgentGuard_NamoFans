@@ -172,6 +172,20 @@ class Guardian:
             except (ValueError, Exception) as e:
                 logger.error("Failed to initialize MELON Detector: %s", e)
 
+        # Initialize L4: RBAC + Behavioral Anomaly
+        self._l4_rbac = None
+        self._l4_behavioral = None
+
+        if self.config.rbac_enabled:
+            from agentguard.l4_rbac import L4RBACEngine
+            self._l4_rbac = L4RBACEngine(self.config)
+            logger.info("L4 RBAC Engine: ENABLED")
+
+        if self.config.behavioral_monitoring_enabled:
+            from agentguard.l4_behavioral import BehavioralAnomalyDetector
+            self._l4_behavioral = BehavioralAnomalyDetector(self.config)
+            logger.info("L4 Behavioral Anomaly Detector: ENABLED")
+
         # Initialize C4: Approval Workflow (HITL / AITL)
         self._approval_workflow = None
         if self.config.approval_workflow_enabled:
@@ -503,8 +517,80 @@ class Guardian:
 
         start_time = time.time()
         results = []
+        ctx = context or {}
 
         with self._span("agentguard.validate_tool_call") as parent_span:
+            # --- L4a: RBAC check (zero-trust default-deny) ---
+            if self._l4_rbac:
+                from agentguard.l4_rbac import AccessContext, infer_verb, infer_sensitivity
+                rbac_ctx = AccessContext(
+                    agent_role=ctx.get("agent_role", "default_agent"),
+                    tool_name=fn_name,
+                    task_id=ctx.get("task_id", ""),
+                    action_verb=infer_verb(fn_name),
+                    resource_sensitivity=infer_sensitivity(fn_name, fn_args),
+                    risk_score=ctx.get("risk_score", 0.0),
+                )
+                rbac_decision = self._l4_rbac.evaluate(rbac_ctx)
+                if rbac_decision.value == "deny":
+                    rbac_result = ValidationResult(
+                        is_safe=False,
+                        blocked_reason=f"L4 RBAC: role '{rbac_ctx.agent_role}' denied {rbac_ctx.action_verb} on {rbac_ctx.resource_sensitivity} resource via {fn_name}",
+                        blocked_by="l4_rbac",
+                    )
+                    results.append(rbac_result)
+                    self._record_metrics("l4_rbac", "enforce_rbac", "block", start_time)
+                    if self._audit:
+                        self._audit.record(
+                            "validate_tool_call", "l4_rbac", is_safe=False,
+                            reason=rbac_result.blocked_reason,
+                            metadata={"tool": fn_name, "role": rbac_ctx.agent_role},
+                            l4_rbac_decision=rbac_decision.value,
+                        )
+                    return self._handle_tool_block(results, rbac_result, "l4_rbac", start_time, fn_name)
+                # ELEVATE → route into approval_workflow below (set flag in context)
+                if rbac_decision.value == "elevate":
+                    ctx = dict(ctx, _l4_elevate=True)
+
+            # --- L4b: Behavioral Anomaly Detection ---
+            if self._l4_behavioral:
+                from agentguard.l4_rbac import extract_domain
+                ba_meta = {
+                    "domain": extract_domain(str(fn_args.get("url", ""))),
+                    "resource": fn_args.get("path") or fn_args.get("table") or fn_args.get("query", ""),
+                }
+                ba_result = self._l4_behavioral.score(
+                    task_id=ctx.get("task_id", "default"),
+                    agent_role=ctx.get("agent_role", "default_agent"),
+                    tool_name=fn_name,
+                    meta=ba_meta,
+                )
+                if ba_result.action == "BLOCK":
+                    block_reason = f"L4 Behavioral: {', '.join(s.name for s in ba_result.signals)} (score={ba_result.composite_score:.2f})"
+                    ba_block = ValidationResult(
+                        is_safe=False,
+                        blocked_reason=block_reason,
+                        blocked_by="l4_behavioral",
+                    )
+                    results.append(ba_block)
+                    self._record_metrics("l4_behavioral", "anomaly_detect", "block", start_time)
+                    if self._audit:
+                        self._audit.record(
+                            "validate_tool_call", "l4_behavioral", is_safe=False,
+                            reason=block_reason,
+                            metadata={"tool": fn_name, "signals": [s.name for s in ba_result.signals]},
+                            l4_signals=str([s.name for s in ba_result.signals]),
+                            l4_composite=ba_result.composite_score,
+                            l4_action=ba_result.action,
+                        )
+                    return self._handle_tool_block(results, ba_block, "l4_behavioral", start_time, fn_name)
+                if ba_result.action in ("WARN", "ELEVATE"):
+                    logger.warning(
+                        "L4 behavioral %s for '%s': score=%.2f signals=%s",
+                        ba_result.action, fn_name, ba_result.composite_score,
+                        [s.name for s in ba_result.signals],
+                    )
+
             # --- C3: Tool-Specific Guards (pure Python, zero latency) ---
             if self._tool_specific_guards:
                 logger.info("Running Tool-Specific Guards for '%s'...", fn_name)
@@ -692,17 +778,10 @@ class Guardian:
 
         return ToolCallValidationResult(is_safe=True, results=results, tool_name=fn_name)
 
-    def enforce_rbac(self, call, context: dict) -> None:
-        """L4 RBAC enforcement stub."""
-        logger.debug("L4 RBAC enforcement: not yet implemented")
-
-    def detect_behavioral_anomaly(self, call, context: dict) -> None:
-        """L4 behavioral anomaly detection stub."""
-        logger.debug("L4 behavioral anomaly detection: not yet implemented")
-
-    def monitor_post_execution(self, call, result, context: dict) -> None:
-        """L4 post-execution monitoring stub."""
-        logger.debug("L4 post-execution monitoring: not yet implemented")
+    def reset_task(self, task_id: str) -> None:
+        """Free L4 behavioral state for a completed task."""
+        if self._l4_behavioral:
+            self._l4_behavioral.reset_task(task_id)
 
     # ------------------------------------------------------------------
     # Telemetry helpers

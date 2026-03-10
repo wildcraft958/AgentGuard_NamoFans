@@ -255,10 +255,8 @@ class TestGuardian:
         result = guardian.validate_output("model output")
         assert result.is_safe is True
 
-        guardian.enforce_rbac(MagicMock(), {})
-        guardian.detect_behavioral_anomaly(MagicMock(), {})
         guardian.validate_tool_call("test_tool", {})
-        guardian.monitor_post_execution(MagicMock(), MagicMock(), {})
+        guardian.reset_task("task-123")  # L4 behavioral reset (no-op when disabled)
         os.unlink(path)
 
 
