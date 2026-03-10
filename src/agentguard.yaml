@@ -104,9 +104,9 @@ output_security:
       - Address
 
   hallucination_detection:
-    enabled: false                     # Phase 2 — requires grounding sources
-    block_on_high_confidence: false
-    confidence_threshold: 0.9
+    enabled: true
+    block_on_high_confidence: true
+    confidence_threshold: 0.8
 
 ########################################
 # L3 – CUSTOM BLOCKLIST PATTERN MATCHING

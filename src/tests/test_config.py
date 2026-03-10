@@ -229,6 +229,81 @@ audit:
         os.unlink(path)
 
 
+class TestGroundednessConfig:
+    """Tests for groundedness / hallucination detection config properties."""
+
+    def test_groundedness_enabled_default_false(self):
+        path = _write_config("""
+global:
+  mode: enforce
+  log_level: standard
+""")
+        config = load_config(path)
+        assert config.groundedness_enabled is False
+        os.unlink(path)
+
+    def test_groundedness_enabled_true(self):
+        path = _write_config("""
+global:
+  mode: enforce
+  log_level: standard
+output_security:
+  hallucination_detection:
+    enabled: true
+""")
+        config = load_config(path)
+        assert config.groundedness_enabled is True
+        os.unlink(path)
+
+    def test_groundedness_confidence_threshold_default(self):
+        path = _write_config("""
+global:
+  mode: enforce
+  log_level: standard
+""")
+        config = load_config(path)
+        assert config.groundedness_confidence_threshold == 0.9
+        os.unlink(path)
+
+    def test_groundedness_confidence_threshold_custom(self):
+        path = _write_config("""
+global:
+  mode: enforce
+  log_level: standard
+output_security:
+  hallucination_detection:
+    enabled: true
+    confidence_threshold: 0.7
+""")
+        config = load_config(path)
+        assert config.groundedness_confidence_threshold == 0.7
+        os.unlink(path)
+
+    def test_groundedness_block_on_high_confidence_default_false(self):
+        path = _write_config("""
+global:
+  mode: enforce
+  log_level: standard
+""")
+        config = load_config(path)
+        assert config.groundedness_block_on_high_confidence is False
+        os.unlink(path)
+
+    def test_groundedness_block_on_high_confidence_true(self):
+        path = _write_config("""
+global:
+  mode: enforce
+  log_level: standard
+output_security:
+  hallucination_detection:
+    enabled: true
+    block_on_high_confidence: true
+""")
+        config = load_config(path)
+        assert config.groundedness_block_on_high_confidence is True
+        os.unlink(path)
+
+
 class TestTelemetryEnabled:
     def test_telemetry_enabled_when_otel_in_export_to(self):
         cfg = _make_config({"export_to": ["otel"]})

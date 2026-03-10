@@ -1,0 +1,329 @@
+AgentGuard — Layer 2, 3, 4 Master Plan
+=======================================
+
+Context
+-------
+AgentGuard is an AI agent security middleware for a Microsoft hackathon. Layer 1 (Input Security) is complete. We now plan all remaining layers. This document covers:
+1. Layer 2 (Output Security) — detailed implementation plan (building next)
+2. Layer 3 (Pattern Detection) — initial design + Azure services
+3. Layer 4 (Behavioral Monitoring) — initial design + Azure services
+4. Full Azure services map — what we initially planned vs what Azure additionally provides
+
+
+=======================================
+Our Initial Design (What We Planned)
+=======================================
+
+Layer 2 — Output Security
+  - Hallucination Detection    : Check if LLM output is grounded in source docs
+  - PII Detection              : Detect and redact personal data in outputs
+  - Output Toxicity            : Block harmful/toxic content in LLM responses
+
+Layer 3 — Pattern Detection (from YAML)
+  - Blocked patterns           : Match strings like "SYSTEM OVERRIDE", "curl", "BEGIN PRIVATE KEY"
+  - Custom regex               : User-defined regex patterns
+  - Block on match             : Configurable action
+
+Layer 4 — Behavioral Monitoring (from YAML)
+  - Tool call spike detection  : Detect unusual bursts of tool calls
+  - Domain access monitoring   : Flag access to unexpected domains
+  - New tool usage detection   : Alert when agent uses a tool for the first time
+  - Data exfiltration patterns : Detect suspicious data flows
+  - Tool firewall              : Per-tool allowlist/denylist (http_post, http_get, sql_query, file_system)
+  - RBAC                       : Role-based tool access control (planner, executor, admin)
+  - Human approval workflow    : Require approval for sensitive operations
+
+
+=======================================
+Azure Services That Can Power Each Layer
+=======================================
+
+Full Catalog Audit
+------------------
+Went through the entire Azure Cognitive Services catalog:
+https://learn.microsoft.com/en-us/python/api/overview/azure/cognitive-services?view=azure-python
+
+SERVICE                                    | PACKAGE                          | L2       | L3  | L4  | HOW IT HELPS
+-------------------------------------------|----------------------------------|----------|-----|-----|----------------------------------------------------
+Content Safety — Groundedness API          | REST (same endpoint)             | YES      |     |     | Hallucination detection: detectGroundedness
+Content Safety — Text Analysis             | azure-ai-contentsafety           | YES      |     |     | Output toxicity: reuse analyze_text()
+Content Safety — Blocklist API             | azure-ai-contentsafety           |          | YES |     | Custom keyword blocking via blocklists
+Text Analytics — PII Detection             | azure-ai-textanalytics           | YES      |     |     | PII detection: recognize_pii_entities()
+Text Analytics — Entity Recognition        | azure-ai-textanalytics           |          | YES |     | Detect URLs, IPs, org names — data exfiltration
+Text Analytics — Key Phrase Extraction     | azure-ai-textanalytics           |          | YES |     | Extract topics — topic drift detection
+Text Analytics — Sentiment Analysis        | azure-ai-textanalytics           | POSSIBLE |     |     | Enhance toxicity with sentiment scoring
+AI Evaluation — GroundednessEvaluator      | azure-ai-evaluation              | ENHANCE  |     |     | AI-assisted groundedness scoring (1-5)
+AI Evaluation — GroundednessProEvaluator   | azure-ai-evaluation              | ENHANCE  |     |     | Server-side groundedness via Azure backend
+AI Evaluation — ContentSafetyEvaluator     | azure-ai-evaluation              | ENHANCE  |     |     | Composite: Violence+Sexual+SelfHarm+HateUnfairness
+AI Evaluation — IndirectAttackEvaluator    | azure-ai-evaluation              |          |     | YES | Detect indirect prompt injection in agent outputs
+AI Evaluation — ProtectedMaterialEvaluator | azure-ai-evaluation              | POSSIBLE |     |     | Detect copyrighted/protected material in outputs
+AI Agents SDK                              | azure-ai-agents                  |          |     | YES | Agent tool registration, intercept tool calls
+AI Projects SDK                            | azure-ai-projects                |          |     | YES | Foundry project mgmt + OpenTelemetry tracing
+Azure Monitor / OpenTelemetry              | opentelemetry-sdk (in deps)      |          |     | YES | Behavioral anomaly detection
+Document Intelligence                     | azure-ai-formrecognizer          |          |     |     | NOT RELEVANT
+CLU / LUIS                                 | azure-ai-language-conversations  |          |     |     | NOT RELEVANT
+Question Answering                         | azure-ai-language-questionanswering |       |     |     | NOT RELEVANT
+Computer Vision                            | azure-cognitiveservices-vision-* |          |     |     | NOT RELEVANT
+Face API                                   | cognitive-face                   |          |     |     | NOT RELEVANT
+Image Analysis                             | azure-ai-vision-imageanalysis    |          |     |     | Overlaps with L1 image analysis
+Translation                                | azure-ai-translation-*           |          |     |     | NOT RELEVANT
+Speech / Voice Live                        | azure-cognitiveservices-speech    |          |     |     | NOT RELEVANT
+Health Insights                            | azure-healthinsights-*           |          |     |     | NOT RELEVANT
+Bing Search APIs                           | azure-cognitiveservices-search-* |          |     |     | NOT RELEVANT
+
+External/Academic Approaches (for Hackathon Differentiation)
+------------------------------------------------------------
+APPROACH      | SOURCE                                              | LAYER  | HOW IT HELPS
+--------------|-----------------------------------------------------|--------|--------------------------------------------------------------
+MELON         | ICML'25, github.com/kaijiezhu11/MELON               | L1/L2  | Contrastive PI detection via embedding comparison
+AgentSentry   | arXiv:2602.22724v1                                  | L4     | Temporal causal diagnostics + context purification
+AgentDojo     | ETH Zurich, github.com/ethz-spylab/agentdojo        | Testing| Dynamic environment for PI attack/defense evaluation
+
+
+=======================================
+Layer 2 — Detailed Implementation Plan
+=======================================
+
+Module 1: Hallucination Detector (l2_output/hallucination_detector.py)
+----------------------------------------------------------------------
+Azure Service: Content Safety Groundedness REST API
+API: POST {endpoint}/contentsafety/text:detectGroundedness?api-version=2024-09-15-preview
+Credentials: Same CONTENT_SAFETY_ENDPOINT + CONTENT_SAFETY_KEY as L1 — no new Azure resource
+
+Request format:
+  {
+    "domain": "Generic",
+    "task": "QnA",
+    "qna": { "query": "user question" },
+    "text": "LLM output to check (max 7,500 chars)",
+    "groundingSources": ["source documents (max 55,000 chars total)"],
+    "reasoning": false
+  }
+
+Response format:
+  {
+    "ungroundedDetected": true,
+    "ungroundedPercentage": 1.0,
+    "ungroundedDetails": [{ "text": "the specific ungrounded text" }]
+  }
+
+Class: HallucinationDetector — follows PromptShields pattern (REST + requests)
+Method: analyze(text, grounding_sources, query=None, confidence_threshold=0.9) -> ValidationResult
+  - Auto-selects "QnA" when query provided, "Summarization" otherwise
+  - Blocks when ungroundedDetected == True AND config says to block
+
+
+Module 2: PII Detector (l2_output/pii_detector.py)
+---------------------------------------------------
+Azure Service: Text Analytics SDK (azure-ai-textanalytics)
+Credentials: New AZURE_LANGUAGE_ENDPOINT + AZURE_LANGUAGE_KEY
+
+Usage:
+  client = TextAnalyticsClient(endpoint, AzureKeyCredential(key))
+  result = client.recognize_pii_entities(["text to check"])
+  doc = result[0]
+  doc.redacted_text   # "****** has SSN ***-**-****"
+  doc.entities        # [PiiEntity(text="859-98-0987", category="USSocialSecurityNumber", ...)]
+
+Class: PIIDetector — follows ContentFilters pattern (Azure SDK client)
+Method: analyze(text, block_on_pii=True, allowed_categories=None) -> ValidationResult
+  - Filters entities by allowed_categories whitelist
+  - Always includes redacted_text in result details
+
+
+Module 3: Output Toxicity (l2_output/output_toxicity.py)
+---------------------------------------------------------
+Azure Service: Same Content Safety analyze_text() already in L1
+No new resources, packages, or credentials.
+
+Class: OutputToxicity — thin wrapper around ContentFilters.analyze_text()
+Method: analyze(text, ...) -> ValidationResult
+  - Re-labels layer from "content_filters" to "output_toxicity"
+  - Shares existing ContentFilters instance from Guardian
+
+
+Module 4: MELON Contrastive Injection Detector (l2_output/melon_detector.py)
+----------------------------------------------------------------------------
+Adapted from: MELON (ICML'25) — pi_detector.py reference implementation
+Azure Service: Azure OpenAI Embeddings (text-embedding-3-large)
+Credentials: Existing AZURE_OPENAI_ENDPOINT + AZURE_OPENAI_API_KEY (already in .env.example)
+
+How MELON Works (Contrastive Detection):
+
+  The core insight: if a tool output contains an injected instruction (e.g.,
+  "send money to attacker"), the LLM will produce similar tool calls whether
+  or not it sees the user's original query. MELON exploits this by running
+  two passes:
+
+  1. ORIGINAL RUN: LLM sees real conversation + tool outputs -> produces tool calls
+  2. MASKED RUN:   LLM sees ONLY tool outputs (no user query/context) -> produces tool calls
+  3. COMPARE:      Embed both sets of tool calls -> cosine similarity
+     - HIGH similarity (>threshold) -> tool output is DRIVING actions -> INJECTION
+     - LOW similarity -> user intent is driving actions -> SAFE
+
+Our Azure-Native Adaptation:
+
+  Instead of raw OpenAI client, we use Azure OpenAI SDK for embeddings.
+  Instead of AgentDojo's pipeline, we fit into AgentGuard's ValidationResult pattern.
+
+  Class: MELONDetector
+  Constructor:
+    def __init__(self, endpoint=None, api_key=None, deployment=None,
+                 similarity_threshold=0.8, timeout_ms=10000):
+        # Uses AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_API_KEY, AZURE_OPENAI_EMBEDDING_DEPLOYMENT
+        self.client = AzureOpenAI(azure_endpoint=endpoint, api_key=api_key, ...)
+        self.similarity_threshold = similarity_threshold
+
+  Method: analyze(original_tool_calls, masked_tool_calls) -> ValidationResult
+    - Takes pre-computed tool call lists (Guardian orchestrates the two LLM runs)
+    - Converts tool calls to text strings: "function_name(arg1=val1, arg2=val2)"
+    - Embeds via Azure OpenAI text-embedding-3-large
+    - Computes pairwise cosine similarity
+    - If any pair > similarity_threshold -> injection detected
+
+  Method: prepare_masked_context(messages) -> list
+    - Extracts tool outputs from conversation, strips user query/intent
+    - Builds the masked conversation (same approach as pi_detector.py lines 317-362)
+    - Returns masked messages ready for a second LLM run
+
+Key differences from original pi_detector.py:
+  ORIGINAL (AgentDojo)                  | OUR ADAPTATION (AgentGuard)
+  --------------------------------------|-------------------------------------------
+  OpenAI client                         | AzureOpenAI client (hackathon)
+  AgentDojo BasePipelineElement         | AgentGuard ValidationResult pattern
+  Hardcoded text-embedding-3-large      | Configurable via YAML embedding_deployment
+  Threshold 0.8 hardcoded               | YAML-configurable similarity_threshold
+  print() debug statements              | logger.debug/info/warning
+  Tight coupling to AgentDojo runtime   | Standalone module, Guardian orchestrates
+  FunctionCall dataclass                | Generic dict-based tool call format
+
+YAML config:
+  output_security:
+    melon_detector:
+      enabled: false
+      similarity_threshold: 0.8
+      embedding_deployment: "text-embedding-3-large"
+      block_on_detected_injection: true
+      sensitive_functions:
+        - "send_email"
+        - "send_money"
+        - "http_post"
+        - "file_write"
+
+Env vars needed: None new — reuses AZURE_OPENAI_ENDPOINT + AZURE_OPENAI_API_KEY
+
+
+=======================================
+Files to Create
+=======================================
+
+FILE                                              | PURPOSE
+--------------------------------------------------|---------------------------------------------------
+src/agentguard/l2_output/__init__.py              | Package init, exports all 4 classes
+src/agentguard/l2_output/hallucination_detector.py| Groundedness REST API client
+src/agentguard/l2_output/pii_detector.py          | Text Analytics PII SDK client
+src/agentguard/l2_output/output_toxicity.py       | Wrapper around L1 ContentFilters
+src/agentguard/l2_output/melon_detector.py        | MELON contrastive injection detector (Azure OpenAI)
+src/tests/l2_output/__init__.py                   | Test package init
+src/tests/l2_output/test_hallucination_detector.py| Mock REST responses
+src/tests/l2_output/test_pii_detector.py          | Mock SDK responses
+src/tests/l2_output/test_output_toxicity.py       | Mock ContentFilters delegation
+src/tests/l2_output/test_melon_detector.py        | Mock Azure OpenAI embeddings, cosine sim tests
+
+
+=======================================
+Files to Modify
+=======================================
+
+FILE                                 | CHANGES
+-------------------------------------|----------------------------------------------------------
+src/agentguard/models.py             | Add OutputValidationResult dataclass (with redacted_text)
+src/agentguard/exceptions.py         | Add OutputBlockedError (mirrors InputBlockedError)
+src/agentguard/config.py             | Add L2 property accessors (hallucination, PII, toxicity, MELON)
+src/agentguard/guardian.py           | Init L2 modules, replace validate_output() stub
+src/agentguard/decorators.py         | Add @guard_output decorator
+src/agentguard/__init__.py           | Export OutputBlockedError + guard_output, bump to v0.2.0
+src/agentguard.yaml                  | Enable L2 flags, add melon_detector section
+pyproject.toml                       | Add azure-ai-textanalytics, openai, numpy deps
+.env.example                         | Add AZURE_LANGUAGE_ENDPOINT and AZURE_LANGUAGE_KEY
+src/tests/test_guardian.py           | Add TestGuardianL2 class
+src/tests/test_decorators.py         | Add TestGuardOutput class
+src/tests/test_config.py             | Add L2 config property tests
+src/examples/demo_agentguard.py      | Add Section 5: Output Security demos
+
+
+=======================================
+Guardian Orchestration Flow
+=======================================
+
+LLM output -> @guard_output decorator (or Guardian.validate_output())
+  -> HallucinationDetector.analyze()    # groundedness (if sources provided)
+  -> PIIDetector.analyze()              # PII detection + redaction
+  -> OutputToxicity.analyze()           # harmful content in output
+  -> MELONDetector.analyze()            # contrastive injection detection (if tool calls present)
+  -> If blocked + enforce -> raise OutputBlockedError
+  -> If blocked + monitor -> log warning, allow through
+  -> If dry-run -> skip all checks
+  -> Return OutputValidationResult (includes redacted_text if PII found)
+
+MELON-Specific Orchestration Detail:
+
+  MELON requires two LLM passes — the Guardian must orchestrate this:
+
+  Guardian.validate_output_with_melon(messages, tool_calls):
+    1. original_tool_calls = extract tool calls from the LLM's actual response
+    2. masked_context = MELONDetector.prepare_masked_context(messages)
+       -> strips user query, keeps only system + tool outputs
+       -> wraps tool outputs as "file contents" (following pi_detector.py pattern)
+    3. masked_tool_calls = run LLM again with masked_context
+       -> uses same LLM (Azure OpenAI) but with sanitized context
+    4. result = MELONDetector.analyze(original_tool_calls, masked_tool_calls)
+       -> embeds both via Azure OpenAI text-embedding-3-large
+       -> cosine similarity comparison
+       -> returns ValidationResult
+
+  This means @guard_output for MELON needs access to the full conversation
+  messages, not just the output text. The decorator will need an optional
+  messages_param argument.
+
+
+=======================================
+Implementation Order
+=======================================
+
+ 1. models.py           — Add OutputValidationResult
+ 2. exceptions.py       — Add OutputBlockedError
+ 3. config.py           — Add L2 property accessors (incl. MELON: enabled, threshold, deployment, sensitive_functions)
+ 4. agentguard.yaml     — Update L2 config section (add melon_detector block)
+ 5. l2_output/__init__  — Create package, export all 4 classes
+ 6. output_toxicity.py  — Simplest (wraps existing L1)
+ 7. hallucination_detector.py — REST API, same creds as L1
+ 8. pii_detector.py     — New SDK client, new creds
+ 9. melon_detector.py   — Azure OpenAI embeddings, contrastive detection logic
+10. guardian.py         — Wire up L2 orchestration + _handle_output_block() + MELON two-pass flow
+11. decorators.py       — Add @guard_output (with messages_param for MELON)
+12. __init__.py         — Add exports
+13. pyproject.toml + .env.example — Dependencies + env vars
+14. Tests for all 4 L2 modules (including MELON cosine similarity tests)
+15. Tests for guardian, decorators, config updates
+16. Demo script update
+
+
+=======================================
+New Environment Variables
+=======================================
+
+VARIABLE                  | SERVICE            | NOTES
+--------------------------|--------------------|-------------------------------
+AZURE_LANGUAGE_ENDPOINT   | Azure AI Language   | New — PII detection only
+AZURE_LANGUAGE_KEY        | Azure AI Language   | New — PII detection only
+
+
+=======================================
+Verification
+=======================================
+
+1. Unit tests:   pytest src/tests/ — all L1 + L2 tests pass
+2. Demo script:  python src/examples/demo_agentguard.py — L1 + L2 checks working
+3. Manual test:  Enable L2 in YAML, run with Azure credentials
+4. Mode testing: Verify enforce/monitor/dry-run for L2
