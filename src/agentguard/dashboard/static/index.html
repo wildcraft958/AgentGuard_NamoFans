@@ -1066,6 +1066,8 @@ document.addEventListener('DOMContentLoaded', () => {
   loadSpans();
   loadAudit();
   connectSSE();
+  // Poll stats every 5s independent of SSE (SSE only emits on new spans)
+  setInterval(loadStats, 5000);
 });
 </script>
 </body>
