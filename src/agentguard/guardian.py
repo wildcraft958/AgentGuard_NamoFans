@@ -143,9 +143,7 @@ class Guardian:
         if self.config.groundedness_enabled:
             try:
                 from agentguard.l2_output.groundedness_detector import GroundednessDetector
-                self._groundedness_detector = GroundednessDetector(
-                    timeout_ms=self.config.max_validation_latency_ms
-                )
+                self._groundedness_detector = GroundednessDetector()
                 logger.info("Groundedness Detector module: ENABLED")
             except ValueError as e:
                 logger.error("Failed to initialize Groundedness Detector: %s", e)

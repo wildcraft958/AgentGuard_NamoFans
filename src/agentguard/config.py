@@ -167,7 +167,7 @@ class AgentGuardConfig:
     def groundedness_confidence_threshold(self) -> float:
         return _deep_get(
             self._raw, "output_security", "hallucination_detection",
-            "confidence_threshold", default=0.9
+            "confidence_threshold", default=3.0
         )
 
     # ----- Pattern Detection: Custom Blocklists -----

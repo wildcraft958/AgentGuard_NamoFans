@@ -262,7 +262,7 @@ global:
   log_level: standard
 """)
         config = load_config(path)
-        assert config.groundedness_confidence_threshold == 0.9
+        assert config.groundedness_confidence_threshold == 3.0
         os.unlink(path)
 
     def test_groundedness_confidence_threshold_custom(self):

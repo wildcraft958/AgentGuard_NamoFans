@@ -50,7 +50,7 @@ output_security:
   hallucination_detection:
     enabled: true
     block_on_high_confidence: true
-    confidence_threshold: 0.8
+    confidence_threshold: 3
 """
 
 MONITOR_GROUNDEDNESS_CONFIG = """
@@ -69,7 +69,7 @@ output_security:
   hallucination_detection:
     enabled: true
     block_on_high_confidence: true
-    confidence_threshold: 0.8
+    confidence_threshold: 3
 """
 
 DRY_RUN_GROUNDEDNESS_CONFIG = """
@@ -113,7 +113,7 @@ output_security:
   hallucination_detection:
     enabled: true
     block_on_high_confidence: true
-    confidence_threshold: 0.7
+    confidence_threshold: 3
 """
 
 TELEMETRY_GROUNDEDNESS_CONFIG = """
@@ -132,7 +132,7 @@ output_security:
   hallucination_detection:
     enabled: true
     block_on_high_confidence: true
-    confidence_threshold: 0.8
+    confidence_threshold: 3
 observability:
   export_to:
     - otel
@@ -152,26 +152,26 @@ def _unsafe_result(layer: str, reason: str) -> ValidationResult:
     )
 
 
-GROUNDED_RESULT = ValidationResult(
-    is_safe=True,
-    layer="groundedness_detector",
-    details={
-        "ungroundedDetected": False,
-        "ungroundedPercentage": 0.0,
-        "ungroundedDetails": [],
-    },
-)
+def _make_llm_response(content: str):
+    """Create a mock OpenAI chat completion response."""
+    message = MagicMock()
+    message.content = content
+    choice = MagicMock()
+    choice.message = message
+    response = MagicMock()
+    response.choices = [choice]
+    return response
 
-UNGROUNDED_RESULT = ValidationResult(
-    is_safe=False,
-    layer="groundedness_detector",
-    blocked_reason="Ungrounded content detected in output (85% ungrounded, threshold: 80%)",
-    details={
-        "ungroundedDetected": True,
-        "ungroundedPercentage": 0.85,
-        "ungroundedDetails": [{"text": "hallucinated claim"}],
-    },
-)
+
+def _judge_output(score: int, explanation: str = "test"):
+    return f"<S0>thoughts</S0>\n<S1>{explanation}</S1>\n<S2>{score}</S2>"
+
+
+LLM_ENV = {
+    "OPENAI_API_KEY": "test-key",
+    "OPENAI_BASE_URL": "https://test.example.com/v1",
+    "OPENAI_MODEL": "test-model",
+}
 
 
 def _make_in_memory_tracer_provider():
@@ -186,34 +186,29 @@ def _make_in_memory_tracer_provider():
 class TestGroundednessOrchestration:
     """Tests verifying L2 check ordering and mode behavior."""
 
-    @patch("agentguard.l2_output.groundedness_detector.requests.post")
+    @patch("agentguard.l2_output.groundedness_detector.OpenAI")
     @patch("agentguard.l2_output.pii_detector.PIIDetector.__init__", return_value=None)
     @patch("agentguard.l2_output.pii_detector.PIIDetector.analyze")
     @patch("agentguard.guardian.ContentFilters")
     def test_groundedness_runs_after_toxicity_and_pii(
-        self, MockCF, mock_pii_analyze, mock_pii_init, mock_ground_post
+        self, MockCF, mock_pii_analyze, mock_pii_init, MockOpenAI
     ):
         """All 3 L2 checks should run in order: toxicity → PII → groundedness."""
-        # Content filters (used by output toxicity)
         mock_cf = MagicMock()
         mock_cf.analyze_text.return_value = _safe_result("content_filters")
         MockCF.return_value = mock_cf
 
-        # PII: safe
         mock_pii_analyze.return_value = _safe_result("pii_detector")
 
-        # Groundedness: grounded (safe)
-        mock_ground_post.return_value = MagicMock(
-            status_code=200,
-            json=MagicMock(return_value={
-                "ungroundedDetected": False,
-                "ungroundedPercentage": 0.0,
-                "ungroundedDetails": [],
-            }),
+        mock_client = MagicMock()
+        mock_client.chat.completions.create.return_value = _make_llm_response(
+            _judge_output(5, "Fully grounded")
         )
+        MockOpenAI.return_value = mock_client
 
         path = _write_config(ENFORCE_GROUNDEDNESS_CONFIG)
         with patch.dict(os.environ, {
+            **LLM_ENV,
             "CONTENT_SAFETY_ENDPOINT": "https://test.cognitiveservices.azure.com",
             "CONTENT_SAFETY_KEY": "test-key",
             "AZURE_LANGUAGE_ENDPOINT": "https://lang.cognitiveservices.azure.com",
@@ -230,23 +225,17 @@ class TestGroundednessOrchestration:
         assert len(result.results) == 3  # toxicity + PII + groundedness
         os.unlink(path)
 
-    @patch("agentguard.l2_output.groundedness_detector.requests.post")
-    def test_groundedness_blocks_in_enforce_mode(self, mock_post):
+    @patch("agentguard.l2_output.groundedness_detector.OpenAI")
+    def test_groundedness_blocks_in_enforce_mode(self, MockOpenAI):
         """Ungrounded output should raise OutputBlockedError in enforce mode."""
-        mock_post.return_value = MagicMock(
-            status_code=200,
-            json=MagicMock(return_value={
-                "ungroundedDetected": True,
-                "ungroundedPercentage": 0.85,
-                "ungroundedDetails": [{"text": "hallucinated"}],
-            }),
+        mock_client = MagicMock()
+        mock_client.chat.completions.create.return_value = _make_llm_response(
+            _judge_output(1, "Completely ungrounded")
         )
+        MockOpenAI.return_value = mock_client
 
         path = _write_config(GROUNDEDNESS_ONLY_CONFIG)
-        with patch.dict(os.environ, {
-            "CONTENT_SAFETY_ENDPOINT": "https://test.cognitiveservices.azure.com",
-            "CONTENT_SAFETY_KEY": "test-key",
-        }):
+        with patch.dict(os.environ, LLM_ENV):
             guardian = Guardian(path)
 
             with pytest.raises(OutputBlockedError) as exc_info:
@@ -259,23 +248,17 @@ class TestGroundednessOrchestration:
         assert "ungrounded" in str(exc_info.value).lower()
         os.unlink(path)
 
-    @patch("agentguard.l2_output.groundedness_detector.requests.post")
-    def test_groundedness_allows_in_monitor_mode(self, mock_post):
+    @patch("agentguard.l2_output.groundedness_detector.OpenAI")
+    def test_groundedness_allows_in_monitor_mode(self, MockOpenAI):
         """Monitor mode should log but NOT block ungrounded output."""
-        mock_post.return_value = MagicMock(
-            status_code=200,
-            json=MagicMock(return_value={
-                "ungroundedDetected": True,
-                "ungroundedPercentage": 0.85,
-                "ungroundedDetails": [{"text": "hallucinated"}],
-            }),
+        mock_client = MagicMock()
+        mock_client.chat.completions.create.return_value = _make_llm_response(
+            _judge_output(1, "Ungrounded")
         )
+        MockOpenAI.return_value = mock_client
 
         path = _write_config(MONITOR_GROUNDEDNESS_CONFIG)
-        with patch.dict(os.environ, {
-            "CONTENT_SAFETY_ENDPOINT": "https://test.cognitiveservices.azure.com",
-            "CONTENT_SAFETY_KEY": "test-key",
-        }):
+        with patch.dict(os.environ, LLM_ENV):
             guardian = Guardian(path)
             result = guardian.validate_output(
                 "Hallucinated text.",
@@ -289,7 +272,6 @@ class TestGroundednessOrchestration:
     def test_groundedness_skipped_in_dry_run(self):
         """Dry-run mode should skip all L2 checks including groundedness."""
         path = _write_config(DRY_RUN_GROUNDEDNESS_CONFIG)
-        # No env vars needed — dry-run skips everything
         guardian = Guardian(path)
         result = guardian.validate_output(
             "Any output",
@@ -315,34 +297,37 @@ class TestGroundednessOrchestration:
         assert result.is_safe is True
         os.unlink(path)
 
-    @patch("agentguard.l2_output.groundedness_detector.requests.post")
-    def test_groundedness_skipped_when_no_sources(self, mock_post):
+    @patch("agentguard.l2_output.groundedness_detector.OpenAI")
+    def test_groundedness_skipped_when_no_sources(self, MockOpenAI):
         """When no user_query or grounding_sources provided, groundedness check is skipped."""
+        mock_client = MagicMock()
+        MockOpenAI.return_value = mock_client
+
         path = _write_config(GROUNDEDNESS_ONLY_CONFIG)
-        with patch.dict(os.environ, {
-            "CONTENT_SAFETY_ENDPOINT": "https://test.cognitiveservices.azure.com",
-            "CONTENT_SAFETY_KEY": "test-key",
-        }):
+        with patch.dict(os.environ, LLM_ENV):
             guardian = Guardian(path)
             result = guardian.validate_output("Some output")
 
         assert result.is_safe is True
-        mock_post.assert_not_called()
+        mock_client.chat.completions.create.assert_not_called()
         os.unlink(path)
 
-    @patch("agentguard.l2_output.groundedness_detector.requests.post")
+    @patch("agentguard.l2_output.groundedness_detector.OpenAI")
     @patch("agentguard.guardian.ContentFilters")
-    def test_toxicity_blocks_before_groundedness_runs(self, MockCF, mock_ground_post):
+    def test_toxicity_blocks_before_groundedness_runs(self, MockCF, MockOpenAI):
         """If toxicity blocks, groundedness should never be called."""
-        # Output toxicity: BLOCKS
         mock_cf = MagicMock()
         mock_cf.analyze_text.return_value = _unsafe_result(
             "content_filters", "Harmful content: Hate (severity=6)"
         )
         MockCF.return_value = mock_cf
 
+        mock_client = MagicMock()
+        MockOpenAI.return_value = mock_client
+
         path = _write_config(ENFORCE_GROUNDEDNESS_CONFIG)
         with patch.dict(os.environ, {
+            **LLM_ENV,
             "CONTENT_SAFETY_ENDPOINT": "https://test.cognitiveservices.azure.com",
             "CONTENT_SAFETY_KEY": "test-key",
             "AZURE_LANGUAGE_ENDPOINT": "https://lang.cognitiveservices.azure.com",
@@ -357,28 +342,31 @@ class TestGroundednessOrchestration:
                     grounding_sources=["Source"],
                 )
 
-        mock_ground_post.assert_not_called()
+        mock_client.chat.completions.create.assert_not_called()
         os.unlink(path)
 
-    @patch("agentguard.l2_output.groundedness_detector.requests.post")
+    @patch("agentguard.l2_output.groundedness_detector.OpenAI")
     @patch("agentguard.l2_output.pii_detector.PIIDetector.__init__", return_value=None)
     @patch("agentguard.l2_output.pii_detector.PIIDetector.analyze")
     @patch("agentguard.guardian.ContentFilters")
     def test_pii_blocks_before_groundedness_runs(
-        self, MockCF, mock_pii_analyze, mock_pii_init, mock_ground_post
+        self, MockCF, mock_pii_analyze, mock_pii_init, MockOpenAI
     ):
         """If PII blocks, groundedness should never be called."""
         mock_cf = MagicMock()
         mock_cf.analyze_text.return_value = _safe_result("content_filters")
         MockCF.return_value = mock_cf
 
-        # PII: BLOCKS
         mock_pii_analyze.return_value = _unsafe_result(
             "pii_detector", "PII detected: SSN"
         )
 
+        mock_client = MagicMock()
+        MockOpenAI.return_value = mock_client
+
         path = _write_config(ENFORCE_GROUNDEDNESS_CONFIG)
         with patch.dict(os.environ, {
+            **LLM_ENV,
             "CONTENT_SAFETY_ENDPOINT": "https://test.cognitiveservices.azure.com",
             "CONTENT_SAFETY_KEY": "test-key",
             "AZURE_LANGUAGE_ENDPOINT": "https://lang.cognitiveservices.azure.com",
@@ -393,7 +381,7 @@ class TestGroundednessOrchestration:
                     grounding_sources=["Source"],
                 )
 
-        mock_ground_post.assert_not_called()
+        mock_client.chat.completions.create.assert_not_called()
         os.unlink(path)
 
 
@@ -402,24 +390,17 @@ class TestGroundednessOrchestration:
 class TestGroundednessConfig:
     """Tests verifying config values flow into the detector correctly."""
 
-    @patch("agentguard.l2_output.groundedness_detector.requests.post")
-    def test_confidence_threshold_from_config(self, mock_post):
-        """Config threshold (0.7) should be passed to detector.analyze()."""
-        mock_post.return_value = MagicMock(
-            status_code=200,
-            json=MagicMock(return_value={
-                "ungroundedDetected": True,
-                "ungroundedPercentage": 0.75,
-                "ungroundedDetails": [],
-            }),
+    @patch("agentguard.l2_output.groundedness_detector.OpenAI")
+    def test_confidence_threshold_from_config(self, MockOpenAI):
+        """Config threshold (3) should be passed to detector.analyze()."""
+        mock_client = MagicMock()
+        mock_client.chat.completions.create.return_value = _make_llm_response(
+            _judge_output(2, "Ungrounded")
         )
+        MockOpenAI.return_value = mock_client
 
-        # Config has threshold=0.7, so 0.75 >= 0.7 → should block
         path = _write_config(GROUNDEDNESS_ONLY_CONFIG)
-        with patch.dict(os.environ, {
-            "CONTENT_SAFETY_ENDPOINT": "https://test.cognitiveservices.azure.com",
-            "CONTENT_SAFETY_KEY": "test-key",
-        }):
+        with patch.dict(os.environ, LLM_ENV):
             guardian = Guardian(path)
 
             with pytest.raises(OutputBlockedError):
@@ -430,8 +411,8 @@ class TestGroundednessConfig:
                 )
         os.unlink(path)
 
-    @patch("agentguard.l2_output.groundedness_detector.requests.post")
-    def test_block_on_high_confidence_false_allows(self, mock_post):
+    @patch("agentguard.l2_output.groundedness_detector.OpenAI")
+    def test_block_on_high_confidence_false_allows(self, MockOpenAI):
         """When block_on_high_confidence=false, ungrounded output passes."""
         config = """
 global:
@@ -449,22 +430,16 @@ output_security:
   hallucination_detection:
     enabled: true
     block_on_high_confidence: false
-    confidence_threshold: 0.5
+    confidence_threshold: 3
 """
-        mock_post.return_value = MagicMock(
-            status_code=200,
-            json=MagicMock(return_value={
-                "ungroundedDetected": True,
-                "ungroundedPercentage": 0.85,
-                "ungroundedDetails": [],
-            }),
+        mock_client = MagicMock()
+        mock_client.chat.completions.create.return_value = _make_llm_response(
+            _judge_output(1, "Completely ungrounded")
         )
+        MockOpenAI.return_value = mock_client
 
         path = _write_config(config)
-        with patch.dict(os.environ, {
-            "CONTENT_SAFETY_ENDPOINT": "https://test.cognitiveservices.azure.com",
-            "CONTENT_SAFETY_KEY": "test-key",
-        }):
+        with patch.dict(os.environ, LLM_ENV):
             guardian = Guardian(path)
             result = guardian.validate_output(
                 "Hallucinated text.",
@@ -481,25 +456,18 @@ output_security:
 class TestGroundednessAudit:
     """Tests verifying audit log recording on groundedness block."""
 
-    @patch("agentguard.l2_output.groundedness_detector.requests.post")
-    def test_groundedness_block_recorded_in_audit_log(self, mock_post):
+    @patch("agentguard.l2_output.groundedness_detector.OpenAI")
+    def test_groundedness_block_recorded_in_audit_log(self, MockOpenAI):
         """Audit record() should be called when groundedness blocks output."""
-        mock_post.return_value = MagicMock(
-            status_code=200,
-            json=MagicMock(return_value={
-                "ungroundedDetected": True,
-                "ungroundedPercentage": 0.85,
-                "ungroundedDetails": [{"text": "hallucinated"}],
-            }),
+        mock_client = MagicMock()
+        mock_client.chat.completions.create.return_value = _make_llm_response(
+            _judge_output(1, "Ungrounded")
         )
+        MockOpenAI.return_value = mock_client
 
         path = _write_config(GROUNDEDNESS_ONLY_CONFIG)
-        with patch.dict(os.environ, {
-            "CONTENT_SAFETY_ENDPOINT": "https://test.cognitiveservices.azure.com",
-            "CONTENT_SAFETY_KEY": "test-key",
-        }):
+        with patch.dict(os.environ, LLM_ENV):
             guardian = Guardian(path)
-            # Inject a mock audit log
             mock_audit = MagicMock()
             guardian._audit = mock_audit
 
@@ -510,7 +478,6 @@ class TestGroundednessAudit:
                     grounding_sources=["Source."],
                 )
 
-        # Verify audit was called
         mock_audit.record.assert_called_once()
         call_args = mock_audit.record.call_args
         assert call_args[0][0] == "validate_output"
@@ -525,25 +492,19 @@ class TestGroundednessAudit:
 class TestGroundednessSpans:
     """Tests verifying OTel spans emitted for groundedness checks."""
 
-    @patch("agentguard.l2_output.groundedness_detector.requests.post")
-    def test_groundedness_emits_otel_span(self, mock_post):
+    @patch("agentguard.l2_output.groundedness_detector.OpenAI")
+    def test_groundedness_emits_otel_span(self, MockOpenAI):
         """Groundedness check should emit 'agentguard.check.groundedness_detector' span."""
         provider, exporter = _make_in_memory_tracer_provider()
 
-        mock_post.return_value = MagicMock(
-            status_code=200,
-            json=MagicMock(return_value={
-                "ungroundedDetected": False,
-                "ungroundedPercentage": 0.0,
-                "ungroundedDetails": [],
-            }),
+        mock_client = MagicMock()
+        mock_client.chat.completions.create.return_value = _make_llm_response(
+            _judge_output(5, "Grounded")
         )
+        MockOpenAI.return_value = mock_client
 
         path = _write_config(TELEMETRY_GROUNDEDNESS_CONFIG)
-        with patch.dict(os.environ, {
-            "CONTENT_SAFETY_ENDPOINT": "https://test.cognitiveservices.azure.com",
-            "CONTENT_SAFETY_KEY": "test-key",
-        }):
+        with patch.dict(os.environ, LLM_ENV):
             with patch("agentguard.telemetry.trace") as mock_trace_mod:
                 mock_trace_mod.get_tracer.return_value = provider.get_tracer("agentguard")
                 mock_trace_mod.set_tracer_provider = MagicMock()

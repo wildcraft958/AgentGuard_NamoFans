@@ -54,6 +54,11 @@ output_security:
       - IPAddress
       - Address
 
+  hallucination_detection:
+    enabled: true
+    block_on_high_confidence: true
+    confidence_threshold: 3
+
 ########################################
 # L3 – CUSTOM BLOCKLIST PATTERN MATCHING
 ########################################
