@@ -289,5 +289,5 @@ observability:
   export_to:
     - azure_monitor
     - otel
-  otel_endpoint: null          # defaults to OTEL_EXPORTER_OTLP_ENDPOINT env var
+  otel_endpoint: "http://localhost:4317"
   service_name: "agentguard"   # OTel service.name resource attribute
