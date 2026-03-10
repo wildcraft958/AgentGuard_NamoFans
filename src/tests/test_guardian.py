@@ -1,13 +1,17 @@
 """Tests for agentguard.guardian module (L1 orchestration)."""
 
-import pytest
 import os
 import tempfile
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
+import pytest
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+
+from agentguard.exceptions import InputBlockedError
 from agentguard.guardian import Guardian
 from agentguard.models import ValidationResult
-from agentguard.exceptions import InputBlockedError
 
 
 def _write_config(content: str) -> str:
@@ -255,4 +259,201 @@ class TestGuardian:
         guardian.detect_behavioral_anomaly(MagicMock(), {})
         guardian.validate_tool_call("test_tool", {})
         guardian.monitor_post_execution(MagicMock(), MagicMock(), {})
+        os.unlink(path)
+
+
+TELEMETRY_CONFIG = """
+global:
+  mode: enforce
+  log_level: minimal
+  fail_safe: block
+  max_validation_latency_ms: 5000
+input_security:
+  prompt_shields:
+    enabled: true
+    sensitivity: high
+    block_on_detected_injection: true
+  content_filters:
+    block_toxicity: true
+    block_violence: true
+    block_self_harm: true
+observability:
+  export_to:
+    - otel
+  service_name: agentguard
+"""
+
+
+def _make_in_memory_tracer_provider() -> tuple[TracerProvider, InMemorySpanExporter]:
+    """Create a TracerProvider backed by InMemorySpanExporter for testing."""
+    exporter = InMemorySpanExporter()
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    return provider, exporter
+
+
+class TestGuardianSpans:
+    """Tests verifying that Guardian emits correct OTel spans."""
+
+    @patch("agentguard.guardian.ContentFilters")
+    @patch("agentguard.guardian.PromptShields")
+    def test_validate_input_emits_parent_span(self, MockPS, MockCF):
+        """validate_input should emit an agentguard.validate_input parent span."""
+        provider, exporter = _make_in_memory_tracer_provider()
+
+        mock_ps = MagicMock()
+        mock_ps.analyze.return_value = ValidationResult(is_safe=True, layer="prompt_shields")
+        MockPS.return_value = mock_ps
+        mock_cf = MagicMock()
+        mock_cf.analyze_text.return_value = ValidationResult(is_safe=True, layer="content_filters")
+        MockCF.return_value = mock_cf
+
+        path = _write_config(TELEMETRY_CONFIG)
+        with patch("agentguard.telemetry.trace") as mock_trace_mod:
+            mock_trace_mod.get_tracer.return_value = provider.get_tracer("agentguard")
+            mock_trace_mod.set_tracer_provider = MagicMock()
+
+            guardian = Guardian(path)
+            # Replace tracer with InMemory-backed tracer
+            guardian._tracer = provider.get_tracer("agentguard")
+
+            guardian.validate_input("Hello, world!")
+
+        spans = exporter.get_finished_spans()
+        span_names = [s.name for s in spans]
+        assert "agentguard.validate_input" in span_names
+        os.unlink(path)
+
+    @patch("agentguard.guardian.ContentFilters")
+    @patch("agentguard.guardian.PromptShields")
+    def test_validate_input_emits_child_spans(self, MockPS, MockCF):
+        """validate_input should emit child spans for each sub-check."""
+        provider, exporter = _make_in_memory_tracer_provider()
+
+        mock_ps = MagicMock()
+        mock_ps.analyze.return_value = ValidationResult(is_safe=True, layer="prompt_shields")
+        MockPS.return_value = mock_ps
+        mock_cf = MagicMock()
+        mock_cf.analyze_text.return_value = ValidationResult(is_safe=True, layer="content_filters")
+        MockCF.return_value = mock_cf
+
+        path = _write_config(TELEMETRY_CONFIG)
+        guardian = Guardian(path)
+        guardian._tracer = provider.get_tracer("agentguard")
+
+        guardian.validate_input("Hello, world!")
+
+        spans = exporter.get_finished_spans()
+        span_names = [s.name for s in spans]
+
+        assert "agentguard.check.fast_inject_detect" in span_names
+        assert "agentguard.check.prompt_shields" in span_names
+        assert "agentguard.check.content_filters" in span_names
+        os.unlink(path)
+
+    @patch("agentguard.guardian.ContentFilters")
+    @patch("agentguard.guardian.PromptShields")
+    def test_validate_input_span_attributes(self, MockPS, MockCF):
+        """Parent span should carry is_safe and mode attributes."""
+        provider, exporter = _make_in_memory_tracer_provider()
+
+        mock_ps = MagicMock()
+        mock_ps.analyze.return_value = ValidationResult(is_safe=True, layer="prompt_shields")
+        MockPS.return_value = mock_ps
+        mock_cf = MagicMock()
+        mock_cf.analyze_text.return_value = ValidationResult(is_safe=True, layer="content_filters")
+        MockCF.return_value = mock_cf
+
+        path = _write_config(TELEMETRY_CONFIG)
+        guardian = Guardian(path)
+        guardian._tracer = provider.get_tracer("agentguard")
+
+        guardian.validate_input("Hello, world!")
+
+        spans = exporter.get_finished_spans()
+        parent = next(s for s in spans if s.name == "agentguard.validate_input")
+        assert "agentguard.is_safe" in parent.attributes
+        assert parent.attributes["agentguard.is_safe"] is True
+        assert "agentguard.mode" in parent.attributes
+        os.unlink(path)
+
+    @patch("agentguard.guardian.ContentFilters")
+    @patch("agentguard.guardian.PromptShields")
+    def test_validate_output_emits_parent_span(self, MockPS, MockCF):
+        """validate_output should emit an agentguard.validate_output parent span."""
+        provider, exporter = _make_in_memory_tracer_provider()
+        MockPS.return_value = MagicMock()
+        MockCF.return_value = MagicMock()
+
+        path = _write_config(TELEMETRY_CONFIG)
+        guardian = Guardian(path)
+        guardian._tracer = provider.get_tracer("agentguard")
+
+        guardian.validate_output("safe model output")
+
+        spans = exporter.get_finished_spans()
+        span_names = [s.name for s in spans]
+        assert "agentguard.validate_output" in span_names
+        os.unlink(path)
+
+    @patch("agentguard.guardian.ContentFilters")
+    @patch("agentguard.guardian.PromptShields")
+    def test_validate_tool_call_emits_parent_span(self, MockPS, MockCF):
+        """validate_tool_call should emit an agentguard.validate_tool_call span."""
+        provider, exporter = _make_in_memory_tracer_provider()
+        MockPS.return_value = MagicMock()
+        MockCF.return_value = MagicMock()
+
+        path = _write_config(TELEMETRY_CONFIG)
+        guardian = Guardian(path)
+        guardian._tracer = provider.get_tracer("agentguard")
+
+        guardian.validate_tool_call("read_file", {"path": "/tmp/safe.txt"})
+
+        spans = exporter.get_finished_spans()
+        span_names = [s.name for s in spans]
+        assert "agentguard.validate_tool_call" in span_names
+        os.unlink(path)
+
+    @patch("agentguard.guardian.ContentFilters")
+    @patch("agentguard.guardian.PromptShields")
+    def test_validate_tool_output_emits_parent_span(self, MockPS, MockCF):
+        """validate_tool_output should emit an agentguard.validate_tool_output span."""
+        provider, exporter = _make_in_memory_tracer_provider()
+        MockPS.return_value = MagicMock()
+        MockCF.return_value = MagicMock()
+
+        path = _write_config(TELEMETRY_CONFIG)
+        guardian = Guardian(path)
+        guardian._tracer = provider.get_tracer("agentguard")
+
+        guardian.validate_tool_output("read_file", {}, "file contents here")
+
+        spans = exporter.get_finished_spans()
+        span_names = [s.name for s in spans]
+        assert "agentguard.validate_tool_output" in span_names
+        os.unlink(path)
+
+    @patch("agentguard.guardian.ContentFilters")
+    @patch("agentguard.guardian.PromptShields")
+    def test_no_spans_when_telemetry_disabled(self, MockPS, MockCF):
+        """When telemetry_enabled is False, no spans should be emitted."""
+        provider, exporter = _make_in_memory_tracer_provider()
+
+        mock_ps = MagicMock()
+        mock_ps.analyze.return_value = ValidationResult(is_safe=True, layer="prompt_shields")
+        MockPS.return_value = mock_ps
+        mock_cf = MagicMock()
+        mock_cf.analyze_text.return_value = ValidationResult(is_safe=True, layer="content_filters")
+        MockCF.return_value = mock_cf
+
+        path = _write_config(ENFORCE_CONFIG)  # no observability section
+        guardian = Guardian(path)
+        # _tracer is None because telemetry not initialized
+        assert guardian._tracer is None
+
+        guardian.validate_input("Hello!")
+
+        # No spans recorded via our test provider
+        assert exporter.get_finished_spans() == ()
         os.unlink(path)

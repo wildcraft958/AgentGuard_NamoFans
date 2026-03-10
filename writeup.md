@@ -1,3 +1,39 @@
+## 2026-03-10 — OpenTelemetry Integration (spans + metrics for all Guardian methods)
+
+**What changed:**
+Added full OTel instrumentation to AgentGuard's core validation pipeline. Three new/modified components:
+- `src/agentguard/telemetry.py` — new module: `init_telemetry()`, `get_tracer()`, `get_meter()` singletons; console fallback when no OTLP endpoint is configured.
+- `src/agentguard/config.py` — three new properties: `telemetry_enabled`, `telemetry_endpoint`, `telemetry_service_name`.
+- `src/agentguard/guardian.py` — all four `validate_*` methods wrapped in parent+child spans; `_span()`, `_set_span_attrs()`, `_record_metrics()` helpers; lazy init at `__init__` time only when `telemetry_enabled` is True.
+- `src/agentguard.yaml` — expanded `observability` section with `otel_endpoint` and `service_name` fields.
+
+**Why this approach:**
+Instrumentation lives in `Guardian` methods (not in `@guard`/`@guard_input` decorators) because the Guardian is the single orchestration point — every validation decision routes through it. Decorators are entry-points for user code but don't carry sub-check context. Putting spans at the Guardian level means every check (fast-inject pre-filter, Prompt Shields, Content Filters, PII, MELON, etc.) gets its own child span with accurate latency attribution.
+
+**Problem solved:**
+AgentGuard had zero observability into its own internals. Pass/fail rates, per-check latency, and blocked-by attribution were invisible without spans. This integration enables Jaeger/Grafana Tempo dashboards, SLO alerting on validation latency, and audit trails richer than the SQLite audit log alone.
+
+**Tradeoffs considered:**
+- *OTel API no-ops when disabled*: We rely on the OTel API returning no-op tracers/meters when no provider is configured. This means `get_tracer()`/`get_meter()` are always safe to call — the `_tracer is None` guard in `_span()` short-circuits before any API call, keeping the hot path cost at one `if` check.
+- *`PeriodicExportingMetricReader` teardown warning in tests*: The reader tries to flush to the console exporter after test stderr closes. Accepted as a known OTel SDK artifact; tests pass and the warning is cosmetic.
+- *`_record_metrics` recreates instruments per call*: The OTel SDK deduplicates counter/histogram registrations by name, so calling `create_counter` multiple times is idempotent. A cleaner approach would cache instruments at init time; deferred as a refactor since correctness is not affected.
+- *OTLP vs HTTP vs gRPC*: Used `OTLPSpanExporter` (gRPC) for parity with the most common collector deployments (Jaeger, OTEL Collector). HTTP variant can be swapped in by changing the import.
+
+**Example:**
+```python
+# With OTEL_EXPORTER_OTLP_ENDPOINT set, spans appear in Jaeger:
+guardian = Guardian("agentguard.yaml")          # init_telemetry() called internally
+result = guardian.validate_input("user prompt") # emits agentguard.validate_input + child spans
+
+# Without endpoint, spans print to stderr:
+# {name: "agentguard.validate_input", attributes: {agentguard.is_safe: true, agentguard.mode: "enforce"}}
+# {name: "agentguard.check.fast_inject_detect", ...}
+# {name: "agentguard.check.prompt_shields", ...}
+# {name: "agentguard.check.content_filters", ...}
+```
+
+---
+
 ## 2026-03-08 — Vulnerable Agent: Full Attack Surface Reference (82 tools, AAI001–AAI016)
 
 **What changed:**

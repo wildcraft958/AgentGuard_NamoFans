@@ -4,6 +4,8 @@ AgentGuard configuration loader.
 Loads and validates agentguard.yaml configuration.
 """
 
+import os
+
 import yaml
 from agentguard.exceptions import ConfigurationError
 from agentguard.models import GuardMode, Sensitivity
@@ -276,6 +278,29 @@ class AgentGuardConfig:
     @property
     def audit_db_path(self) -> str:
         return _deep_get(self._raw, "audit", "db_path", default="~/.agentguard/audit.db")
+
+    # ----- Observability / Telemetry -----
+
+    @property
+    def telemetry_enabled(self) -> bool:
+        """True if 'otel' is listed in observability.export_to."""
+        export_to = _deep_get(self._raw, "observability", "export_to", default=[])
+        if not isinstance(export_to, list):
+            return False
+        return "otel" in export_to
+
+    @property
+    def telemetry_endpoint(self) -> str | None:
+        """OTLP endpoint from config or OTEL_EXPORTER_OTLP_ENDPOINT env var."""
+        cfg_val = _deep_get(self._raw, "observability", "otel_endpoint", default=None)
+        if cfg_val is not None:
+            return cfg_val
+        return os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT")
+
+    @property
+    def telemetry_service_name(self) -> str:
+        """OTel service.name resource attribute."""
+        return _deep_get(self._raw, "observability", "service_name", default="agentguard")
 
     # ----- Agent Identity + Testing -----
 

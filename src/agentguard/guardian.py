@@ -8,7 +8,10 @@ and provides the validate_input() / validate_output() interface.
 import logging
 import time
 
+from opentelemetry.trace import Tracer
+
 from agentguard.config import load_config
+from agentguard.telemetry import init_telemetry
 from agentguard.models import (
     GuardMode,
     InputValidationResult,
@@ -52,6 +55,20 @@ class Guardian:
             self.config.mode.value,
             self.config.log_level,
         )
+
+        # Initialize OTel telemetry (only when enabled in config)
+        self._tracer: Tracer | None = None
+        self._meter = None
+        if self.config.telemetry_enabled:
+            self._tracer, self._meter = init_telemetry(
+                service_name=self.config.telemetry_service_name,
+                otlp_endpoint=self.config.telemetry_endpoint,
+            )
+            logger.info(
+                "OTel telemetry: ENABLED (service=%s, endpoint=%s)",
+                self.config.telemetry_service_name,
+                self.config.telemetry_endpoint or "console",
+            )
 
         # Initialize Audit Log
         self._audit: AuditLog | None = None
@@ -231,96 +248,136 @@ class Guardian:
         start_time = time.time()
         results = []
 
-        # -------------------------------------------------------
-        # L1 Check 0: Fast Offline Injection Pre-filter (zero latency)
-        # -------------------------------------------------------
-        detected, matched_pattern = fast_inject_detect(user_input)
-        if detected:
-            logger.info("Fast inject pre-filter matched pattern: %s", matched_pattern)
-            if self._audit:
-                self._audit.record(
-                    "validate_input", "l1_input", is_safe=False,
-                    reason="Fast inject detect",
-                    metadata={"blocked_by": "fast_inject", "pattern": matched_pattern},
+        with self._span("agentguard.validate_input") as parent_span:
+            # -------------------------------------------------------
+            # L1 Check 0: Fast Offline Injection Pre-filter (zero latency)
+            # -------------------------------------------------------
+            with self._span("agentguard.check.fast_inject_detect"):
+                detected, matched_pattern = fast_inject_detect(user_input)
+            if detected:
+                logger.info("Fast inject pre-filter matched pattern: %s", matched_pattern)
+                if self._audit:
+                    self._audit.record(
+                        "validate_input", "l1_input", is_safe=False,
+                        reason="Fast inject detect",
+                        metadata={"blocked_by": "fast_inject", "pattern": matched_pattern},
+                    )
+                from agentguard.models import ValidationResult
+                fake_result = ValidationResult(
+                    is_safe=False,
+                    layer="l1_input",
+                    blocked_reason=f"Prompt injection pattern detected: {matched_pattern}",
                 )
-            from agentguard.models import ValidationResult
-            fake_result = ValidationResult(
-                is_safe=False,
-                layer="l1_input",
-                blocked_reason=f"Prompt injection pattern detected: {matched_pattern}",
-            )
-            results.append(fake_result)
-            return self._handle_block(results, fake_result, "fast_inject", start_time)
+                results.append(fake_result)
+                self._set_span_attrs(
+                    parent_span,
+                    is_safe=False,
+                    blocked_by="fast_inject",
+                    blocked_reason=fake_result.blocked_reason,
+                )
+                self._record_metrics("l1_input", "fast_inject_detect", "block", start_time)
+                return self._handle_block(results, fake_result, "fast_inject", start_time)
 
-        # -------------------------------------------------------
-        # L1 Check 1: Prompt Shields (Prompt Injection Detection)
-        # -------------------------------------------------------
-        if self._prompt_shields and self.config.prompt_shields_enabled:
-            logger.info("Running Prompt Shields check...")
-            ps_result = self._prompt_shields.analyze(user_input, documents)
-            results.append(ps_result)
+            # -------------------------------------------------------
+            # L1 Check 1: Prompt Shields (Prompt Injection Detection)
+            # -------------------------------------------------------
+            if self._prompt_shields and self.config.prompt_shields_enabled:
+                logger.info("Running Prompt Shields check...")
+                with self._span("agentguard.check.prompt_shields"):
+                    ps_result = self._prompt_shields.analyze(user_input, documents)
+                results.append(ps_result)
 
-            if not ps_result.is_safe:
-                if self.config.block_on_detected_injection:
+                if not ps_result.is_safe:
+                    if self.config.block_on_detected_injection:
+                        self._set_span_attrs(
+                            parent_span,
+                            is_safe=False,
+                            blocked_by="prompt_shields",
+                            blocked_reason=ps_result.blocked_reason,
+                        )
+                        self._record_metrics("l1_input", "prompt_shields", "block", start_time)
+                        return self._handle_block(
+                            results, ps_result, "prompt_shields", start_time
+                        )
+                    else:
+                        logger.warning(
+                            "Prompt injection detected but blocking is disabled"
+                        )
+
+            # -------------------------------------------------------
+            # L1 Check 2: Content Filters + Blocklists (single API call)
+            # -------------------------------------------------------
+            if self._content_filters and (
+                self._any_content_filter_enabled() or self._blocklist_names
+            ):
+                logger.info("Running Content Filters check...")
+                # Determine severity threshold from sensitivity config
+                sensitivity = self.config.prompt_shields_sensitivity
+                threshold = SENSITIVITY_THRESHOLDS.get(sensitivity, 0)
+
+                with self._span("agentguard.check.content_filters"):
+                    cf_result = self._content_filters.analyze_text(
+                        text=user_input,
+                        block_toxicity=self.config.content_filters_block_toxicity,
+                        block_violence=self.config.content_filters_block_violence,
+                        block_self_harm=self.config.content_filters_block_self_harm,
+                        severity_threshold=threshold,
+                        blocklist_names=self._blocklist_names or None,
+                        halt_on_blocklist_hit=self.config.halt_on_blocklist_hit,
+                    )
+                results.append(cf_result)
+
+                if not cf_result.is_safe:
+                    self._set_span_attrs(
+                        parent_span,
+                        is_safe=False,
+                        blocked_by="content_filters",
+                        blocked_reason=cf_result.blocked_reason,
+                    )
+                    self._record_metrics("l1_input", "content_filters", "block", start_time)
                     return self._handle_block(
-                        results, ps_result, "prompt_shields", start_time
-                    )
-                else:
-                    logger.warning(
-                        "Prompt injection detected but blocking is disabled"
+                        results, cf_result, "content_filters", start_time
                     )
 
-        # -------------------------------------------------------
-        # L1 Check 2: Content Filters + Blocklists (single API call)
-        # -------------------------------------------------------
-        if self._content_filters and (self._any_content_filter_enabled() or self._blocklist_names):
-            logger.info("Running Content Filters check...")
-            # Determine severity threshold from sensitivity config
-            sensitivity = self.config.prompt_shields_sensitivity
-            threshold = SENSITIVITY_THRESHOLDS.get(sensitivity, 0)
+            # -------------------------------------------------------
+            # L1 Check 3: Image Content Filters (Harmful Image Detection)
+            # -------------------------------------------------------
+            if self._content_filters and self.config.image_filters_enabled and images:
+                sensitivity = self.config.prompt_shields_sensitivity
+                threshold = SENSITIVITY_THRESHOLDS.get(sensitivity, 0)
 
-            cf_result = self._content_filters.analyze_text(
-                text=user_input,
-                block_toxicity=self.config.content_filters_block_toxicity,
-                block_violence=self.config.content_filters_block_violence,
-                block_self_harm=self.config.content_filters_block_self_harm,
-                severity_threshold=threshold,
-                blocklist_names=self._blocklist_names or None,
-                halt_on_blocklist_hit=self.config.halt_on_blocklist_hit,
-            )
-            results.append(cf_result)
-
-            if not cf_result.is_safe:
-                return self._handle_block(
-                    results, cf_result, "content_filters", start_time
-                )
-
-        # -------------------------------------------------------
-        # L1 Check 3: Image Content Filters (Harmful Image Detection)
-        # -------------------------------------------------------
-        if self._content_filters and self.config.image_filters_enabled and images:
-            sensitivity = self.config.prompt_shields_sensitivity
-            threshold = SENSITIVITY_THRESHOLDS.get(sensitivity, 0)
-
-            for i, image_data in enumerate(images):
-                logger.info("Running Image Content Filters on image %d/%d...", i + 1, len(images))
-                img_result = self._content_filters.analyze_image(
-                    image_data=image_data,
-                    block_hate=self.config.image_filters_block_hate,
-                    block_violence=self.config.image_filters_block_violence,
-                    block_self_harm=self.config.image_filters_block_self_harm,
-                    block_sexual=self.config.image_filters_block_sexual,
-                    severity_threshold=threshold,
-                )
-                results.append(img_result)
-
-                if not img_result.is_safe:
-                    return self._handle_block(
-                        results, img_result, "content_filters", start_time
+                for i, image_data in enumerate(images):
+                    logger.info(
+                        "Running Image Content Filters on image %d/%d...", i + 1, len(images)
                     )
+                    with self._span("agentguard.check.image_filters"):
+                        img_result = self._content_filters.analyze_image(
+                            image_data=image_data,
+                            block_hate=self.config.image_filters_block_hate,
+                            block_violence=self.config.image_filters_block_violence,
+                            block_self_harm=self.config.image_filters_block_self_harm,
+                            block_sexual=self.config.image_filters_block_sexual,
+                            severity_threshold=threshold,
+                        )
+                    results.append(img_result)
 
-        elapsed_ms = (time.time() - start_time) * 1000
-        logger.info("All L1 checks passed (%.1fms)", elapsed_ms)
+                    if not img_result.is_safe:
+                        self._set_span_attrs(
+                            parent_span,
+                            is_safe=False,
+                            blocked_by="image_filters",
+                            blocked_reason=img_result.blocked_reason,
+                        )
+                        self._record_metrics("l1_input", "image_filters", "block", start_time)
+                        return self._handle_block(
+                            results, img_result, "content_filters", start_time
+                        )
+
+            elapsed_ms = (time.time() - start_time) * 1000
+            logger.info("All L1 checks passed (%.1fms)", elapsed_ms)
+
+            self._set_span_attrs(parent_span, is_safe=True)
+            self._record_metrics("l1_input", "validate_input", "pass", start_time)
 
         return InputValidationResult(is_safe=True, results=results)
 
@@ -349,49 +406,69 @@ class Guardian:
         results = []
         redacted_text = None
 
-        # -------------------------------------------------------
-        # L2 Check 1: Output Toxicity (Content Filtering on output)
-        # -------------------------------------------------------
-        if self._output_toxicity and self.config.output_toxicity_enabled:
-            sensitivity = self.config.prompt_shields_sensitivity
-            threshold = SENSITIVITY_THRESHOLDS.get(sensitivity, 0)
+        with self._span("agentguard.validate_output") as parent_span:
+            # -------------------------------------------------------
+            # L2 Check 1: Output Toxicity (Content Filtering on output)
+            # -------------------------------------------------------
+            if self._output_toxicity and self.config.output_toxicity_enabled:
+                sensitivity = self.config.prompt_shields_sensitivity
+                threshold = SENSITIVITY_THRESHOLDS.get(sensitivity, 0)
 
-            tox_result = self._output_toxicity.analyze(
-                text=model_output,
-                block_toxicity=self.config.content_filters_block_toxicity,
-                block_violence=self.config.content_filters_block_violence,
-                block_self_harm=self.config.content_filters_block_self_harm,
-                severity_threshold=threshold,
-            )
-            results.append(tox_result)
+                with self._span("agentguard.check.output_toxicity"):
+                    tox_result = self._output_toxicity.analyze(
+                        text=model_output,
+                        block_toxicity=self.config.content_filters_block_toxicity,
+                        block_violence=self.config.content_filters_block_violence,
+                        block_self_harm=self.config.content_filters_block_self_harm,
+                        severity_threshold=threshold,
+                    )
+                results.append(tox_result)
 
-            if not tox_result.is_safe and self.config.output_toxicity_block:
-                return self._handle_output_block(
-                    results, tox_result, "output_toxicity", start_time, redacted_text
-                )
+                if not tox_result.is_safe and self.config.output_toxicity_block:
+                    self._set_span_attrs(
+                        parent_span,
+                        is_safe=False,
+                        blocked_by="output_toxicity",
+                        blocked_reason=tox_result.blocked_reason,
+                    )
+                    self._record_metrics("l2_output", "output_toxicity", "block", start_time)
+                    return self._handle_output_block(
+                        results, tox_result, "output_toxicity", start_time, redacted_text
+                    )
 
-        # -------------------------------------------------------
-        # L2 Check 2: PII Detection
-        # -------------------------------------------------------
-        if self._pii_detector and self.config.pii_detection_enabled:
-            pii_result = self._pii_detector.analyze(
-                text=model_output,
-                block_on_pii=self.config.pii_block_on_detection,
-                allowed_categories=self.config.pii_allowed_categories,
-            )
-            results.append(pii_result)
+            # -------------------------------------------------------
+            # L2 Check 2: PII Detection
+            # -------------------------------------------------------
+            if self._pii_detector and self.config.pii_detection_enabled:
+                with self._span("agentguard.check.pii_detector"):
+                    pii_result = self._pii_detector.analyze(
+                        text=model_output,
+                        block_on_pii=self.config.pii_block_on_detection,
+                        allowed_categories=self.config.pii_allowed_categories,
+                    )
+                results.append(pii_result)
 
-            # Capture redacted text regardless of blocking
-            if pii_result.details.get("redacted_text"):
-                redacted_text = pii_result.details["redacted_text"]
+                # Capture redacted text regardless of blocking
+                if pii_result.details.get("redacted_text"):
+                    redacted_text = pii_result.details["redacted_text"]
 
-            if not pii_result.is_safe:
-                return self._handle_output_block(
-                    results, pii_result, "pii_detector", start_time, redacted_text
-                )
+                if not pii_result.is_safe:
+                    self._set_span_attrs(
+                        parent_span,
+                        is_safe=False,
+                        blocked_by="pii_detector",
+                        blocked_reason=pii_result.blocked_reason,
+                    )
+                    self._record_metrics("l2_output", "pii_detector", "block", start_time)
+                    return self._handle_output_block(
+                        results, pii_result, "pii_detector", start_time, redacted_text
+                    )
 
-        elapsed_ms = (time.time() - start_time) * 1000
-        logger.info("All L2 checks passed (%.1fms)", elapsed_ms)
+            elapsed_ms = (time.time() - start_time) * 1000
+            logger.info("All L2 checks passed (%.1fms)", elapsed_ms)
+
+            self._set_span_attrs(parent_span, is_safe=True)
+            self._record_metrics("l2_output", "validate_output", "pass", start_time)
 
         return OutputValidationResult(
             is_safe=True, results=results, redacted_text=redacted_text
@@ -427,47 +504,81 @@ class Guardian:
         start_time = time.time()
         results = []
 
-        # --- C3: Tool-Specific Guards (pure Python, zero latency) ---
-        if self._tool_specific_guards:
-            logger.info("Running Tool-Specific Guards for '%s'...", fn_name)
-            c3_result = self._tool_specific_guards.check(fn_name, fn_args)
-            results.append(c3_result)
+        with self._span("agentguard.validate_tool_call") as parent_span:
+            # --- C3: Tool-Specific Guards (pure Python, zero latency) ---
+            if self._tool_specific_guards:
+                logger.info("Running Tool-Specific Guards for '%s'...", fn_name)
+                with self._span("agentguard.check.tool_specific_guards"):
+                    c3_result = self._tool_specific_guards.check(fn_name, fn_args)
+                results.append(c3_result)
 
-            if not c3_result.is_safe:
-                return self._handle_tool_block(
-                    results, c3_result, "tool_specific_guards",
-                    start_time, fn_name,
-                )
+                if not c3_result.is_safe:
+                    self._set_span_attrs(
+                        parent_span,
+                        is_safe=False,
+                        blocked_by="tool_specific_guards",
+                        blocked_reason=c3_result.blocked_reason,
+                    )
+                    self._record_metrics(
+                        "tool_firewall", "tool_specific_guards", "block", start_time
+                    )
+                    return self._handle_tool_block(
+                        results, c3_result, "tool_specific_guards",
+                        start_time, fn_name,
+                    )
 
-        # --- C1: Tool Input Analyzer (Azure entity recognition) ---
-        if self._tool_input_analyzer and self.config.tool_input_analysis_enabled:
-            logger.info("Running Tool Input Analyzer for '%s'...", fn_name)
-            c1_result = self._tool_input_analyzer.analyze(
-                fn_name, fn_args,
-                blocked_categories_map=self.config.tool_input_blocked_categories,
-            )
-            results.append(c1_result)
+            # --- C1: Tool Input Analyzer (Azure entity recognition) ---
+            if self._tool_input_analyzer and self.config.tool_input_analysis_enabled:
+                logger.info("Running Tool Input Analyzer for '%s'...", fn_name)
+                with self._span("agentguard.check.tool_input_analyzer"):
+                    c1_result = self._tool_input_analyzer.analyze(
+                        fn_name, fn_args,
+                        blocked_categories_map=self.config.tool_input_blocked_categories,
+                    )
+                results.append(c1_result)
 
-            if not c1_result.is_safe:
-                return self._handle_tool_block(
-                    results, c1_result, "tool_input_analyzer",
-                    start_time, fn_name,
-                )
+                if not c1_result.is_safe:
+                    self._set_span_attrs(
+                        parent_span,
+                        is_safe=False,
+                        blocked_by="tool_input_analyzer",
+                        blocked_reason=c1_result.blocked_reason,
+                    )
+                    self._record_metrics(
+                        "tool_firewall", "tool_input_analyzer", "block", start_time
+                    )
+                    return self._handle_tool_block(
+                        results, c1_result, "tool_input_analyzer",
+                        start_time, fn_name,
+                    )
 
-        # --- C4: Approval Workflow (HITL / AITL) ---
-        if self._approval_workflow and self.config.approval_workflow_enabled:
-            logger.info("Running Approval Workflow for '%s'...", fn_name)
-            c4_result = self._approval_workflow.check(fn_name, fn_args, context)
-            results.append(c4_result)
+            # --- C4: Approval Workflow (HITL / AITL) ---
+            if self._approval_workflow and self.config.approval_workflow_enabled:
+                logger.info("Running Approval Workflow for '%s'...", fn_name)
+                with self._span("agentguard.check.approval_workflow"):
+                    c4_result = self._approval_workflow.check(fn_name, fn_args, context)
+                results.append(c4_result)
 
-            if not c4_result.is_safe:
-                return self._handle_tool_block(
-                    results, c4_result, "approval_workflow",
-                    start_time, fn_name,
-                )
+                if not c4_result.is_safe:
+                    self._set_span_attrs(
+                        parent_span,
+                        is_safe=False,
+                        blocked_by="approval_workflow",
+                        blocked_reason=c4_result.blocked_reason,
+                    )
+                    self._record_metrics(
+                        "tool_firewall", "approval_workflow", "block", start_time
+                    )
+                    return self._handle_tool_block(
+                        results, c4_result, "approval_workflow",
+                        start_time, fn_name,
+                    )
 
-        elapsed_ms = (time.time() - start_time) * 1000
-        logger.info("Tool call pre-checks passed for '%s' (%.1fms)", fn_name, elapsed_ms)
+            elapsed_ms = (time.time() - start_time) * 1000
+            logger.info("Tool call pre-checks passed for '%s' (%.1fms)", fn_name, elapsed_ms)
+            self._set_span_attrs(parent_span, is_safe=True)
+            self._record_metrics("tool_firewall", "validate_tool_call", "pass", start_time)
+
         return ToolCallValidationResult(is_safe=True, results=results, tool_name=fn_name)
 
     def validate_tool_output(
@@ -505,53 +616,70 @@ class Guardian:
         start_time = time.time()
         results = []
 
-        # --- C2: MELON Detector ---
-        if self._melon_detector and self.config.melon_enabled and messages is not None:
-            logger.info("Running MELON detection for tool '%s' output...", fn_name)
-            c2_result = self._melon_detector.check_tool_output(messages, tool_schemas or [])
-            results.append(c2_result)
+        with self._span("agentguard.validate_tool_output") as parent_span:
+            # --- C2: MELON Detector ---
+            if self._melon_detector and self.config.melon_enabled and messages is not None:
+                logger.info("Running MELON detection for tool '%s' output...", fn_name)
+                with self._span("agentguard.check.melon_detector"):
+                    c2_result = self._melon_detector.check_tool_output(
+                        messages, tool_schemas or []
+                    )
+                results.append(c2_result)
 
-            if not c2_result.is_safe:
-                redacted = c2_result.details.get("redacted_output")
-                elapsed_ms = (time.time() - start_time) * 1000
+                if not c2_result.is_safe:
+                    redacted = c2_result.details.get("redacted_output")
+                    elapsed_ms = (time.time() - start_time) * 1000
 
-                if self.config.mode == GuardMode.MONITOR:
+                    self._set_span_attrs(
+                        parent_span,
+                        is_safe=False,
+                        blocked_by="melon_detector",
+                        blocked_reason=c2_result.blocked_reason,
+                    )
+                    self._record_metrics(
+                        "tool_firewall", "melon_detector", "block", start_time
+                    )
+
+                    if self.config.mode == GuardMode.MONITOR:
+                        logger.warning(
+                            "MONITOR mode: would block tool output (%s: %s) but allowing (%.1fms)",
+                            "melon_detector", c2_result.blocked_reason, elapsed_ms,
+                        )
+                        return ToolCallValidationResult(
+                            is_safe=True, results=results, tool_name=fn_name,
+                            redacted_output=redacted,
+                        )
+
+                    # ENFORCE mode
                     logger.warning(
-                        "MONITOR mode: would block tool output (%s: %s) but allowing (%.1fms)",
+                        "ENFORCE mode: BLOCKING tool output (%s: %s) (%.1fms)",
                         "melon_detector", c2_result.blocked_reason, elapsed_ms,
                     )
-                    return ToolCallValidationResult(
-                        is_safe=True, results=results, tool_name=fn_name,
+
+                    tc_result = ToolCallValidationResult(
+                        is_safe=False, results=results,
+                        blocked_by="melon_detector",
+                        blocked_reason=c2_result.blocked_reason,
                         redacted_output=redacted,
+                        tool_name=fn_name,
                     )
 
-                # ENFORCE mode
-                logger.warning(
-                    "ENFORCE mode: BLOCKING tool output (%s: %s) (%.1fms)",
-                    "melon_detector", c2_result.blocked_reason, elapsed_ms,
-                )
+                    if self.config.melon_raise_on_injection:
+                        raise ToolCallBlockedError(
+                            reason=c2_result.blocked_reason,
+                            details={
+                                "blocked_by": "melon_detector",
+                                "elapsed_ms": elapsed_ms,
+                                "validation_result": tc_result,
+                            },
+                        )
+                    return tc_result
 
-                tc_result = ToolCallValidationResult(
-                    is_safe=False, results=results,
-                    blocked_by="melon_detector",
-                    blocked_reason=c2_result.blocked_reason,
-                    redacted_output=redacted,
-                    tool_name=fn_name,
-                )
+            elapsed_ms = (time.time() - start_time) * 1000
+            logger.info("Tool output post-checks passed for '%s' (%.1fms)", fn_name, elapsed_ms)
+            self._set_span_attrs(parent_span, is_safe=True)
+            self._record_metrics("tool_firewall", "validate_tool_output", "pass", start_time)
 
-                if self.config.melon_raise_on_injection:
-                    raise ToolCallBlockedError(
-                        reason=c2_result.blocked_reason,
-                        details={
-                            "blocked_by": "melon_detector",
-                            "elapsed_ms": elapsed_ms,
-                            "validation_result": tc_result,
-                        },
-                    )
-                return tc_result
-
-        elapsed_ms = (time.time() - start_time) * 1000
-        logger.info("Tool output post-checks passed for '%s' (%.1fms)", fn_name, elapsed_ms)
         return ToolCallValidationResult(is_safe=True, results=results, tool_name=fn_name)
 
     def enforce_rbac(self, call, context: dict) -> None:
@@ -565,6 +693,60 @@ class Guardian:
     def monitor_post_execution(self, call, result, context: dict) -> None:
         """L4 post-execution monitoring stub."""
         logger.debug("L4 post-execution monitoring: not yet implemented")
+
+    # ------------------------------------------------------------------
+    # Telemetry helpers
+    # ------------------------------------------------------------------
+
+    def _span(self, name: str):
+        """Return a context-manager span if tracer available, else a no-op."""
+        if self._tracer is not None:
+            return self._tracer.start_as_current_span(name)
+        # Return a no-op context manager that yields None
+        from contextlib import nullcontext
+        return nullcontext(None)
+
+    def _set_span_attrs(
+        self,
+        span,
+        is_safe: bool,
+        blocked_by: str | None = None,
+        blocked_reason: str | None = None,
+    ) -> None:
+        """Set standard attributes on a span (no-op if span is None)."""
+        if span is None:
+            return
+        try:
+            span.set_attribute("agentguard.is_safe", is_safe)
+            span.set_attribute("agentguard.mode", self.config.mode.value)
+            if blocked_by:
+                span.set_attribute("agentguard.blocked_by", blocked_by)
+            if blocked_reason:
+                span.set_attribute("agentguard.blocked_reason", blocked_reason)
+        except Exception:
+            pass  # Never let telemetry crash the guard
+
+    def _record_metrics(
+        self, layer: str, check: str, result: str, start_time: float
+    ) -> None:
+        """Increment validation counter and record duration histogram."""
+        if self._meter is None:
+            return
+        try:
+            elapsed_ms = (time.time() - start_time) * 1000
+            attrs = {"layer": layer, "check": check, "result": result}
+            self._meter.create_counter(
+                "agentguard.validations",
+                description="Number of AgentGuard validation decisions",
+                unit="1",
+            ).add(1, attributes=attrs)
+            self._meter.create_histogram(
+                "agentguard.validation.duration",
+                description="Duration of AgentGuard validation checks",
+                unit="ms",
+            ).record(elapsed_ms, attributes={"layer": layer, "check": check})
+        except Exception:
+            pass  # Never let telemetry crash the guard
 
     def _handle_block(
         self,

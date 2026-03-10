@@ -1,12 +1,24 @@
 """Tests for agentguard.config module."""
 
-import pytest
 import os
 import tempfile
+from unittest.mock import patch
 
-from agentguard.config import load_config
+import pytest
+
+from agentguard.config import AgentGuardConfig, load_config
 from agentguard.exceptions import ConfigurationError
 from agentguard.models import GuardMode, Sensitivity
+
+
+def _make_config(observability: dict | None = None) -> AgentGuardConfig:
+    """Build a minimal raw config dict with optional observability section."""
+    raw = {
+        "global": {"mode": "enforce", "log_level": "standard"},
+    }
+    if observability is not None:
+        raw["observability"] = observability
+    return AgentGuardConfig(raw)
 
 
 def _write_config(content: str) -> str:
@@ -215,3 +227,66 @@ audit:
         config = load_config(path)
         assert config.audit_db_path == "/tmp/test_audit.db"
         os.unlink(path)
+
+
+class TestTelemetryEnabled:
+    def test_telemetry_enabled_when_otel_in_export_to(self):
+        cfg = _make_config({"export_to": ["otel"]})
+        assert cfg.telemetry_enabled is True
+
+    def test_telemetry_enabled_when_otel_among_multiple_exporters(self):
+        cfg = _make_config({"export_to": ["azure_monitor", "otel"]})
+        assert cfg.telemetry_enabled is True
+
+    def test_telemetry_disabled_when_otel_not_in_export_to(self):
+        cfg = _make_config({"export_to": ["azure_monitor"]})
+        assert cfg.telemetry_enabled is False
+
+    def test_telemetry_disabled_when_export_to_empty(self):
+        cfg = _make_config({"export_to": []})
+        assert cfg.telemetry_enabled is False
+
+    def test_telemetry_disabled_when_no_observability_section(self):
+        cfg = _make_config(observability=None)
+        assert cfg.telemetry_enabled is False
+
+    def test_telemetry_disabled_when_observability_has_no_export_to(self):
+        cfg = _make_config({"log_all_decisions": True})
+        assert cfg.telemetry_enabled is False
+
+
+class TestTelemetryEndpoint:
+    def test_endpoint_from_config(self):
+        cfg = _make_config({"otel_endpoint": "http://my-collector:4317"})
+        assert cfg.telemetry_endpoint == "http://my-collector:4317"
+
+    def test_endpoint_none_when_not_set(self):
+        cfg = _make_config({})
+        with patch.dict(os.environ, {}, clear=True):
+            assert cfg.telemetry_endpoint is None
+
+    def test_endpoint_from_env_var_when_config_is_null(self):
+        cfg = _make_config({"otel_endpoint": None})
+        with patch.dict(os.environ, {"OTEL_EXPORTER_OTLP_ENDPOINT": "http://env-collector:4317"}):
+            assert cfg.telemetry_endpoint == "http://env-collector:4317"
+
+    def test_config_takes_precedence_over_env(self):
+        cfg = _make_config({"otel_endpoint": "http://config-collector:4317"})
+        with patch.dict(
+            os.environ, {"OTEL_EXPORTER_OTLP_ENDPOINT": "http://env-collector:4317"}
+        ):
+            assert cfg.telemetry_endpoint == "http://config-collector:4317"
+
+
+class TestTelemetryServiceName:
+    def test_service_name_from_config(self):
+        cfg = _make_config({"service_name": "my-agent"})
+        assert cfg.telemetry_service_name == "my-agent"
+
+    def test_service_name_defaults_to_agentguard(self):
+        cfg = _make_config({})
+        assert cfg.telemetry_service_name == "agentguard"
+
+    def test_service_name_default_when_no_observability_section(self):
+        cfg = _make_config(observability=None)
+        assert cfg.telemetry_service_name == "agentguard"
