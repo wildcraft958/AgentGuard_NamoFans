@@ -454,6 +454,79 @@
     .test-result-pill.visible { display: inline-block; }
 
     /* =========================================================
+       TEST CARD DETAILS DROPDOWN
+    ========================================================= */
+    .test-card-footer {
+      margin-top: 10px;
+      padding-top: 8px;
+      border-top: 1px solid var(--border);
+    }
+
+    .test-details-btn {
+      background: none;
+      border: none;
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      cursor: pointer;
+      padding: 0;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      transition: color 0.15s;
+      user-select: none;
+    }
+    .test-details-btn:hover { color: var(--text); }
+
+    .test-details-chevron {
+      display: inline-block;
+      transition: transform 0.2s ease;
+      font-style: normal;
+      line-height: 1;
+    }
+    .test-details-btn.open .test-details-chevron { transform: rotate(90deg); }
+
+    .test-details {
+      display: none;
+      margin-top: 10px;
+    }
+    .test-details.open {
+      display: block;
+      animation: fadeUp 0.18s ease;
+    }
+
+    .detail-section { margin-bottom: 8px; }
+    .detail-section:last-child { margin-bottom: 0; }
+
+    .detail-label {
+      font-family: var(--mono);
+      font-size: 8px;
+      font-weight: 700;
+      letter-spacing: 0.15em;
+      color: var(--orange);
+      text-transform: uppercase;
+      margin-bottom: 4px;
+    }
+
+    .detail-text {
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--text);
+      background: var(--black);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 8px 10px;
+      white-space: pre-wrap;
+      word-break: break-word;
+      line-height: 1.55;
+      max-height: 110px;
+      overflow-y: auto;
+    }
+
+    /* =========================================================
        CUSTOM MESSAGE
     ========================================================= */
     .custom-textarea {
@@ -989,6 +1062,29 @@ function renderTests(testCases) {
     const expectCls = tc.expect_blocked ? 'expect-blocked' : 'expect-safe';
     const expectLabel = tc.expect_blocked ? 'BLOCKED EXPECTED' : 'SAFE EXPECTED';
 
+    // Build details sections
+    let detailsHtml = `
+      <div class="detail-section">
+        <div class="detail-label">Message</div>
+        <div class="detail-text">${escapeHtml(tc.message)}</div>
+      </div>`;
+
+    if (tc.documents && tc.documents.length > 0) {
+      detailsHtml += `
+      <div class="detail-section">
+        <div class="detail-label">Document</div>
+        <div class="detail-text">${escapeHtml(tc.documents[0])}</div>
+      </div>`;
+    }
+
+    if (tc.melon_direct && tc.tool_name) {
+      detailsHtml += `
+      <div class="detail-section">
+        <div class="detail-label">Tool call</div>
+        <div class="detail-text">${escapeHtml(tc.tool_name)}(${escapeHtml(JSON.stringify(tc.tool_args || {}))})</div>
+      </div>`;
+    }
+
     card.innerHTML = `
       <div class="test-card-top">
         <span class="test-layer-tag ${layerCls}">${escapeHtml(tc.layer)}</span>
@@ -996,11 +1092,28 @@ function renderTests(testCases) {
       </div>
       <div class="test-name">${escapeHtml(tc.name)}</div>
       <div class="test-result-pill" id="pill-${escapeHtml(tc.id)}"></div>
+      <div class="test-card-footer">
+        <button class="test-details-btn">
+          <i class="test-details-chevron">›</i> DETAILS
+        </button>
+      </div>
+      <div class="test-details">${detailsHtml}</div>
     `;
 
-    card.addEventListener('click', () => {
+    // Card click = run (unless clicking inside footer/details)
+    card.addEventListener('click', (e) => {
+      if (e.target.closest('.test-card-footer') || e.target.closest('.test-details')) return;
       const docs = tc.documents || null;
       runTest(tc.message, docs, card, tc.melon_direct || false, tc.tool_name || null, tc.tool_args || null);
+    });
+
+    // Details toggle — stop propagation so it doesn't trigger run
+    card.querySelector('.test-details-btn').addEventListener('click', (e) => {
+      e.stopPropagation();
+      const btn = e.currentTarget;
+      const details = card.querySelector('.test-details');
+      const open = details.classList.toggle('open');
+      btn.classList.toggle('open', open);
     });
 
     grid.appendChild(card);
