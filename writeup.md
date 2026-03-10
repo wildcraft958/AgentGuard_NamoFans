@@ -359,3 +359,23 @@ Two complete adversarial comparison runs captured in `log_run_benchmark/`. Resul
 
 **Why this matters:**
 Proves the claim in the idea submission: "95%+ detection rate." Both runs hit or exceed this threshold. The +87.5 pp improvement in Run 2 demonstrates that AgentGuard is essential when the base model has low intrinsic safety — you can't rely on model ethics alone.
+
+## 2026-03-10 — Merged friends' contributions + aligned presentation to prototype
+
+**What changed:**
+Three commits merged from teammates:
+- Animesh Raj (`5eca45b`): `AgentGuard_NamoFans_IITKharagpur_Track5.md` — official hackathon submission doc (business plan, B2C strategy, market data, CVE references, competitive analysis, personas, demo scenario, academic references)
+- Devansh Gupta (`a769ad5`): `dashboard/static/demo.html` — added collapsible "details" dropdown to each test result card, surfacing blocked reason, layer, and metadata per test without cluttering the card list
+- Devansh Gupta (`3c8af03`): `src/agentguard.yaml` — OTel endpoint set to `http://localhost:4317` (standard OTLP gRPC port), so traces are no longer silently dropped; Jaeger + `agentguard dashboard` now work out of the box
+
+**Presentation template aligned to prototype:**
+The proposal doc describes L2 as "Guardrails AI validators." The prototype uses Azure AI Language PII + Azure Content Safety toxicity. `presentation_template.md` rewritten to match actual implementation exactly:
+- Guardrails AI: explicitly deferred — Azure AI Content Safety + Language covers the same PII and toxicity functionality natively, already required for L1, no additional dependency needed
+- Spotlighting: explicitly noted as disabled — requires Azure AI Foundry endpoint not available in prototype
+- Demo scenario: corrected — uses L1 offline regex (SYSTEM OVERRIDE) + L3 shell_commands guard (curl), NOT Spotlighting
+- Slide structure: aligned to the 6-slide Microsoft UNLOCKED template; business model moved to Appendix
+- Latency clarified: 0.65s total fast-path block time; <1ms is the regex-only component
+- Competitive table moved out of architecture slide (architecture should show components, not marketing)
+
+**Why this matters:**
+Presentation judges will compare slides to the live demo. Any claim about Guardrails AI or Spotlighting that cannot be demonstrated will undermine credibility. The revised template only claims what is running in the codebase.
