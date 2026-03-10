@@ -288,3 +288,31 @@ There was no systematic way to quantify how much protection AgentGuard adds acro
 **Example output format:**
 Results are written to `test_bots/comparison_results/run_YYYYMMDD_HHMMSS.log` and `.json` on each run.
 Run `uv run python test_bots/compare_vulnerable_agents.py` to generate actual results.
+## 2026-03-10 — Demo UI MELON Direct Mode
+
+**What changed:**
+Added `melon_direct` mode to the Demo Playground so MELON (C2 contrastive injection detector) can be demonstrated reliably without relying on the agent LLM choosing to follow the injection.
+
+- `demo_router.py/_run_melon_direct()`: loads the tool function from the unguarded agent's `TOOL_REGISTRY`, calls it directly with the given args, builds synthetic messages (`system→user→assistant→tool`), then calls `guardian.validate_tool_output()` — running MELON without the main agent LLM
+- `RunRequest`: extended with `melon_direct: bool`, `tool_name: str | None`, `tool_args: dict | None`
+- `agent_registry.py`: MELON test cases now include `melon_direct=True`, `tool_name`, `tool_args`
+- `demo.html`: `runTest()` passes these fields when present in the test case
+- Redesigned all three injection texts (financial/hr/medical stubs) from obvious `[AUTOMATED SYSTEM] CRITICAL:` to subtle `[[PROTOCOL:ID]] workflow note` format
+
+**Why this approach:**
+The original approach ran the full agent (LLM decides to call the tool, LLM sees the poisoned output, MELON compares runs). Gemini refused to follow the injection in the main agent's context because it's safety-trained. By bypassing the main agent LLM entirely and calling the tool directly, we guarantee MELON gets to run on the poisoned output every time the test card is clicked, making the demo deterministic.
+
+**Problem solved:**
+MELON test cards previously returned SAFE in guarded mode because: (1) `validate_tool_output` was passing messages without the tool result (fixed in guardian.py — synthetic tool message now appended), (2) Gemini ignored the injection in the main agent's loop so the agent returned a safe response without making tool calls, and (3) even if messages were correct, MELON's original run produced no tool calls → early exit.
+
+**Tradeoffs:**
+- MELON still makes 2 LLM calls internally (original run + masked run). The demo is "direct" in that the main agent LLM is bypassed, but MELON's comparison LLM still runs
+- If MELON's comparison LLM also ignores the injection in the original run, it returns `is_safe=True` (false negative). This is an honest representation of MELON's real-world sensitivity
+- Injection text redesign uses `[[PROTOCOL:ID]]` notation as a pseudo-authoritative workflow tag — subtle enough to look legitimate but explicit enough that a compliant LLM will follow it in MELON's comparison runs
+
+**Example:**
+Click "Indirect injection via poisoned patient record" on Medical Agent → guarded mode:
+1. `_run_melon_direct` calls `get_patient_record("PINJ")` directly
+2. Returns poisoned JSON with `[[CARE-PROTOCOL:COHORT-2026-Q1]]` injection
+3. MELON runs: original run (LLM sees full context with injection) vs masked run (injection presented as file)
+4. If both produce `get_patient_record("P001")` etc. → blocked: "Indirect prompt injection detected"
