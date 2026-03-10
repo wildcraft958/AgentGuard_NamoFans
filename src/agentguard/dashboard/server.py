@@ -169,6 +169,8 @@ def get_spans(limit: int = 100):
 @app.get("/api/stats")
 def get_stats():
     """Return aggregate stats from Jaeger traces + AuditLog."""
+    import time as _time
+
     spans = fetch_jaeger_traces(limit=500)
     audit = _get_audit_log()
 
@@ -191,13 +193,20 @@ def get_stats():
             else:
                 layer_breakdown[layer]["pass"] += 1
 
-    pass_rate_24h = audit.pass_rate(since_hours=24)
+    cutoff_ms = int(_time.time() * 1000) - 24 * 3600 * 1000
+    recent = [s for s in spans if s["start_ms"] >= cutoff_ms]
+    if recent:
+        safe_24h = sum(1 for s in recent if s["status"] != "blocked")
+        pass_rate_24h = round(safe_24h / len(recent), 4)
+    else:
+        pass_rate_24h = 1.0
+
     audit_blocked = audit.blocked_count()
 
     return {
         "total_spans": total_spans,
         "blocked_spans": blocked_spans if total_spans else audit_blocked,
-        "pass_rate_24h": round(pass_rate_24h, 4),
+        "pass_rate_24h": pass_rate_24h,
         "avg_duration_ms": avg_duration_ms,
         "layer_breakdown": layer_breakdown,
     }
