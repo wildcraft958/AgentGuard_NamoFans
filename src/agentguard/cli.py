@@ -158,6 +158,26 @@ def run_tests(
     subprocess.run(cmd, check=False)
 
 
+def cmd_init(args) -> None:
+    """Generate agentguard.yaml + .env.example in target directory."""
+    from agentguard.default_config import DEFAULT_ENV_EXAMPLE, DEFAULT_YAML
+
+    outdir = args.output or "."
+    yaml_path = os.path.join(outdir, "agentguard.yaml")
+    env_path = os.path.join(outdir, ".env.example")
+
+    for path, content, name in [
+        (yaml_path, DEFAULT_YAML, "agentguard.yaml"),
+        (env_path, DEFAULT_ENV_EXAMPLE, ".env.example"),
+    ]:
+        if os.path.exists(path) and not args.force:
+            print(f"[skip] {name} already exists. Use --force to overwrite.")
+            continue
+        with open(path, "w") as f:
+            f.write(content)
+        print(f"[ok]   Created {path}")
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Build and return the argparse parser. Separated for testability."""
     parser = argparse.ArgumentParser(
@@ -166,6 +186,24 @@ def build_parser() -> argparse.ArgumentParser:
     )
     subparsers = parser.add_subparsers(dest="command")
 
+    # ── init ──────────────────────────────────────────────────────────────────
+    init_parser = subparsers.add_parser(
+        "init",
+        help="Generate starter agentguard.yaml + .env.example in target directory",
+    )
+    init_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Overwrite existing files",
+    )
+    init_parser.add_argument(
+        "--output",
+        default=".",
+        metavar="DIR",
+        help="Directory to write files into (default: current directory)",
+    )
+
+    # ── test ──────────────────────────────────────────────────────────────────
     test_parser = subparsers.add_parser(
         "test",
         help="Red-team test an agent using Promptfoo",
@@ -203,7 +241,9 @@ def main():
     parser = build_parser()
     args = parser.parse_args()
 
-    if args.command == "test":
+    if args.command == "init":
+        cmd_init(args)
+    elif args.command == "test":
         run_tests(
             config_path=args.config,
             agent_module=args.module,

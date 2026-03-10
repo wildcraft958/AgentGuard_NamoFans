@@ -238,6 +238,70 @@ class TestRunTests:
 # ---------------------------------------------------------------
 
 
+# ---------------------------------------------------------------
+# TestCmdInit
+# ---------------------------------------------------------------
+
+
+class TestCmdInit:
+    def test_init_creates_yaml(self, tmp_path):
+        from agentguard.cli import build_parser, cmd_init
+
+        parser = build_parser()
+        args = parser.parse_args(["init", "--output", str(tmp_path)])
+        cmd_init(args)
+        assert (tmp_path / "agentguard.yaml").exists()
+
+    def test_init_creates_env_example(self, tmp_path):
+        from agentguard.cli import build_parser, cmd_init
+
+        parser = build_parser()
+        args = parser.parse_args(["init", "--output", str(tmp_path)])
+        cmd_init(args)
+        assert (tmp_path / ".env.example").exists()
+
+    def test_init_no_overwrite_without_force(self, tmp_path):
+        from agentguard.cli import build_parser, cmd_init
+
+        # Write sentinel content
+        yaml_path = tmp_path / "agentguard.yaml"
+        yaml_path.write_text("sentinel: true\n")
+
+        parser = build_parser()
+        args = parser.parse_args(["init", "--output", str(tmp_path)])
+        cmd_init(args)
+        # Content unchanged without --force
+        assert "sentinel" in yaml_path.read_text()
+
+    def test_init_force_overwrites(self, tmp_path):
+        from agentguard.cli import build_parser, cmd_init
+
+        yaml_path = tmp_path / "agentguard.yaml"
+        yaml_path.write_text("sentinel: true\n")
+
+        parser = build_parser()
+        args = parser.parse_args(["init", "--output", str(tmp_path), "--force"])
+        cmd_init(args)
+        assert "sentinel" not in yaml_path.read_text()
+
+    def test_init_yaml_is_valid(self, tmp_path):
+        from agentguard.cli import build_parser, cmd_init
+
+        parser = build_parser()
+        args = parser.parse_args(["init", "--output", str(tmp_path)])
+        cmd_init(args)
+
+        with open(tmp_path / "agentguard.yaml") as f:
+            parsed = yaml.safe_load(f)
+        assert isinstance(parsed, dict)
+        assert parsed.get("version") == 1
+
+
+# ---------------------------------------------------------------
+# TestCliParser
+# ---------------------------------------------------------------
+
+
 class TestCliParser:
     def _parse(self, args: list[str]):
         from agentguard.cli import build_parser
