@@ -316,3 +316,46 @@ Click "Indirect injection via poisoned patient record" on Medical Agent → guar
 2. Returns poisoned JSON with `[[CARE-PROTOCOL:COHORT-2026-Q1]]` injection
 3. MELON runs: original run (LLM sees full context with injection) vs masked run (injection presented as file)
 4. If both produce `get_patient_record("P001")` etc. → blocked: "Indirect prompt injection detected"
+
+## 2026-03-10 — L4 RBAC + Behavioral Anomaly Detection
+
+**What changed:**
+Implemented L4a RBAC and L4b behavioral anomaly detection, replacing the stubs in `guardian.py`.
+
+- `l4_rbac.py`: `L4RBACEngine` — ABAC evaluator (role × verb × resource_sensitivity × risk_score). Zero-trust default-deny. Returns ALLOW | DENY | ELEVATE. Inference helpers `infer_verb()` and `infer_sensitivity()` auto-classify tool calls without manual config.
+- `l4_behavioral.py`: `BehavioralAnomalyDetector` — 5 signals: (1) Z-score frequency spike, (2) Levenshtein sequence divergence, (3) read→exfil chain (CRITICAL weight=1.0, causes instant BLOCK), (4) unapproved external domain, (5) Shannon entropy spike. Composite scoring drives BLOCK/ELEVATE/WARN/ALLOW.
+- `guardian.py`: L4a+L4b wired into `validate_tool_call()` before C3. RBAC DENY → `ToolCallBlockedError`. Behavioral BLOCK → `ToolCallBlockedError`. Both write compliance records to audit log.
+- `config.py`: Added `rbac_enabled`, `rbac_capability_model`, `behavioral_monitoring_enabled`, `behavioral_monitoring_config` properties.
+- `audit_log.py`: Added schema migration for L4 columns on existing databases.
+
+**Why this approach:**
+ABAC over flat RBAC because tool access depends on context (what resource, how sensitive, upstream risk score) not just role. Behavioral anomaly detection on top of ABAC catches injection attacks that route legitimate tool calls through illegitimate sequences — the supply chain attack vector OWASP ASI-05 specifically warns about.
+
+**Problem solved:**
+The idea submission claimed L4 defense-in-depth but both `enforce_rbac()` and `detect_behavioral_anomaly()` were empty stubs. Now both are real implementations backed by 554 lines of tested code.
+
+**Tradeoffs:**
+- RBAC uses in-memory capability_model from YAML — no external identity provider. Simple for the prototype; production would integrate with SPIFFE/SVID or Azure Managed Identity.
+- Behavioral detector uses seeded baseline (avg=5, std=2) — production would accumulate per-agent historical baselines. The read→exfil chain signal fires reliably without history.
+
+**Example:**
+```python
+# With rbac: enabled: true and agent_role="default_agent" in context:
+guardian.validate_tool_call("shell_execute", {"cmd": "cat /etc/passwd"}, context={"agent_role": "default_agent"})
+# → ToolCallBlockedError: "L4 RBAC: role 'default_agent' denied execute on confidential resource"
+```
+
+## 2026-03-10 — Adversarial Benchmarks
+
+**What changed:**
+Two complete adversarial comparison runs captured in `log_run_benchmark/`. Results documented in `docs/benchmarks.md`.
+
+**Key results:**
+- Run 1: 97.5% security rate (39/40 attacks blocked). Unguarded baseline: 52.5% vulnerable. Improvement: +50.0 pp.
+- Run 2: 95.0% security rate (38/40 attacks blocked). Unguarded baseline: 92.5% vulnerable. Improvement: +87.5 pp.
+- CRITICAL severity block rate: 96%. HIGH severity: 93–100%.
+- Mean fast-path block latency (offline regex/blocklist): 0.65s. Mean Azure-backed block: 3.10s.
+- 410 unit tests pass, 0 failures.
+
+**Why this matters:**
+Proves the claim in the idea submission: "95%+ detection rate." Both runs hit or exceed this threshold. The +87.5 pp improvement in Run 2 demonstrates that AgentGuard is essential when the base model has low intrinsic safety — you can't rely on model ethics alone.

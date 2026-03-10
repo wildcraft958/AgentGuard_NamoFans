@@ -172,6 +172,20 @@ class Guardian:
             except (ValueError, Exception) as e:
                 logger.error("Failed to initialize MELON Detector: %s", e)
 
+        # Initialize L4: RBAC + Behavioral Anomaly
+        self._l4_rbac = None
+        self._l4_behavioral = None
+
+        if self.config.rbac_enabled:
+            from agentguard.l4_rbac import L4RBACEngine
+            self._l4_rbac = L4RBACEngine(self.config)
+            logger.info("L4 RBAC Engine: ENABLED")
+
+        if self.config.behavioral_monitoring_enabled:
+            from agentguard.l4_behavioral import BehavioralAnomalyDetector
+            self._l4_behavioral = BehavioralAnomalyDetector(self.config)
+            logger.info("L4 Behavioral Anomaly Detector: ENABLED")
+
         # Initialize C4: Approval Workflow (HITL / AITL)
         self._approval_workflow = None
         if self.config.approval_workflow_enabled:
@@ -256,12 +270,6 @@ class Guardian:
                 detected, matched_pattern = fast_inject_detect(user_input)
             if detected:
                 logger.info("Fast inject pre-filter matched pattern: %s", matched_pattern)
-                if self._audit:
-                    self._audit.record(
-                        "validate_input", "l1_input", is_safe=False,
-                        reason="Fast inject detect",
-                        metadata={"blocked_by": "fast_inject", "pattern": matched_pattern},
-                    )
                 from agentguard.models import ValidationResult
                 fake_result = ValidationResult(
                     is_safe=False,
@@ -269,14 +277,7 @@ class Guardian:
                     blocked_reason=f"Prompt injection pattern detected: {matched_pattern}",
                 )
                 results.append(fake_result)
-                self._set_span_attrs(
-                    parent_span,
-                    is_safe=False,
-                    blocked_by="fast_inject",
-                    blocked_reason=fake_result.blocked_reason,
-                )
-                self._record_metrics("l1_input", "fast_inject_detect", "block", start_time)
-                return self._handle_block(results, fake_result, "fast_inject", start_time)
+                return self._handle_block(results, fake_result, "fast_inject_detect", start_time, span=parent_span)
 
             # -------------------------------------------------------
             # L1 Check 1: Prompt Shields (Prompt Injection Detection)
@@ -289,15 +290,8 @@ class Guardian:
 
                 if not ps_result.is_safe:
                     if self.config.block_on_detected_injection:
-                        self._set_span_attrs(
-                            parent_span,
-                            is_safe=False,
-                            blocked_by="prompt_shields",
-                            blocked_reason=ps_result.blocked_reason,
-                        )
-                        self._record_metrics("l1_input", "prompt_shields", "block", start_time)
                         return self._handle_block(
-                            results, ps_result, "prompt_shields", start_time
+                            results, ps_result, "prompt_shields", start_time, span=parent_span
                         )
                     else:
                         logger.warning(
@@ -328,15 +322,8 @@ class Guardian:
                 results.append(cf_result)
 
                 if not cf_result.is_safe:
-                    self._set_span_attrs(
-                        parent_span,
-                        is_safe=False,
-                        blocked_by="content_filters",
-                        blocked_reason=cf_result.blocked_reason,
-                    )
-                    self._record_metrics("l1_input", "content_filters", "block", start_time)
                     return self._handle_block(
-                        results, cf_result, "content_filters", start_time
+                        results, cf_result, "content_filters", start_time, span=parent_span
                     )
 
             # -------------------------------------------------------
@@ -362,15 +349,8 @@ class Guardian:
                     results.append(img_result)
 
                     if not img_result.is_safe:
-                        self._set_span_attrs(
-                            parent_span,
-                            is_safe=False,
-                            blocked_by="image_filters",
-                            blocked_reason=img_result.blocked_reason,
-                        )
-                        self._record_metrics("l1_input", "image_filters", "block", start_time)
                         return self._handle_block(
-                            results, img_result, "content_filters", start_time
+                            results, img_result, "image_filters", start_time, span=parent_span
                         )
 
             elapsed_ms = (time.time() - start_time) * 1000
@@ -425,15 +405,8 @@ class Guardian:
                 results.append(tox_result)
 
                 if not tox_result.is_safe and self.config.output_toxicity_block:
-                    self._set_span_attrs(
-                        parent_span,
-                        is_safe=False,
-                        blocked_by="output_toxicity",
-                        blocked_reason=tox_result.blocked_reason,
-                    )
-                    self._record_metrics("l2_output", "output_toxicity", "block", start_time)
                     return self._handle_output_block(
-                        results, tox_result, "output_toxicity", start_time, redacted_text
+                        results, tox_result, "output_toxicity", start_time, redacted_text, span=parent_span
                     )
 
             # -------------------------------------------------------
@@ -453,15 +426,8 @@ class Guardian:
                     redacted_text = pii_result.details["redacted_text"]
 
                 if not pii_result.is_safe:
-                    self._set_span_attrs(
-                        parent_span,
-                        is_safe=False,
-                        blocked_by="pii_detector",
-                        blocked_reason=pii_result.blocked_reason,
-                    )
-                    self._record_metrics("l2_output", "pii_detector", "block", start_time)
                     return self._handle_output_block(
-                        results, pii_result, "pii_detector", start_time, redacted_text
+                        results, pii_result, "pii_detector", start_time, redacted_text, span=parent_span
                     )
 
             elapsed_ms = (time.time() - start_time) * 1000
@@ -503,8 +469,72 @@ class Guardian:
 
         start_time = time.time()
         results = []
+        ctx = context or {}
 
         with self._span("agentguard.validate_tool_call") as parent_span:
+            # --- L4a: RBAC check (zero-trust default-deny) ---
+            if self._l4_rbac:
+                from agentguard.l4_rbac import AccessContext, infer_verb, infer_sensitivity
+                rbac_ctx = AccessContext(
+                    agent_role=ctx.get("agent_role", "default_agent"),
+                    tool_name=fn_name,
+                    task_id=ctx.get("task_id", ""),
+                    action_verb=infer_verb(fn_name),
+                    resource_sensitivity=infer_sensitivity(fn_name, fn_args),
+                    risk_score=ctx.get("risk_score", 0.0),
+                )
+                rbac_decision = self._l4_rbac.evaluate(rbac_ctx)
+                if rbac_decision.value == "deny":
+                    rbac_result = ValidationResult(
+                        is_safe=False,
+                        blocked_reason=f"L4 RBAC: role '{rbac_ctx.agent_role}' denied {rbac_ctx.action_verb} on {rbac_ctx.resource_sensitivity} resource via {fn_name}",
+                        blocked_by="l4_rbac",
+                    )
+                    results.append(rbac_result)
+                    return self._handle_tool_block(
+                        results, rbac_result, "l4_rbac", start_time, fn_name,
+                        span=parent_span, layer="l4_rbac",
+                        l4_rbac_decision=rbac_decision.value,
+                    )
+                # ELEVATE → route into approval_workflow below (set flag in context)
+                if rbac_decision.value == "elevate":
+                    ctx = dict(ctx, _l4_elevate=True)
+
+            # --- L4b: Behavioral Anomaly Detection ---
+            if self._l4_behavioral:
+                from agentguard.l4_rbac import extract_domain
+                ba_meta = {
+                    "domain": extract_domain(str(fn_args.get("url", ""))),
+                    "resource": fn_args.get("path") or fn_args.get("table") or fn_args.get("query", ""),
+                }
+                ba_result = self._l4_behavioral.score(
+                    task_id=ctx.get("task_id", "default"),
+                    agent_role=ctx.get("agent_role", "default_agent"),
+                    tool_name=fn_name,
+                    meta=ba_meta,
+                )
+                if ba_result.action == "BLOCK":
+                    block_reason = f"L4 Behavioral: {', '.join(s.name for s in ba_result.signals)} (score={ba_result.composite_score:.2f})"
+                    ba_block = ValidationResult(
+                        is_safe=False,
+                        blocked_reason=block_reason,
+                        blocked_by="l4_behavioral",
+                    )
+                    results.append(ba_block)
+                    return self._handle_tool_block(
+                        results, ba_block, "l4_behavioral", start_time, fn_name,
+                        span=parent_span, layer="l4_behavioral",
+                        l4_signals=str([s.name for s in ba_result.signals]),
+                        l4_composite=ba_result.composite_score,
+                        l4_action=ba_result.action,
+                    )
+                if ba_result.action in ("WARN", "ELEVATE"):
+                    logger.warning(
+                        "L4 behavioral %s for '%s': score=%.2f signals=%s",
+                        ba_result.action, fn_name, ba_result.composite_score,
+                        [s.name for s in ba_result.signals],
+                    )
+
             # --- C3: Tool-Specific Guards (pure Python, zero latency) ---
             if self._tool_specific_guards:
                 logger.info("Running Tool-Specific Guards for '%s'...", fn_name)
@@ -513,18 +543,9 @@ class Guardian:
                 results.append(c3_result)
 
                 if not c3_result.is_safe:
-                    self._set_span_attrs(
-                        parent_span,
-                        is_safe=False,
-                        blocked_by="tool_specific_guards",
-                        blocked_reason=c3_result.blocked_reason,
-                    )
-                    self._record_metrics(
-                        "tool_firewall", "tool_specific_guards", "block", start_time
-                    )
                     return self._handle_tool_block(
-                        results, c3_result, "tool_specific_guards",
-                        start_time, fn_name,
+                        results, c3_result, "tool_specific_guards", start_time, fn_name,
+                        span=parent_span,
                     )
 
             # --- C1: Tool Input Analyzer (Azure entity recognition) ---
@@ -538,18 +559,9 @@ class Guardian:
                 results.append(c1_result)
 
                 if not c1_result.is_safe:
-                    self._set_span_attrs(
-                        parent_span,
-                        is_safe=False,
-                        blocked_by="tool_input_analyzer",
-                        blocked_reason=c1_result.blocked_reason,
-                    )
-                    self._record_metrics(
-                        "tool_firewall", "tool_input_analyzer", "block", start_time
-                    )
                     return self._handle_tool_block(
-                        results, c1_result, "tool_input_analyzer",
-                        start_time, fn_name,
+                        results, c1_result, "tool_input_analyzer", start_time, fn_name,
+                        span=parent_span,
                     )
 
             # --- C4: Approval Workflow (HITL / AITL) ---
@@ -560,18 +572,9 @@ class Guardian:
                 results.append(c4_result)
 
                 if not c4_result.is_safe:
-                    self._set_span_attrs(
-                        parent_span,
-                        is_safe=False,
-                        blocked_by="approval_workflow",
-                        blocked_reason=c4_result.blocked_reason,
-                    )
-                    self._record_metrics(
-                        "tool_firewall", "approval_workflow", "block", start_time
-                    )
                     return self._handle_tool_block(
-                        results, c4_result, "approval_workflow",
-                        start_time, fn_name,
+                        results, c4_result, "approval_workflow", start_time, fn_name,
+                        span=parent_span,
                     )
 
             elapsed_ms = (time.time() - start_time) * 1000
@@ -640,20 +643,17 @@ class Guardian:
                     redacted = c2_result.details.get("redacted_output")
                     elapsed_ms = (time.time() - start_time) * 1000
 
-                    self._set_span_attrs(
-                        parent_span,
-                        is_safe=False,
-                        blocked_by="melon_detector",
-                        blocked_reason=c2_result.blocked_reason,
-                    )
-                    self._record_metrics(
-                        "tool_firewall", "melon_detector", "block", start_time
-                    )
-
                     if self.config.mode == GuardMode.MONITOR:
                         logger.warning(
                             "MONITOR mode: would block tool output (%s: %s) but allowing (%.1fms)",
                             "melon_detector", c2_result.blocked_reason, elapsed_ms,
+                        )
+                        self._notify_security_event(
+                            action="validate_tool_output", layer="tool_firewall",
+                            blocked_by="melon_detector",
+                            reason="MONITOR: would block via melon_detector",
+                            is_safe=True, start_time=start_time, span=parent_span,
+                            metadata={"tool_name": fn_name, "elapsed_ms": elapsed_ms},
                         )
                         return ToolCallValidationResult(
                             is_safe=True, results=results, tool_name=fn_name,
@@ -665,7 +665,13 @@ class Guardian:
                         "ENFORCE mode: BLOCKING tool output (%s: %s) (%.1fms)",
                         "melon_detector", c2_result.blocked_reason, elapsed_ms,
                     )
-
+                    self._notify_security_event(
+                        action="validate_tool_output", layer="tool_firewall",
+                        blocked_by="melon_detector",
+                        reason=c2_result.blocked_reason,
+                        is_safe=False, start_time=start_time, span=parent_span,
+                        metadata={"tool_name": fn_name, "elapsed_ms": elapsed_ms},
+                    )
                     tc_result = ToolCallValidationResult(
                         is_safe=False, results=results,
                         blocked_by="melon_detector",
@@ -692,17 +698,10 @@ class Guardian:
 
         return ToolCallValidationResult(is_safe=True, results=results, tool_name=fn_name)
 
-    def enforce_rbac(self, call, context: dict) -> None:
-        """L4 RBAC enforcement stub."""
-        logger.debug("L4 RBAC enforcement: not yet implemented")
-
-    def detect_behavioral_anomaly(self, call, context: dict) -> None:
-        """L4 behavioral anomaly detection stub."""
-        logger.debug("L4 behavioral anomaly detection: not yet implemented")
-
-    def monitor_post_execution(self, call, result, context: dict) -> None:
-        """L4 post-execution monitoring stub."""
-        logger.debug("L4 post-execution monitoring: not yet implemented")
+    def reset_task(self, task_id: str) -> None:
+        """Free L4 behavioral state for a completed task."""
+        if self._l4_behavioral:
+            self._l4_behavioral.reset_task(task_id)
 
     # ------------------------------------------------------------------
     # Telemetry helpers
@@ -758,64 +757,104 @@ class Guardian:
         except Exception:
             pass  # Never let telemetry crash the guard
 
+    # ------------------------------------------------------------------
+    # Unified security event notification
+    # ------------------------------------------------------------------
+
+    def _notify_security_event(
+        self,
+        *,
+        action: str,
+        layer: str,
+        blocked_by: str,
+        reason: str | None,
+        is_safe: bool,
+        start_time: float,
+        span=None,
+        metadata: dict | None = None,
+        l4_rbac_decision: str = "",
+        l4_signals: str = "[]",
+        l4_composite: float = 0.0,
+        l4_action: str = "",
+    ) -> None:
+        """Single notification point for both OTel and SQLite audit log.
+
+        OTel  → span attributes + metrics histogram (performance / SRE observability).
+        Audit → structured SQLite record (compliance forensics, 100% local retention).
+
+        This is the ONLY place that writes to both systems simultaneously, eliminating
+        the scattered dual-write pattern where _set_span_attrs/_record_metrics and
+        _audit.record were called at separate points in the code.
+        """
+        # OTel: span attributes
+        self._set_span_attrs(
+            span,
+            is_safe=is_safe,
+            blocked_by=blocked_by if not is_safe else None,
+            blocked_reason=reason if not is_safe else None,
+        )
+        # OTel: metrics counter + latency histogram
+        self._record_metrics(layer, blocked_by, "pass" if is_safe else "block", start_time)
+        # Audit log: structured security compliance record
+        if self._audit:
+            self._audit.record(
+                action, layer, is_safe=is_safe,
+                reason=reason,
+                metadata=metadata,
+                l4_rbac_decision=l4_rbac_decision,
+                l4_signals=l4_signals,
+                l4_composite=l4_composite,
+                l4_action=l4_action,
+            )
+
+    # ------------------------------------------------------------------
+    # Block handlers (enforce vs monitor mode, per layer)
+    # ------------------------------------------------------------------
+
     def _handle_block(
         self,
         results: list,
         blocking_result: ValidationResult,
         blocked_by: str,
         start_time: float,
+        span=None,
     ) -> InputValidationResult:
-        """Handle a blocked input depending on mode (enforce vs monitor)."""
+        """Handle a blocked input — single _notify_security_event call covers OTel + audit."""
         elapsed_ms = (time.time() - start_time) * 1000
 
         if self.config.mode == GuardMode.MONITOR:
             logger.warning(
                 "MONITOR mode: would block (%s: %s) but allowing through (%.1fms)",
-                blocked_by,
-                blocking_result.blocked_reason,
-                elapsed_ms,
+                blocked_by, blocking_result.blocked_reason, elapsed_ms,
             )
-            if self._audit:
-                self._audit.record(
-                    "validate_input", "l1_input", is_safe=True,
-                    reason=f"MONITOR: would block via {blocked_by}",
-                    metadata={"blocked_by": blocked_by, "elapsed_ms": elapsed_ms},
-                )
-            return InputValidationResult(
-                is_safe=True,
-                results=results,
-                blocked_by=None,
-                blocked_reason=None,
+            self._notify_security_event(
+                action="validate_input", layer="l1_input",
+                blocked_by=blocked_by,
+                reason=f"MONITOR: would block via {blocked_by}",
+                is_safe=True, start_time=start_time, span=span,
+                metadata={"blocked_by": blocked_by, "elapsed_ms": elapsed_ms},
             )
+            return InputValidationResult(is_safe=True, results=results, blocked_by=None, blocked_reason=None)
 
         # ENFORCE mode
         logger.warning(
             "ENFORCE mode: BLOCKING input (%s: %s) (%.1fms)",
-            blocked_by,
-            blocking_result.blocked_reason,
-            elapsed_ms,
+            blocked_by, blocking_result.blocked_reason, elapsed_ms,
         )
-        if self._audit:
-            self._audit.record(
-                "validate_input", "l1_input", is_safe=False,
-                reason=blocking_result.blocked_reason,
-                metadata={"blocked_by": blocked_by, "elapsed_ms": elapsed_ms},
-            )
-
-        result = InputValidationResult(
-            is_safe=False,
-            results=results,
+        self._notify_security_event(
+            action="validate_input", layer="l1_input",
             blocked_by=blocked_by,
-            blocked_reason=blocking_result.blocked_reason,
+            reason=blocking_result.blocked_reason,
+            is_safe=False, start_time=start_time, span=span,
+            metadata={"blocked_by": blocked_by, "elapsed_ms": elapsed_ms},
         )
-
+        result = InputValidationResult(
+            is_safe=False, results=results,
+            blocked_by=blocked_by, blocked_reason=blocking_result.blocked_reason,
+        )
         raise InputBlockedError(
             reason=blocking_result.blocked_reason,
-            details={
-                "blocked_by": blocked_by,
-                "elapsed_ms": elapsed_ms,
-                "validation_result": result,
-            },
+            details={"blocked_by": blocked_by, "elapsed_ms": elapsed_ms, "validation_result": result},
         )
 
     def _handle_tool_block(
@@ -825,8 +864,11 @@ class Guardian:
         blocked_by: str,
         start_time: float,
         tool_name: str,
+        span=None,
+        layer: str = "tool_firewall",
+        **l4_kwargs,
     ) -> ToolCallValidationResult:
-        """Handle a blocked tool call depending on mode (enforce vs monitor)."""
+        """Handle a blocked tool call — single _notify_security_event call covers OTel + audit."""
         elapsed_ms = (time.time() - start_time) * 1000
 
         if self.config.mode == GuardMode.MONITOR:
@@ -834,42 +876,37 @@ class Guardian:
                 "MONITOR mode: would block tool call (%s: %s) but allowing (%.1fms)",
                 blocked_by, blocking_result.blocked_reason, elapsed_ms,
             )
-            if self._audit:
-                self._audit.record(
-                    "validate_tool_call", "tool_firewall", is_safe=True,
-                    reason=f"MONITOR: would block via {blocked_by}",
-                    metadata={"blocked_by": blocked_by, "tool_name": tool_name, "elapsed_ms": elapsed_ms},
-                )
-            return ToolCallValidationResult(
-                is_safe=True, results=results, tool_name=tool_name,
+            self._notify_security_event(
+                action="validate_tool_call", layer=layer,
+                blocked_by=blocked_by,
+                reason=f"MONITOR: would block via {blocked_by}",
+                is_safe=True, start_time=start_time, span=span,
+                metadata={"blocked_by": blocked_by, "tool_name": tool_name, "elapsed_ms": elapsed_ms},
+                **l4_kwargs,
             )
+            return ToolCallValidationResult(is_safe=True, results=results, tool_name=tool_name)
 
         # ENFORCE mode
         logger.warning(
             "ENFORCE mode: BLOCKING tool call (%s: %s) (%.1fms)",
             blocked_by, blocking_result.blocked_reason, elapsed_ms,
         )
-        if self._audit:
-            self._audit.record(
-                "validate_tool_call", "tool_firewall", is_safe=False,
-                reason=blocking_result.blocked_reason,
-                metadata={"blocked_by": blocked_by, "tool_name": tool_name, "elapsed_ms": elapsed_ms},
-            )
-
+        self._notify_security_event(
+            action="validate_tool_call", layer=layer,
+            blocked_by=blocked_by,
+            reason=blocking_result.blocked_reason,
+            is_safe=False, start_time=start_time, span=span,
+            metadata={"blocked_by": blocked_by, "tool_name": tool_name, "elapsed_ms": elapsed_ms},
+            **l4_kwargs,
+        )
         result = ToolCallValidationResult(
             is_safe=False, results=results,
-            blocked_by=blocked_by,
-            blocked_reason=blocking_result.blocked_reason,
+            blocked_by=blocked_by, blocked_reason=blocking_result.blocked_reason,
             tool_name=tool_name,
         )
-
         raise ToolCallBlockedError(
             reason=blocking_result.blocked_reason,
-            details={
-                "blocked_by": blocked_by,
-                "elapsed_ms": elapsed_ms,
-                "validation_result": result,
-            },
+            details={"blocked_by": blocked_by, "elapsed_ms": elapsed_ms, "validation_result": result},
         )
 
     def _handle_output_block(
@@ -879,56 +916,43 @@ class Guardian:
         blocked_by: str,
         start_time: float,
         redacted_text: str = None,
+        span=None,
     ) -> OutputValidationResult:
-        """Handle a blocked output depending on mode (enforce vs monitor)."""
+        """Handle a blocked output — single _notify_security_event call covers OTel + audit."""
         elapsed_ms = (time.time() - start_time) * 1000
 
         if self.config.mode == GuardMode.MONITOR:
             logger.warning(
                 "MONITOR mode: would block output (%s: %s) but allowing through (%.1fms)",
-                blocked_by,
-                blocking_result.blocked_reason,
-                elapsed_ms,
+                blocked_by, blocking_result.blocked_reason, elapsed_ms,
             )
-            if self._audit:
-                self._audit.record(
-                    "validate_output", "l2_output", is_safe=True,
-                    reason=f"MONITOR: would block via {blocked_by}",
-                    metadata={"blocked_by": blocked_by, "elapsed_ms": elapsed_ms},
-                )
-            return OutputValidationResult(
-                is_safe=True,
-                results=results,
-                redacted_text=redacted_text,
+            self._notify_security_event(
+                action="validate_output", layer="l2_output",
+                blocked_by=blocked_by,
+                reason=f"MONITOR: would block via {blocked_by}",
+                is_safe=True, start_time=start_time, span=span,
+                metadata={"blocked_by": blocked_by, "elapsed_ms": elapsed_ms},
             )
+            return OutputValidationResult(is_safe=True, results=results, redacted_text=redacted_text)
 
         # ENFORCE mode
         logger.warning(
             "ENFORCE mode: BLOCKING output (%s: %s) (%.1fms)",
-            blocked_by,
-            blocking_result.blocked_reason,
-            elapsed_ms,
+            blocked_by, blocking_result.blocked_reason, elapsed_ms,
         )
-        if self._audit:
-            self._audit.record(
-                "validate_output", "l2_output", is_safe=False,
-                reason=blocking_result.blocked_reason,
-                metadata={"blocked_by": blocked_by, "elapsed_ms": elapsed_ms},
-            )
-
-        result = OutputValidationResult(
-            is_safe=False,
-            results=results,
+        self._notify_security_event(
+            action="validate_output", layer="l2_output",
             blocked_by=blocked_by,
-            blocked_reason=blocking_result.blocked_reason,
+            reason=blocking_result.blocked_reason,
+            is_safe=False, start_time=start_time, span=span,
+            metadata={"blocked_by": blocked_by, "elapsed_ms": elapsed_ms},
+        )
+        result = OutputValidationResult(
+            is_safe=False, results=results,
+            blocked_by=blocked_by, blocked_reason=blocking_result.blocked_reason,
             redacted_text=redacted_text,
         )
-
         raise OutputBlockedError(
             reason=blocking_result.blocked_reason,
-            details={
-                "blocked_by": blocked_by,
-                "elapsed_ms": elapsed_ms,
-                "validation_result": result,
-            },
+            details={"blocked_by": blocked_by, "elapsed_ms": elapsed_ms, "validation_result": result},
         )

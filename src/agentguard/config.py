@@ -269,6 +269,27 @@ class AgentGuardConfig:
     def approval_workflow_ai_supervisor_config(self) -> dict:
         return _deep_get(self._raw, "tool_firewall", "approval_workflow", "ai_supervisor", default={})
 
+    # ----- L4 RBAC -----
+
+    @property
+    def rbac_enabled(self) -> bool:
+        return _deep_get(self._raw, "rbac", "enabled", default=False)
+
+    @property
+    def rbac_capability_model(self) -> dict:
+        """Return the capability_model dict from rbac: section."""
+        return _deep_get(self._raw, "rbac", "capability_model", default={})
+
+    # ----- L4 Behavioral Monitoring -----
+
+    @property
+    def behavioral_monitoring_enabled(self) -> bool:
+        return _deep_get(self._raw, "behavioral_monitoring", "enabled", default=False)
+
+    @property
+    def behavioral_monitoring_config(self) -> dict:
+        return _deep_get(self._raw, "behavioral_monitoring", default={})
+
     # ----- Audit Log -----
 
     @property
