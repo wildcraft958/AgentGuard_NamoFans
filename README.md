@@ -17,27 +17,34 @@ AgentGuard is a **Guardian Agent** that sits between AI agents and their actions
 
 ## Architecture
 
+![AgentGuard Middleware Architecture](assets/middleware.png)
+
+> AgentGuard acts as an **in-process security middleware** sitting between your agent and the outside world. Every input, tool call, and output is intercepted and validated by the 4-layer guardian pipeline before anything executes.
+
+<details>
+<summary>Text flow diagram</summary>
+
 ```
 User Input
-  └─> [L1 Fast Inject Pre-filter]   — 33 regex patterns, zero latency, zero API cost
-  └─> [L1 Prompt Shields]           — Azure AI: jailbreak + document injection detection
+  └─> [L1 Fast Inject Pre-filter]   — 33 regex patterns, zero latency
+  └─> [L1 Prompt Shields]           — Azure AI: jailbreak + injection detection
   └─> [L1 Content Filters]          — Azure AI: hate, violence, self-harm
-  └─> [L1 Image Filters]            — Azure AI: harmful image detection
   └─> [L3 Blocklist Matching]       — Azure AI Content Safety custom blocklists
 
 Agent Tool Loop:
-  └─> [C3 Tool-Specific Guards]     — 5 rule-based guardrails scan every tool arg
-  │     file_system, sql_query, http_post, http_get, shell_commands
-  └─> [C1 Entity Recognition]       — Azure Text Analytics: block sensitive entities in args
+  └─> [C3 Tool-Specific Guards]     — 5 rule-based guardrails per tool arg
+  └─> [C1 Entity Recognition]       — Azure Text Analytics: block sensitive entities
   └─> [C4 Approval Workflow]        — HITL or AITL gate for sensitive tool calls
   └─> [Tool Executes]
-  └─> [C2 MELON Detector]           — Contrastive indirect prompt injection on tool output
+  └─> [C2 MELON Detector]           — Contrastive indirect prompt injection detection
 
   └─> [L2 Output Toxicity]          — Azure AI: toxic LLM output detection
   └─> [L2 PII Detection]            — Azure Text Analytics: PII leakage detection
 
   └─> [Audit Log]                   — SQLite: every decision persisted for compliance
 ```
+
+</details>
 
 ---
 
@@ -97,6 +104,18 @@ AgentGuard_NamoFans/
 ├── PPT.md                          # 6-slide presentation deck (Microsoft UNLOCKED template)
 └── pyproject.toml                  # Project config (managed by uv)
 ```
+
+---
+
+## Live Dashboard UI
+
+![Main Dashboard](assets/dashboard.png)
+*Real-time OTel trace stream, per-layer block counts, KPI cards, and audit log*
+
+![Demo Console](assets/demo.png)
+*Guarded vs. Unguarded toggle — run predefined attacks or custom prompts against Financial, HR, Medical, and Vulnerable agents*
+
+> 🌐 **Live demo:** [https://agentguard.exempl4r.xyz/](https://agentguard.exempl4r.xyz/)
 
 ---
 
