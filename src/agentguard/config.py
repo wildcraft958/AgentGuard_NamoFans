@@ -345,6 +345,60 @@ class AgentGuardConfig:
         """OTel service.name resource attribute."""
         return _deep_get(self._raw, "observability", "service_name", default="agentguard")
 
+    # ----- Sandbox -----
+
+    @property
+    def sandbox_enabled(self) -> bool:
+        return _deep_get(self._raw, "sandbox", "enabled", default=False)
+
+    @property
+    def sandbox_policy(self):
+        """Build a SandboxPolicy dataclass from the sandbox: config section."""
+        from agentguard.sandbox.policies import (
+            FilesystemPolicy, NetworkPolicy, ResourceLimits,
+            SandboxPolicy, SyscallPolicy,
+        )
+        raw = self._raw.get("sandbox", {})
+        fs  = raw.get("filesystem", {})
+        net = raw.get("network", {})
+        sys = raw.get("syscalls", {})
+        res = raw.get("resources", {})
+
+        return SandboxPolicy(
+            enabled=raw.get("enabled", False),
+            mode=raw.get("mode", "enforce"),
+            timeout_seconds=raw.get("timeout_seconds", 30),
+            filesystem=FilesystemPolicy(
+                enabled=fs.get("enabled", True),
+                allowed_read=fs.get("allowed_read", [
+                    "/tmp", "/usr/lib", "/usr/local/lib",
+                    "/usr/share", "/lib", "/lib64", "/usr/lib64",
+                ]),
+                allowed_write=fs.get("allowed_write", ["/tmp"]),
+            ),
+            network=NetworkPolicy(
+                enabled=net.get("enabled", True),
+                mode=net.get("mode", "whitelist"),
+                allowed_hosts=net.get("allowed_hosts", []),
+                allowed_ports=net.get("allowed_ports", [443, 80]),
+            ),
+            syscalls=SyscallPolicy(
+                enabled=sys.get("enabled", True),
+                blocked_syscalls=sys.get("blocked_syscalls", [
+                    "ptrace", "mount", "setuid", "setgid", "chroot",
+                    "sethostname", "setns", "unshare", "perf_event_open", "bpf",
+                    "pivot_root", "kexec_load", "kexec_file_load", "reboot",
+                    "init_module", "delete_module",
+                ]),
+            ),
+            resources=ResourceLimits(
+                enabled=res.get("enabled", True),
+                max_memory_mb=res.get("max_memory_mb", 512),
+                max_cpu_seconds=res.get("max_cpu_seconds", 30),
+                max_file_size_mb=res.get("max_file_size_mb", 100),
+            ),
+        )
+
     # ----- Agent Identity + Testing -----
 
     @property
