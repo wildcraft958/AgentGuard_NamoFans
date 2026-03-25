@@ -53,12 +53,18 @@ def _sandbox_worker(
     try:
         # ── Pre-import all sandbox modules BEFORE Landlock restricts filesystem ──
         # Landlock is applied below and will block access to the project source
-        # tree.  All Python modules needed after that point must be imported now,
-        # while the full filesystem is still accessible.
+        # tree AND /etc/ld.so.cache (needed by ctypes.util.find_library).
+        # All Python modules AND native library handles must be fully initialized
+        # now, while the full filesystem is still accessible.
         from agentguard.sandbox.resource_limits import apply_resource_limits
         from agentguard.sandbox.landlock import apply_landlock
-        from agentguard.sandbox.seccomp_guard import apply_seccomp
+        from agentguard.sandbox.seccomp_guard import apply_seccomp, _get_libseccomp
         from agentguard.sandbox.network_guard import apply_network_guard
+
+        # Pre-load libseccomp.so NOW (reads /etc/ld.so.cache) — must happen
+        # before Landlock blocks /etc. The handle is module-level cached so
+        # apply_seccomp() will reuse it after Landlock is active.
+        _get_libseccomp()
 
         # ── Layer 1: Resource limits (set first so we stay within memory budget) ──
         if policy.resources.enabled:
