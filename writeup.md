@@ -366,3 +366,52 @@ result = guardian.validate_output(
 )
 # → is_safe=True (on-topic, score 5/5)
 ```
+
+## 2026-03-10 — Groundedness Detector: REST API → LLM-as-Judge Migration
+
+**What changed:**
+Replaced the Azure Content Safety `detectGroundedness` REST API with an **LLM-as-judge** approach using the OpenAI SDK routed through TrueFoundry. The judge LLM scores groundedness on a 1-5 scale using the same grading rubric as Azure AI Evaluation SDK's `GroundednessEvaluator`.
+
+Key changes:
+- `src/agentguard/l2_output/groundedness_detector.py` — complete rewrite: removed `requests.post` to Azure Content Safety, now uses OpenAI SDK `chat.completions.create` with a grading prompt. Two prompt templates: `_WITH_QUERY_PROMPT` (QnA) and `_WITHOUT_QUERY_PROMPT` (summarization). Score parsed from `<S2>...</S2>` tags in judge output.
+- `src/tests/l2_output/test_groundedness_detector.py` — rewritten 56 tests: mocks `OpenAI` class instead of `requests.post`. 10 test classes covering init, both modes, skip logic, threshold (1-5), LLM errors, score parsing, request config, result details, realistic scenarios.
+- `src/tests/test_guardian_groundedness.py` — updated all 12 integration tests to mock `OpenAI` instead of `requests.post`, updated config thresholds from 0.x to 1-5 scale.
+- Config default `confidence_threshold` changed from `0.9` to `3.0` (1-5 scale, 3 = minimum to pass).
+- `agentguard.yaml` and `agentguard_vulnerable.yaml` — threshold updated to `3`.
+- Added `azure-ai-evaluation` as dependency (investigated but not used directly due to Gemini parameter incompatibility).
+
+**Why this approach:**
+The Azure Content Safety `detectGroundedness` REST API returned **404: "This feature is not yet available in this region"** on the existing Azure resource. Investigation confirmed:
+- Content Filters (`text:analyze`) — works (200) via SDK
+- Prompt Shields (`text:shieldPrompt`) — 404 (region-locked, REST API)
+- PII Detection — works via `azure-ai-textanalytics` SDK
+- Groundedness (`text:detectGroundedness`) — 404 (region-locked, REST API)
+
+Pattern: all modules using Azure SDKs work; both using raw REST APIs fail due to region limitations. The `azure-ai-evaluation` SDK's `GroundednessEvaluator` was tested but sends `frequency_penalty`/`presence_penalty` parameters that Gemini (via Vertex AI/TrueFoundry) rejects. The LLM-as-judge approach using the same grading prompts extracted from the SDK, called directly via OpenAI SDK (already working in this project), bypasses both issues.
+
+**Problem solved:**
+Groundedness detection was completely non-functional due to Azure region limitations. Now it works through the existing TrueFoundry gateway with no region restrictions, producing accurate 1-5 groundedness scores.
+
+**Tradeoffs:**
+- LLM-as-judge adds latency (~1-3s per evaluation) vs the REST API (~200ms), but the REST API didn't work at all in this region.
+- Scoring changed from percentage (0-1) to integer (1-5), aligning with Azure AI Evaluation SDK's standard.
+- Consumes LLM tokens for each groundedness check — cost scales with output validation volume.
+- The same LLM model used by the agent judges its own outputs, which could introduce bias. A separate judge model could be configured via the `model` parameter.
+
+**Example (live test results):**
+```python
+det = GroundednessDetector(api_key=TFY_KEY, base_url=TFY_URL, model=TFY_MODEL)
+
+# Grounded answer → score 5/5, safe
+det.analyze(text="Paris is the capital of France.",
+            user_query="What is the capital of France?",
+            grounding_sources=["France's capital is Paris."])
+# → is_safe=True, score=5
+
+# Hallucinated price → score 2/5, blocked
+det.analyze(text="The tent costs $500 and is made of titanium.",
+            user_query="How much does the tent cost?",
+            grounding_sources=["Alpine Explorer Tent. Price: $120. Material: Nylon."],
+            confidence_threshold=3.0)
+# → is_safe=False, blocked_reason="Ungrounded content detected (score: 2/5, threshold: 3.0)"
+```
