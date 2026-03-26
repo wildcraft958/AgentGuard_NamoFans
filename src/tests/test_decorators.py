@@ -2,7 +2,7 @@
 
 import pytest
 import asyncio
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, AsyncMock
 
 from agentguard.decorators import guard_input, _guardian_cache
 from agentguard.exceptions import InputBlockedError
@@ -25,6 +25,11 @@ def _mock_guardian_safe():
     """Create a mock Guardian that always returns safe."""
     mock = MagicMock()
     mock.validate_input.return_value = InputValidationResult(is_safe=True, results=[])
+    # Async variants for async decorator wrapper
+    mock.avalidate_input = AsyncMock(
+        return_value=InputValidationResult(is_safe=True, results=[])
+    )
+    mock.avalidate_output = AsyncMock(return_value=None)
     return mock
 
 
@@ -33,6 +38,10 @@ def _mock_guardian_blocked():
     mock = MagicMock()
     mock.validate_input.side_effect = InputBlockedError(
         reason="User prompt injection attack detected"
+    )
+    # Async variant
+    mock.avalidate_input = AsyncMock(
+        side_effect=InputBlockedError(reason="User prompt injection attack detected")
     )
     return mock
 
@@ -53,7 +62,7 @@ class TestGuardInput:
 
         result = chat(message="Hello, how are you?")
         assert result == "Reply to: Hello, how are you?"
-        mock_get.return_value.validate_input.assert_called_once()
+        mock_get.return_value.avalidate_input.assert_called_once()
 
     @patch("agentguard.decorators._get_guardian")
     def test_blocked_input_raises(self, mock_get):
@@ -76,7 +85,7 @@ class TestGuardInput:
 
         result = chat("Hello via positional")
         assert result == "Reply to: Hello via positional"
-        mock_get.return_value.validate_input.assert_called_once_with(
+        mock_get.return_value.avalidate_input.assert_called_once_with(
             "Hello via positional", documents=None, images=None
         )
 
@@ -90,7 +99,7 @@ class TestGuardInput:
 
         result = search(query="summarize", docs=["doc1 content", "doc2 content"])
         assert result == "Searching: summarize"
-        mock_get.return_value.validate_input.assert_called_once_with(
+        mock_get.return_value.avalidate_input.assert_called_once_with(
             "summarize", documents=["doc1 content", "doc2 content"], images=None
         )
 
@@ -105,7 +114,7 @@ class TestGuardInput:
 
         result = chat("Auto detected text")
         assert result == "Reply to: Auto detected text"
-        mock_get.return_value.validate_input.assert_called_once()
+        mock_get.return_value.avalidate_input.assert_called_once()
 
     @patch("agentguard.decorators._get_guardian")
     def test_no_string_arg_skips_validation(self, mock_get):
@@ -118,7 +127,7 @@ class TestGuardInput:
 
         result = process(5)
         assert result == 10
-        mock_get.return_value.validate_input.assert_not_called()
+        mock_get.return_value.avalidate_input.assert_not_called()
 
     @patch("agentguard.decorators._get_guardian")
     def test_preserves_function_metadata(self, mock_get):
@@ -165,7 +174,7 @@ class TestAsyncGuardInput:
 
         result = asyncio.run(async_chat(msg="Hello async"))
         assert result == "Async reply: Hello async"
-        mock_get.return_value.validate_input.assert_called_once()
+        mock_get.return_value.avalidate_input.assert_called_once()
 
     @patch("agentguard.decorators._get_guardian")
     def test_async_blocked_raises(self, mock_get):

@@ -13,6 +13,7 @@ import os
 
 from dotenv import load_dotenv
 from azure.ai.textanalytics import TextAnalyticsClient
+from azure.ai.textanalytics.aio import TextAnalyticsClient as AsyncTextAnalyticsClient
 from azure.core.credentials import AzureKeyCredential
 
 from agentguard.models import ValidationResult
@@ -155,3 +156,107 @@ class ToolInputAnalyzer:
 
         logger.info("Tool Input Analyzer: args are safe for '%s'", fn_name)
         return ValidationResult(is_safe=True, layer=LAYER, details=details)
+
+    # ------------------------------------------------------------------
+    # Async variant — uses azure.ai.textanalytics.aio for real cancellation
+    # ------------------------------------------------------------------
+
+    def _get_async_client(self) -> AsyncTextAnalyticsClient:
+        if not hasattr(self, "_async_client") or self._async_client is None:
+            endpoint = getattr(self, "endpoint", None) or os.environ.get(
+                "AZURE_LANGUAGE_ENDPOINT", ""
+            )
+            key = getattr(self, "key", None) or os.environ.get("AZURE_LANGUAGE_KEY", "")
+            self._async_client = AsyncTextAnalyticsClient(
+                endpoint=endpoint, credential=AzureKeyCredential(key)
+            )
+        return self._async_client
+
+    async def aanalyze(
+        self,
+        fn_name: str,
+        fn_args: dict,
+        blocked_categories_map: dict = None,
+    ) -> ValidationResult:
+        """Async version of analyze(). Uses azure.ai.textanalytics.aio."""
+        blocked_categories_map = blocked_categories_map or {}
+        blocked_categories = blocked_categories_map.get(fn_name, [])
+
+        if not blocked_categories:
+            return ValidationResult(is_safe=True, layer=LAYER)
+
+        text_parts = []
+        for arg_name, arg_value in fn_args.items():
+            if isinstance(arg_value, str):
+                text_parts.append(f"{arg_name}: {arg_value}")
+            else:
+                text_parts.append(f"{arg_name}: {arg_value!s}")
+
+        text = "\n".join(text_parts)
+        if not text.strip():
+            return ValidationResult(is_safe=True, layer=LAYER)
+
+        logger.info("Running entity recognition (async) on tool '%s' arguments...", fn_name)
+
+        try:
+            client = self._get_async_client()
+            result = await client.recognize_entities([text])
+            doc = result[0]
+
+            if doc.is_error:
+                logger.error("Entity recognition error (async): %s", doc.error.message)
+                return ValidationResult(
+                    is_safe=False, layer=LAYER,
+                    blocked_reason=(
+                        f"Entity recognition API error – blocking as fail-safe: "
+                        f"{doc.error.message}"
+                    ),
+                    details={"error": doc.error.message},
+                )
+        except Exception as e:
+            logger.error("Entity recognition failed (async): %s", e)
+            return ValidationResult(
+                is_safe=False, layer=LAYER,
+                blocked_reason=f"Entity recognition API error – blocking as fail-safe: {e}",
+                details={"error": str(e)},
+            )
+
+        flagged_entities = [
+            {
+                "text": entity.text,
+                "category": entity.category,
+                "subcategory": entity.subcategory,
+                "confidence_score": entity.confidence_score,
+            }
+            for entity in doc.entities
+            if entity.category in blocked_categories
+        ]
+
+        details = {
+            "all_entities": [
+                {"text": e.text, "category": e.category, "confidence": e.confidence_score}
+                for e in doc.entities
+            ],
+            "flagged_entities": flagged_entities,
+            "tool_name": fn_name,
+        }
+
+        if flagged_entities:
+            categories_found = sorted(set(e["category"] for e in flagged_entities))
+            entity_texts = [e["text"] for e in flagged_entities]
+            reason = (
+                f"Blocked entity in tool args: {', '.join(categories_found)} "
+                f"({', '.join(entity_texts)})"
+            )
+            logger.warning("Tool Input Analyzer BLOCKED (async): %s", reason)
+            return ValidationResult(
+                is_safe=False, layer=LAYER, blocked_reason=reason, details=details,
+            )
+
+        return ValidationResult(is_safe=True, layer=LAYER, details=details)
+
+    async def aclose(self):
+        """Close the async Azure client."""
+        if hasattr(self, "_async_client") and self._async_client is not None:
+            await self._async_client.close()
+            self._async_client = None

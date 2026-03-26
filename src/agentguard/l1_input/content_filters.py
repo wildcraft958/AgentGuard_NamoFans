@@ -20,6 +20,7 @@ import os
 from dotenv import load_dotenv
 
 from azure.ai.contentsafety import ContentSafetyClient
+from azure.ai.contentsafety.aio import ContentSafetyClient as AsyncContentSafetyClient
 from azure.ai.contentsafety.models import (
     AnalyzeTextOptions, TextCategory,
     AnalyzeImageOptions, ImageData, ImageCategory,
@@ -280,3 +281,144 @@ class ContentFilters:
             "sexual": _get(ImageCategory.SEXUAL),
             "violence": _get(ImageCategory.VIOLENCE),
         }
+
+    # ------------------------------------------------------------------
+    # Async variants — use azure.ai.contentsafety.aio for real cancellation
+    # ------------------------------------------------------------------
+
+    def _get_async_client(self) -> AsyncContentSafetyClient:
+        if not hasattr(self, "_async_client") or self._async_client is None:
+            self._async_client = AsyncContentSafetyClient(
+                self.endpoint, AzureKeyCredential(self.key)
+            )
+        return self._async_client
+
+    async def aanalyze_text(
+        self,
+        text: str,
+        block_toxicity: bool = True,
+        block_violence: bool = True,
+        block_self_harm: bool = True,
+        severity_threshold: int = 0,
+        blocklist_names: list = None,
+        halt_on_blocklist_hit: bool = True,
+    ) -> ValidationResult:
+        """Async version of analyze_text(). Uses azure.ai.contentsafety.aio."""
+        request_kwargs = {"text": text}
+        if blocklist_names:
+            request_kwargs["blocklist_names"] = blocklist_names
+            request_kwargs["halt_on_blocklist_hit"] = halt_on_blocklist_hit
+        request = AnalyzeTextOptions(**request_kwargs)
+        logger.debug("Content Filters (async) analyzing text: %.100s...", text)
+
+        try:
+            client = self._get_async_client()
+            response = await client.analyze_text(request)
+        except HttpResponseError as e:
+            logger.error("Analyze text failed (async): %s", e)
+            error_detail = ""
+            if e.error:
+                error_detail = f"Code: {e.error.code}, Message: {e.error.message}"
+            return ValidationResult(
+                is_safe=False, layer="content_filters",
+                blocked_reason=f"Content Safety API error – blocking as fail-safe. {error_detail}",
+                details={"error": str(e)},
+            )
+
+        severities = self._extract_text_severities(response)
+        details = {"severities": severities}
+
+        # Check blocklist matches
+        blocklist_matches = getattr(response, "blocklists_match", None) or []
+        if blocklist_matches:
+            matched_terms = [
+                {"blocklist": m.blocklist_name, "term": m.blocklist_item_text}
+                for m in blocklist_matches
+            ]
+            details["blocklist_matches"] = matched_terms
+            term_list = ", ".join(m["term"] for m in matched_terms)
+            blocked_reason = f"Blocklist match detected: {term_list}"
+            logger.warning("Content Filters BLOCKED (async, blocklist): %s", blocked_reason)
+            return ValidationResult(
+                is_safe=False, layer="content_filters",
+                blocked_reason=blocked_reason, details=details,
+            )
+
+        # Check severity violations
+        violations = []
+        if block_toxicity and severities["hate"] > severity_threshold:
+            violations.append(f"Hate/Toxicity (severity={severities['hate']})")
+        if block_violence and severities["violence"] > severity_threshold:
+            violations.append(f"Violence (severity={severities['violence']})")
+        if block_self_harm and severities["self_harm"] > severity_threshold:
+            violations.append(f"Self-Harm (severity={severities['self_harm']})")
+        if severities["sexual"] > severity_threshold:
+            violations.append(f"Sexual (severity={severities['sexual']})")
+
+        if violations:
+            blocked_reason = "Harmful content detected: " + ", ".join(violations)
+            logger.warning("Content Filters BLOCKED (async): %s", blocked_reason)
+            return ValidationResult(
+                is_safe=False, layer="content_filters",
+                blocked_reason=blocked_reason, details=details,
+            )
+
+        logger.info("Content Filters (async): text is safe")
+        return ValidationResult(is_safe=True, layer="content_filters", details=details)
+
+    async def aanalyze_image(
+        self,
+        image_data: bytes,
+        block_hate: bool = True,
+        block_violence: bool = True,
+        block_self_harm: bool = True,
+        block_sexual: bool = True,
+        severity_threshold: int = 0,
+    ) -> ValidationResult:
+        """Async version of analyze_image()."""
+        request = AnalyzeImageOptions(image=ImageData(content=image_data))
+        logger.debug("Content Filters (async) analyzing image (%d bytes)", len(image_data))
+
+        try:
+            client = self._get_async_client()
+            response = await client.analyze_image(request)
+        except HttpResponseError as e:
+            logger.error("Analyze image failed (async): %s", e)
+            error_detail = ""
+            if e.error:
+                error_detail = f"Code: {e.error.code}, Message: {e.error.message}"
+            return ValidationResult(
+                is_safe=False, layer="content_filters",
+                blocked_reason=f"Content Safety API error – blocking as fail-safe. {error_detail}",
+                details={"error": str(e)},
+            )
+
+        severities = self._extract_image_severities(response)
+        details = {"severities": severities}
+
+        violations = []
+        if block_hate and severities["hate"] > severity_threshold:
+            violations.append(f"Hate (severity={severities['hate']})")
+        if block_violence and severities["violence"] > severity_threshold:
+            violations.append(f"Violence (severity={severities['violence']})")
+        if block_self_harm and severities["self_harm"] > severity_threshold:
+            violations.append(f"Self-Harm (severity={severities['self_harm']})")
+        if block_sexual and severities["sexual"] > severity_threshold:
+            violations.append(f"Sexual (severity={severities['sexual']})")
+
+        if violations:
+            blocked_reason = "Harmful image content detected: " + ", ".join(violations)
+            logger.warning("Content Filters BLOCKED (async): %s", blocked_reason)
+            return ValidationResult(
+                is_safe=False, layer="content_filters",
+                blocked_reason=blocked_reason, details=details,
+            )
+
+        logger.info("Content Filters (async): image is safe")
+        return ValidationResult(is_safe=True, layer="content_filters", details=details)
+
+    async def aclose(self):
+        """Close the async Azure client."""
+        if hasattr(self, "_async_client") and self._async_client is not None:
+            await self._async_client.close()
+            self._async_client = None

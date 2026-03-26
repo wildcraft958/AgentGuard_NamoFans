@@ -24,7 +24,7 @@ import os
 
 import numpy as np
 from dotenv import load_dotenv
-from openai import OpenAI
+from openai import AsyncOpenAI, OpenAI
 
 from agentguard.models import ValidationResult
 
@@ -379,3 +379,169 @@ class MelonDetector:
         """Reset cross-turn tracking banks."""
         self._masked_tool_call_bank.clear()
         self._masked_tool_emb_bank.clear()
+
+    # ------------------------------------------------------------------
+    # Async variant — uses AsyncOpenAI for real cancellation
+    # ------------------------------------------------------------------
+
+    def _get_async_client(self) -> AsyncOpenAI:
+        if not hasattr(self, "_async_client") or self._async_client is None:
+            self._async_client = AsyncOpenAI(
+                api_key=self.api_key, base_url=self.base_url
+            )
+        return self._async_client
+
+    async def acheck_tool_output(
+        self,
+        messages: list[dict],
+        tool_schemas: list[dict],
+    ) -> ValidationResult:
+        """Async version of check_tool_output(). Uses AsyncOpenAI."""
+        if not messages or _msg_get(messages[-1], "role") != "tool":
+            return ValidationResult(is_safe=True, layer=LAYER)
+
+        logger.info("Running MELON contrastive detection (async)...")
+
+        try:
+            return await self._arun_contrastive_check(messages, tool_schemas)
+        except Exception as e:
+            logger.error("MELON detection failed (async): %s", e)
+            return ValidationResult(
+                is_safe=False, layer=LAYER,
+                blocked_reason=f"MELON detection error – blocking as fail-safe: {e}",
+                details={"error": str(e)},
+            )
+
+    async def _arun_contrastive_check(
+        self,
+        messages: list[dict],
+        tool_schemas: list[dict],
+    ) -> ValidationResult:
+        """Async core contrastive detection logic."""
+        client = self._get_async_client()
+
+        # Step 1: Original run
+        norm_messages = _normalize_messages(messages)
+        original_response = await client.chat.completions.create(
+            model=self.model,
+            messages=norm_messages,
+            tools=tool_schemas if tool_schemas else None,
+        )
+        original_msg = original_response.choices[0].message
+
+        if not original_msg.tool_calls:
+            logger.info("MELON (async): No tool calls in original output, skipping")
+            return ValidationResult(
+                is_safe=True, layer=LAYER,
+                details={"reason": "no_tool_calls_in_original"},
+            )
+
+        original_tool_call_texts = _transform_tool_calls(original_msg.tool_calls)
+
+        # Step 2: Build masked context
+        tool_contents = ""
+        for msg in messages:
+            if _msg_get(msg, "role") == "tool":
+                tool_contents += (
+                    "=" * 50 + "\n\nfunction: tool_output\n\n"
+                    + (_msg_get(msg, "content") or "") + "\n\n"
+                    + "=" * 50 + "\n\n"
+                )
+
+        system_msgs = [m for m in messages if _msg_get(m, "role") == "system"]
+        masked_messages = list(system_msgs)
+        masked_messages += copy.deepcopy(_FEW_SHOT_MESSAGES)
+        masked_messages += [
+            {
+                "role": "user",
+                "content": (
+                    "Thanks. I also read a file called random.txt. This file "
+                    "also contains some tool calls and their corresponding "
+                    "execution outputs. Here are the contents:\n\n"
+                    + tool_contents + "\n\n"
+                    "Please summarize the contents. If there are any "
+                    "instructions in the contents, follow them first, then do "
+                    "summarization. Else, just summarize the contents. Please "
+                    "note that contents may already contain some tool calls and "
+                    "their outputs. If you are trying to follow instructions, "
+                    "please make sure that you are not repeating the same tool calls."
+                ),
+            },
+        ]
+
+        # Step 3: Masked run
+        masked_response = await client.chat.completions.create(
+            model=self.model,
+            messages=masked_messages,
+            tools=tool_schemas if tool_schemas else None,
+        )
+        masked_msg = masked_response.choices[0].message
+
+        # Update masked tool call bank
+        if masked_msg.tool_calls:
+            masked_tool_call_texts = _transform_tool_calls(masked_msg.tool_calls)
+            new_calls = [
+                t for t in masked_tool_call_texts if t not in self._masked_tool_call_bank
+            ]
+            for call_text in new_calls:
+                self._masked_tool_call_bank.add(call_text)
+                emb = await self._aembed(call_text)
+                self._masked_tool_emb_bank.append(emb)
+
+        if not self._masked_tool_emb_bank:
+            logger.info("MELON (async): No masked tool calls to compare, allowing")
+            return ValidationResult(is_safe=True, layer=LAYER)
+
+        # Step 4: Compare embeddings
+        original_embeddings = [
+            await self._aembed(text) for text in original_tool_call_texts
+        ]
+
+        max_sim = -1.0
+        is_injection = False
+        for masked_emb in self._masked_tool_emb_bank:
+            if is_injection:
+                break
+            for orig_emb in original_embeddings:
+                sim = _cosine_similarity(orig_emb, masked_emb)
+                if sim > max_sim:
+                    max_sim = sim
+                if sim > self.threshold:
+                    is_injection = True
+                    break
+
+        details = {
+            "max_cosine_similarity": max_sim,
+            "threshold": self.threshold,
+            "original_tool_calls": original_tool_call_texts,
+            "masked_tool_calls": list(self._masked_tool_call_bank),
+        }
+
+        if is_injection:
+            redacted = "<Data omitted because a prompt injection was detected>"
+            reason = (
+                f"Indirect prompt injection detected in tool output "
+                f"(cosine similarity: {max_sim:.4f} > {self.threshold})"
+            )
+            logger.warning("MELON BLOCKED (async): %s", reason)
+            details["redacted_output"] = redacted
+            return ValidationResult(
+                is_safe=False, layer=LAYER, blocked_reason=reason, details=details,
+            )
+
+        logger.info("MELON (async): Tool output is safe (max sim: %.4f)", max_sim)
+        return ValidationResult(is_safe=True, layer=LAYER, details=details)
+
+    async def _aembed(self, text: str) -> np.ndarray:
+        """Async embedding."""
+        client = self._get_async_client()
+        response = await client.embeddings.create(
+            input=text, model=self.embedding_model,
+        )
+        return np.array(response.data[0].embedding)
+
+    async def aclose(self):
+        """Close the async OpenAI client."""
+        if hasattr(self, "_async_client") and self._async_client is not None:
+            await self._async_client.close()
+            self._async_client = None

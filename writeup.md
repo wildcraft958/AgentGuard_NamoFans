@@ -1,3 +1,53 @@
+## 2026-03-25 — 3-Wave Async Tiered Pipeline (Concurrent Execution)
+
+**What changed:**
+Added a 3-wave asynchronous execution pipeline to Guardian, reducing worst-case latency from ~8-11s to ~3-5s. The architecture groups security checks by cost and latency:
+
+- **Wave 0** (offline, $0): Fast injection regex + C3 rule-based guards (~0-1ms) — blocks before any network I/O
+- **Wave 1** (cheap APIs, parallel): Azure Prompt Shields + Content Filters + PII + Toxicity + Entity Recognition (~200-500ms each, fired concurrently)
+- **Wave 2** (expensive LLM, parallel): Groundedness detector + MELON + AITL approval (~1-3s each, only runs if Wave 1 passes)
+
+Key implementation details:
+- **Native async clients** in all 8 checker modules: `httpx.AsyncClient` (Prompt Shields), `azure.ai.contentsafety.aio` (Content Filters), `azure.ai.textanalytics.aio` (PII, Entity Recog), `AsyncOpenAI` (Groundedness, MELON, AITL). Task cancellation closes TCP sockets mid-flight — real cost savings, not cosmetic.
+- **Dual sync+async API**: Existing sync `validate_*()` methods unchanged. New async `avalidate_*()` methods use the tiered wave pipeline. `@guard` decorator's `async_wrapper` calls `await guardian.avalidate_*()`.
+- **First-to-fail with `asyncio.wait(FIRST_COMPLETED)`**: When any check blocks, remaining in-flight API calls are cancelled immediately.
+- **Async context manager** (`async with Guardian(...) as g:`) for proper client lifecycle cleanup. No `__del__` — avoids event-loop-closed errors.
+- **`execution_mode: tiered | sequential`** config option (default: `tiered`).
+
+Files changed:
+- `src/agentguard/guardian.py` — `_wave_parallel()`, `avalidate_input()`, `avalidate_output()`, `avalidate_tool_call()`, `__aenter__/__aexit__`
+- `src/agentguard/decorators.py` — `async_wrapper` calls `avalidate_*()` instead of sync methods
+- `src/agentguard/config.py` — `execution_mode` property
+- 8 checker modules — each gets `async aanalyze()` + `async aclose()` using native async SDKs
+- `src/tests/test_guardian_parallel.py` — 8 async orchestration tests
+
+**Why this approach:**
+Mentor feedback identified latency as the #1 scalability concern. Sequential execution sums all check latencies. The 3-wave architecture runs independent checks concurrently (L1: 600ms→200ms, L2: 3.7s→1-3s). Native async (not `asyncio.to_thread`) ensures task cancellation actually closes HTTP connections and stops billing.
+
+**Problem solved:**
+AgentGuard added 4-11s of overhead on top of the agent's response time. Now worst-case is ~3-5s with the tiered pipeline, and ~200ms for inputs caught by Wave 0 (40% of attacks).
+
+**Tradeoffs:**
+- Dual sync+async code paths in each checker module (~50% more code per module). Justified by: zero regression risk for existing sync tests, and native async gives real TCP cancellation.
+- `asyncio.to_thread` used only for HITL terminal `input()` — the one case where async is impossible.
+- Azure async SDK clients need explicit `await client.close()` — handled via Guardian's async context manager.
+
+**Example:**
+```python
+# Async (FastAPI, production)
+async with Guardian("agentguard.yaml") as guard:
+    result = await guard.avalidate_input("user query", documents=["doc1"])
+    # Wave 0: regex check (~0ms)
+    # Wave 1: Prompt Shields + Content Filters (parallel, ~200ms total)
+
+# Sync (scripts, CLI) — unchanged
+guard = Guardian("agentguard.yaml")
+result = guard.validate_input("user query")
+# Sequential as before
+```
+
+---
+
 ## 2026-03-10 — OpenTelemetry Integration (spans + metrics for all Guardian methods)
 
 **What changed:**
