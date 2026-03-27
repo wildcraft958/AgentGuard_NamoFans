@@ -52,6 +52,12 @@ class AgentGuardConfig:
         self.fail_safe = global_cfg.get("fail_safe", "block")
         self.max_validation_latency_ms = global_cfg.get("max_validation_latency_ms", 200)
 
+    # ----- Global: Parallel Execution -----
+
+    @property
+    def parallel_execution_enabled(self) -> bool:
+        return _deep_get(self._raw, "global", "parallel_execution", default=False)
+
     # ----- Input Security: Prompt Shields -----
 
     @property
