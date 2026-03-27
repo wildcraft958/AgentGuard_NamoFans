@@ -583,47 +583,17 @@ class Guardian:
                         [s.name for s in ba_result.signals],
                     )
 
-            # --- C3: Tool-Specific Guards (pure Python, zero latency) ---
-            if self._tool_specific_guards:
-                logger.info("Running Tool-Specific Guards for '%s'...", fn_name)
-                with self._span("agentguard.check.tool_specific_guards"):
-                    c3_result = self._tool_specific_guards.check(fn_name, fn_args)
-                results.append(c3_result)
+            block = self._run_c3(fn_name, fn_args, results, start_time, parent_span)
+            if block is not None:
+                return block
 
-                if not c3_result.is_safe:
-                    return self._handle_tool_block(
-                        results, c3_result, "tool_specific_guards", start_time, fn_name,
-                        span=parent_span,
-                    )
+            block = self._run_c1(fn_name, fn_args, results, start_time, parent_span)
+            if block is not None:
+                return block
 
-            # --- C1: Tool Input Analyzer (Azure entity recognition) ---
-            if self._tool_input_analyzer and self.config.tool_input_analysis_enabled:
-                logger.info("Running Tool Input Analyzer for '%s'...", fn_name)
-                with self._span("agentguard.check.tool_input_analyzer"):
-                    c1_result = self._tool_input_analyzer.analyze(
-                        fn_name, fn_args,
-                        blocked_categories_map=self.config.tool_input_blocked_categories,
-                    )
-                results.append(c1_result)
-
-                if not c1_result.is_safe:
-                    return self._handle_tool_block(
-                        results, c1_result, "tool_input_analyzer", start_time, fn_name,
-                        span=parent_span,
-                    )
-
-            # --- C4: Approval Workflow (HITL / AITL) ---
-            if self._approval_workflow and self.config.approval_workflow_enabled:
-                logger.info("Running Approval Workflow for '%s'...", fn_name)
-                with self._span("agentguard.check.approval_workflow"):
-                    c4_result = self._approval_workflow.check(fn_name, fn_args, context)
-                results.append(c4_result)
-
-                if not c4_result.is_safe:
-                    return self._handle_tool_block(
-                        results, c4_result, "approval_workflow", start_time, fn_name,
-                        span=parent_span,
-                    )
+            block = self._run_c4(fn_name, fn_args, ctx, results, start_time, parent_span)
+            if block is not None:
+                return block
 
             elapsed_ms = (time.time() - start_time) * 1000
             logger.info("Tool call pre-checks passed for '%s' (%.1fms)", fn_name, elapsed_ms)
@@ -631,6 +601,73 @@ class Guardian:
             self._record_metrics("tool_firewall", "validate_tool_call", "pass", start_time)
 
         return ToolCallValidationResult(is_safe=True, results=results, tool_name=fn_name)
+
+    def _run_c3(
+        self,
+        fn_name: str,
+        fn_args: dict,
+        results: list,
+        start_time: float,
+        span=None,
+    ) -> ToolCallValidationResult | None:
+        """C3: Tool-Specific Guards (pure Python, zero latency). Returns None on pass."""
+        if not self._tool_specific_guards:
+            return None
+        logger.info("Running Tool-Specific Guards for '%s'...", fn_name)
+        with self._span("agentguard.check.tool_specific_guards"):
+            c3_result = self._tool_specific_guards.check(fn_name, fn_args)
+        results.append(c3_result)
+        if not c3_result.is_safe:
+            return self._handle_tool_block(
+                results, c3_result, "tool_specific_guards", start_time, fn_name, span=span,
+            )
+        return None
+
+    def _run_c1(
+        self,
+        fn_name: str,
+        fn_args: dict,
+        results: list,
+        start_time: float,
+        span=None,
+    ) -> ToolCallValidationResult | None:
+        """C1: Tool Input Analyzer (Azure entity recognition). Returns None on pass."""
+        if not (self._tool_input_analyzer and self.config.tool_input_analysis_enabled):
+            return None
+        logger.info("Running Tool Input Analyzer for '%s'...", fn_name)
+        with self._span("agentguard.check.tool_input_analyzer"):
+            c1_result = self._tool_input_analyzer.analyze(
+                fn_name, fn_args,
+                blocked_categories_map=self.config.tool_input_blocked_categories,
+            )
+        results.append(c1_result)
+        if not c1_result.is_safe:
+            return self._handle_tool_block(
+                results, c1_result, "tool_input_analyzer", start_time, fn_name, span=span,
+            )
+        return None
+
+    def _run_c4(
+        self,
+        fn_name: str,
+        fn_args: dict,
+        ctx: dict,
+        results: list,
+        start_time: float,
+        span=None,
+    ) -> ToolCallValidationResult | None:
+        """C4: Approval Workflow (HITL / AITL). Returns None on pass."""
+        if not (self._approval_workflow and self.config.approval_workflow_enabled):
+            return None
+        logger.info("Running Approval Workflow for '%s'...", fn_name)
+        with self._span("agentguard.check.approval_workflow"):
+            c4_result = self._approval_workflow.check(fn_name, fn_args, ctx)
+        results.append(c4_result)
+        if not c4_result.is_safe:
+            return self._handle_tool_block(
+                results, c4_result, "approval_workflow", start_time, fn_name, span=span,
+            )
+        return None
 
     def validate_tool_output(
         self,
