@@ -429,7 +429,11 @@ def guard_tool(
     # Sequential path: C3 + C1 + C4 → tool → C2
     guardian.validate_tool_call(fn_name, fn_args, ctx)
 
-    result = fn(**fn_args)
+    # Execute tool — inside sandbox subprocess if sandbox is enabled
+    if guardian._sandbox_executor:
+        result = guardian._sandbox_executor.execute(fn, fn_args)
+    else:
+        result = fn(**fn_args)
 
     out = guardian.validate_tool_output(
         fn_name, fn_args, str(result),

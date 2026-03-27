@@ -212,6 +212,20 @@ class Guardian:
             except Exception as e:
                 logger.error("Failed to initialize Approval Workflow: %s", e)
 
+        # Initialize Sandbox Executor (NemoClaw-inspired subprocess isolation)
+        self._sandbox_executor = None
+        if self.config.sandbox_enabled:
+            try:
+                from agentguard.sandbox.executor import SandboxedToolExecutor
+                policy = self.config.sandbox_policy
+                self._sandbox_executor = SandboxedToolExecutor(policy)
+                logger.info(
+                    "Sandbox Executor: ENABLED (mode=%s, timeout=%ds)",
+                    policy.mode, policy.timeout_seconds,
+                )
+            except Exception as e:
+                logger.error("Failed to initialize Sandbox Executor: %s", e)
+
     def _setup_logging(self):
         """Configure logging based on config level."""
         level_map = {
