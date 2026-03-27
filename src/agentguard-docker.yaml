@@ -104,9 +104,9 @@ output_security:
       - Address
 
   hallucination_detection:
-    enabled: true
-    block_on_high_confidence: true
-    confidence_threshold: 3
+    enabled: false                     # Phase 2 — requires grounding sources
+    block_on_high_confidence: false
+    confidence_threshold: 0.9
 
 ########################################
 # L3 – CUSTOM BLOCKLIST PATTERN MATCHING
@@ -222,14 +222,11 @@ tool_firewall:
       read_config_file: [IPAddress, URL]
 
   # C2: MELON contrastive indirect prompt injection detection on tool outputs
-  # Uses LLM-as-a-judge for dynamic semantic comparison of tool calls.
   melon:
     enabled: true
-    judge_model: null              # null = uses TFY_MODEL; override for a dedicated judge LLM
+    threshold: 0.8
+    embedding_model: "text-embedding-3-large"
     raise_on_injection: true
-    # Legacy (unused by LLM judge, kept for reference):
-    # threshold: 0.8
-    # embedding_model: "text-embedding-3-large"
 
   # C4: Approval Workflow -- HITL or AITL approval gate for sensitive tools
   # Both modes share tools_requiring_review. Enable ONE mode at a time.
@@ -276,68 +273,6 @@ behavioral_monitoring:
   detect_data_exfiltration_patterns: true
 
 ########################################
-# SANDBOX (NemoClaw-inspired)
-# Runs every tool call inside an isolated subprocess with four layered
-# defenses: resource limits, Landlock filesystem isolation (kernel),
-# seccomp syscall filtering (kernel), and socket-level network policy.
-#
-# Requires Linux kernel >= 5.13 for Landlock.
-# Requires libseccomp2 for syscall filtering (apt install libseccomp2).
-# Both are self-restrictions — no root privileges needed.
-########################################
-sandbox:
-  enabled: false               # set to true to activate
-  mode: enforce                # enforce | monitor
-  timeout_seconds: 30
-
-  filesystem:
-    enabled: true
-    allowed_read:
-      - /tmp
-      - /usr/lib
-      - /usr/local/lib
-      - /usr/share
-      - /lib
-      - /lib64
-    allowed_write:
-      - /tmp
-
-  network:
-    enabled: true
-    mode: whitelist            # whitelist | block_all
-    allowed_hosts:
-      - "*.openai.azure.com"
-      - "*.cognitiveservices.azure.com"
-      - "*.core.windows.net"
-    allowed_ports: [443, 80]
-
-  syscalls:
-    enabled: true
-    blocked_syscalls:
-      - ptrace
-      - mount
-      - setuid
-      - setgid
-      - chroot
-      - sethostname
-      - setns
-      - unshare
-      - perf_event_open
-      - bpf
-      - pivot_root
-      - kexec_load
-      - kexec_file_load
-      - reboot
-      - init_module
-      - delete_module
-
-  resources:
-    enabled: true
-    max_memory_mb: 512
-    max_cpu_seconds: 30
-    max_file_size_mb: 100
-
-########################################
 # CACHING (OPTIONAL)
 ########################################
 cache:
@@ -354,5 +289,5 @@ observability:
   export_to:
     - azure_monitor
     - otel
-  otel_endpoint: "http://localhost:4317"
+  otel_endpoint: "http://jaeger:4317"
   service_name: "agentguard"   # OTel service.name resource attribute

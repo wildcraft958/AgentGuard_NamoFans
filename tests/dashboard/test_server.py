@@ -5,6 +5,7 @@ Tests mock both httpx (Jaeger REST API) and AuditLog to keep tests
 fully offline and deterministic.
 """
 
+import time
 from unittest.mock import MagicMock, patch
 
 from fastapi.testclient import TestClient
@@ -258,3 +259,108 @@ def test_audit_endpoint_default_limit():
         client.get("/api/audit")
 
     mock_audit.recent.assert_called_once_with(50)
+
+
+# ---------------------------------------------------------------------------
+# Tests: pass_rate_24h computed from Jaeger spans (not audit log)
+# ---------------------------------------------------------------------------
+
+
+def _make_span_raw(span_id, operation, is_safe, start_ms_ago=60_000, layer_tag=None):
+    """Build a fake Jaeger raw span with a recent timestamp."""
+    now_us = int(time.time() * 1_000_000)
+    tags = [{"key": "agentguard.is_safe", "value": str(is_safe).lower(), "type": "string"}]
+    if layer_tag:
+        tags.append({"key": "agentguard.layer", "value": layer_tag, "type": "string"})
+    return {
+        "traceID": "t1",
+        "spanID": span_id,
+        "operationName": operation,
+        "startTime": now_us - start_ms_ago * 1000,
+        "duration": 50000,
+        "tags": tags,
+        "logs": [],
+        "references": [],
+        "processID": "p1",
+    }
+
+
+def _make_trace(spans):
+    return {
+        "traceID": "t1",
+        "spans": spans,
+        "processes": {"p1": {"serviceName": "agentguard", "tags": []}},
+    }
+
+
+def test_pass_rate_24h_uses_span_timestamps():
+    """pass_rate_24h should equal (safe spans / total spans) within the last 24h."""
+    from agentguard.dashboard.server import app
+
+    recent_spans = [
+        _make_span_raw("s1", "agentguard.validate_input", True, start_ms_ago=60_000, layer_tag="l1_input"),
+        _make_span_raw("s2", "agentguard.validate_input", True, start_ms_ago=60_000, layer_tag="l1_input"),
+        _make_span_raw("s3", "agentguard.validate_input", False, start_ms_ago=60_000, layer_tag="l1_input"),
+        _make_span_raw("s4", "agentguard.validate_input", True, start_ms_ago=60_000, layer_tag="l1_input"),
+    ]
+    trace = _make_trace(recent_spans)
+
+    mock_audit = MagicMock()
+    mock_audit.blocked_count.return_value = 0
+
+    with (
+        patch("agentguard.dashboard.server.httpx.get") as mock_get,
+        patch("agentguard.dashboard.server._get_audit_log", return_value=mock_audit),
+    ):
+        mock_get.return_value = make_jaeger_response([trace])
+        client = TestClient(app)
+        resp = client.get("/api/stats")
+
+    stats = resp.json()
+    # 3 safe out of 4 total → 0.75
+    assert stats["pass_rate_24h"] == 0.75
+
+
+def test_pass_rate_24h_excludes_old_spans():
+    """Spans older than 24h should not count toward pass_rate_24h."""
+    from agentguard.dashboard.server import app
+
+    # old span (25 hours ago) that is blocked — must NOT affect rate
+    old_ms_ago = 25 * 3600 * 1000
+    recent_safe = _make_span_raw("s1", "agentguard.validate_input", True, start_ms_ago=60_000, layer_tag="l1_input")
+    old_blocked = _make_span_raw("s2", "agentguard.validate_input", False, start_ms_ago=old_ms_ago, layer_tag="l1_input")
+    trace = _make_trace([recent_safe, old_blocked])
+
+    mock_audit = MagicMock()
+    mock_audit.blocked_count.return_value = 0
+
+    with (
+        patch("agentguard.dashboard.server.httpx.get") as mock_get,
+        patch("agentguard.dashboard.server._get_audit_log", return_value=mock_audit),
+    ):
+        mock_get.return_value = make_jaeger_response([trace])
+        client = TestClient(app)
+        resp = client.get("/api/stats")
+
+    stats = resp.json()
+    # only the recent safe span is in the 24h window → 1.0
+    assert stats["pass_rate_24h"] == 1.0
+
+
+def test_pass_rate_24h_no_recent_spans_returns_1():
+    """When no spans fall in the 24h window, pass_rate_24h should be 1.0."""
+    from agentguard.dashboard.server import app
+
+    mock_audit = MagicMock()
+    mock_audit.blocked_count.return_value = 0
+
+    with (
+        patch("agentguard.dashboard.server.httpx.get") as mock_get,
+        patch("agentguard.dashboard.server._get_audit_log", return_value=mock_audit),
+    ):
+        mock_get.return_value = make_jaeger_response([])
+        client = TestClient(app)
+        resp = client.get("/api/stats")
+
+    stats = resp.json()
+    assert stats["pass_rate_24h"] == 1.0

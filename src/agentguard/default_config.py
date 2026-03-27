@@ -19,6 +19,7 @@ global:
   log_level: standard    # minimal | standard | detailed
   fail_safe: block       # block | allow  (on unexpected errors)
   max_validation_latency_ms: 500
+  parallel_execution: false  # run L1 validation + agent concurrently (reduces latency)
 
 # ── Audit Log ─────────────────────────────────────────────────────
 audit:
