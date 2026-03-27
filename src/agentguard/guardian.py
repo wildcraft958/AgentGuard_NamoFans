@@ -365,8 +365,11 @@ class Guardian:
             elapsed_ms = (time.time() - start_time) * 1000
             logger.info("All L1 checks passed (%.1fms)", elapsed_ms)
 
-            self._set_span_attrs(parent_span, is_safe=True)
-            self._record_metrics("l1_input", "validate_input", "pass", start_time)
+            self._notify_security_event(
+                action="validate_input", layer="l1_input",
+                blocked_by="", reason=None,
+                is_safe=True, start_time=start_time, span=parent_span,
+            )
 
         return InputValidationResult(is_safe=True, results=results)
 
@@ -481,8 +484,11 @@ class Guardian:
             elapsed_ms = (time.time() - start_time) * 1000
             logger.info("All L2 checks passed (%.1fms)", elapsed_ms)
 
-            self._set_span_attrs(parent_span, is_safe=True)
-            self._record_metrics("l2_output", "validate_output", "pass", start_time)
+            self._notify_security_event(
+                action="validate_output", layer="l2_output",
+                blocked_by="", reason=None,
+                is_safe=True, start_time=start_time, span=parent_span,
+            )
 
         return OutputValidationResult(
             is_safe=True, results=results, redacted_text=redacted_text
@@ -627,8 +633,11 @@ class Guardian:
 
             elapsed_ms = (time.time() - start_time) * 1000
             logger.info("Tool call pre-checks passed for '%s' (%.1fms)", fn_name, elapsed_ms)
-            self._set_span_attrs(parent_span, is_safe=True)
-            self._record_metrics("tool_firewall", "validate_tool_call", "pass", start_time)
+            self._notify_security_event(
+                action="validate_tool_call", layer="tool_firewall",
+                blocked_by="", reason=None,
+                is_safe=True, start_time=start_time, span=parent_span,
+            )
 
         return ToolCallValidationResult(is_safe=True, results=results, tool_name=fn_name)
 
@@ -741,8 +750,11 @@ class Guardian:
 
             elapsed_ms = (time.time() - start_time) * 1000
             logger.info("Tool output post-checks passed for '%s' (%.1fms)", fn_name, elapsed_ms)
-            self._set_span_attrs(parent_span, is_safe=True)
-            self._record_metrics("tool_firewall", "validate_tool_output", "pass", start_time)
+            self._notify_security_event(
+                action="validate_tool_output", layer="tool_firewall",
+                blocked_by="", reason=None,
+                is_safe=True, start_time=start_time, span=parent_span,
+            )
 
         return ToolCallValidationResult(is_safe=True, results=results, tool_name=fn_name)
 

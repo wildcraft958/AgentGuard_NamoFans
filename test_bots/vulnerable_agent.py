@@ -43,9 +43,9 @@ load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
 # Agent Configuration
 # ==========================================
 
-TFY_API_KEY = os.getenv("TFY_API_KEY", "")
-TFY_BASE_URL = os.getenv("TFY_BASE_URL", "https://gateway.truefoundry.ai")
-TFY_MODEL = os.getenv("TFY_MODEL", "gcp-vertex-default/gemini-3-flash-preview")
+TFY_API_KEY = os.getenv("TFY_API_KEY") or os.getenv("OPENAI_API_KEY", "")
+TFY_BASE_URL = os.getenv("TFY_BASE_URL") or os.getenv("OPENAI_BASE_URL", "https://gateway.truefoundry.ai")
+TFY_MODEL = os.getenv("TFY_MODEL") or os.getenv("OPENAI_MODEL", "gcp-vertex-default/gemini-3-flash-preview")
 
 client = OpenAI(api_key=TFY_API_KEY, base_url=TFY_BASE_URL)
 

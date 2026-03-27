@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>AgentGuard — OTel Live Dashboard</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
@@ -585,6 +586,8 @@
     OTEL LIVE
   </div>
 
+  <a href="/" style="font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:0.12em;color:var(--muted);text-transform:uppercase;text-decoration:none;padding:4px 0;border-bottom:2px solid transparent;transition:color 0.15s,border-color 0.15s;" onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--muted)'">HOME</a>
+  <a href="/dashboard" style="font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:0.12em;color:var(--orange);text-transform:uppercase;text-decoration:none;padding:4px 0;border-bottom:2px solid var(--orange);">DASHBOARD</a>
   <a href="/demo" style="font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:0.12em;color:var(--muted);text-transform:uppercase;text-decoration:none;padding:4px 0;border-bottom:2px solid transparent;transition:color 0.15s,border-color 0.15s;" onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--muted)'">DEMO</a>
 
   <span id="conn-status" style="color: var(--muted);">connecting...</span>
@@ -1064,6 +1067,8 @@ document.addEventListener('DOMContentLoaded', () => {
   loadSpans();
   loadAudit();
   connectSSE();
+  // Poll stats every 5s independent of SSE (SSE only emits on new spans)
+  setInterval(loadStats, 5000);
 });
 </script>
 </body>
