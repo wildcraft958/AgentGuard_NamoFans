@@ -222,11 +222,14 @@ tool_firewall:
       read_config_file: [IPAddress, URL]
 
   # C2: MELON contrastive indirect prompt injection detection on tool outputs
+  # Uses LLM-as-a-judge for dynamic semantic comparison of tool calls.
   melon:
     enabled: true
-    threshold: 0.8
-    embedding_model: "text-embedding-3-large"
+    judge_model: null              # null = uses TFY_MODEL; override for a dedicated judge LLM
     raise_on_injection: true
+    # Legacy (unused by LLM judge, kept for reference):
+    # threshold: 0.8
+    # embedding_model: "text-embedding-3-large"
 
   # C4: Approval Workflow -- HITL or AITL approval gate for sensitive tools
   # Both modes share tools_requiring_review. Enable ONE mode at a time.

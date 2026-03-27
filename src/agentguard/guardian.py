@@ -176,8 +176,12 @@ class Guardian:
                 self._melon_detector = MelonDetector(
                     threshold=self.config.melon_threshold,
                     embedding_model=self.config.melon_embedding_model,
+                    judge_model=self.config.melon_judge_model,
                 )
-                logger.info("MELON Detector module: ENABLED (threshold=%.2f)", self.config.melon_threshold)
+                logger.info(
+                    "MELON Detector module: ENABLED (LLM judge, model=%s)",
+                    self.config.melon_judge_model or "TFY_MODEL",
+                )
             except (ValueError, Exception) as e:
                 logger.error("Failed to initialize MELON Detector: %s", e)
 
