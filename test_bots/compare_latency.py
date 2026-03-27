@@ -18,6 +18,7 @@ Usage:
 import asyncio
 import json
 import os
+import statistics
 import sys
 import tempfile
 import time
@@ -318,5 +319,246 @@ async def main():
         os.unlink(par_config)
 
 
+BENCH_PROMPTS_MOCK = [
+    "Check the status of srv-01",
+    "What is the CPU usage of server web-02?",
+    "Create a new environment called dev-test",
+    "Provision staging-beta environment",
+    "Deploy myrepo:main to production",
+    "Deploy frontend:release to staging",
+    "Get the status of db-primary",
+    "Check server metrics for api-gateway",
+    "Create environment called qa-regression",
+    "Deploy analytics:v2 to staging",
+]
+
+
+async def bench_mock_main(n: int = 20):
+    """
+    Same as bench_main but the LLM is mocked to a fixed 200ms delay.
+    This isolates pure L1 validation overhead: sequential blocks on L1
+    before the (mock) agent starts; parallel overlaps them.
+
+    Expected saving per request ≈ L1 validation time (~300–600ms).
+    """
+    import unittest.mock as mock
+
+    MOCK_LLM_DELAY_S = 0.2  # simulated LLM latency
+
+    seq_config = _write_config("sequential", parallel=False)
+    par_config = _write_config("parallel", parallel=True)
+
+    try:
+        seq_tools = GuardedToolRegistry(TOOL_REGISTRY, TOOL_SCHEMAS, config=seq_config)
+        par_tools = GuardedToolRegistry(TOOL_REGISTRY, TOOL_SCHEMAS, config=par_config)
+
+        def _mock_agent_loop(user_message: str, guarded_tools, max_turns=5) -> str:
+            time.sleep(MOCK_LLM_DELAY_S)
+            return f"Mock response for: {user_message[:40]}"
+
+        @guard(param="user_message", output_field="response", config=seq_config)
+        async def seq_agent(user_message: str) -> dict:
+            response = await asyncio.to_thread(_mock_agent_loop, user_message, seq_tools)
+            return {"response": response}
+
+        @guard(param="user_message", output_field="response", config=par_config)
+        async def par_agent(user_message: str) -> dict:
+            response = await asyncio.to_thread(_mock_agent_loop, user_message, par_tools)
+            return {"response": response}
+
+        seq_times: list[float] = []
+        par_times: list[float] = []
+
+        print(f"\n{'='*72}")
+        print(f"  Benchmark (mock LLM={MOCK_LLM_DELAY_S*1000:.0f}ms): {n} safe inferences")
+        print(f"  L1 Azure validation is REAL — this isolates its overhead")
+        print(f"{'='*72}")
+        print(f"  {'#':<4}  {'Prompt':<38}  {'Sequential':>11}  {'Parallel':>9}  {'Saving':>8}")
+        print(f"  {'-'*68}")
+
+        for i in range(n):
+            prompt = BENCH_PROMPTS_MOCK[i % len(BENCH_PROMPTS_MOCK)]
+            label = (prompt[:36] + "..") if len(prompt) > 36 else prompt
+
+            print(f"  [{i+1}/{n}] sequential...", end=" ", flush=True)
+            _guardian_cache.clear()
+            seq_ms, _, _ = await run_prompt_async(seq_agent, prompt)
+            print(f"{seq_ms:.0f}ms", end="   ", flush=True)
+
+            print(f"parallel...", end=" ", flush=True)
+            _guardian_cache.clear()
+            par_ms, _, _ = await run_prompt_async(par_agent, prompt)
+            print(f"{par_ms:.0f}ms", flush=True)
+
+            seq_times.append(seq_ms)
+            par_times.append(par_ms)
+
+            saving = seq_ms - par_ms
+            sign = "+" if saving >= 0 else ""
+            print(f"  {'':4}  {label:<38}  {seq_ms:>9.0f}ms  {par_ms:>7.0f}ms  {sign}{saving:>6.0f}ms")
+
+        print(f"\n{'='*72}")
+        print(f"  {'Metric':<22}  {'Sequential':>12}  {'Parallel':>10}  {'Saving':>10}")
+        print(f"  {'-'*58}")
+
+        def _fmt(ms):
+            return f"{ms:>9.0f}ms"
+
+        mean_seq = statistics.mean(seq_times)
+        mean_par = statistics.mean(par_times)
+        med_seq  = statistics.median(seq_times)
+        med_par  = statistics.median(par_times)
+        p95_seq  = sorted(seq_times)[min(int(0.95 * n), n-1)]
+        p95_par  = sorted(par_times)[min(int(0.95 * n), n-1)]
+
+        rows = [
+            ("Mean",   mean_seq, mean_par),
+            ("Median", med_seq,  med_par),
+            ("p95",    p95_seq,  p95_par),
+            ("Min",    min(seq_times), min(par_times)),
+            ("Max",    max(seq_times), max(par_times)),
+        ]
+        for lbl, sv, pv in rows:
+            saving = sv - pv
+            sign = "+" if saving >= 0 else ""
+            pct = (saving / sv * 100) if sv > 0 else 0
+            pct_sign = "+" if pct >= 0 else ""
+            print(f"  {lbl:<22}  {_fmt(sv)}  {_fmt(pv)}  {sign}{saving:>7.0f}ms ({pct_sign}{pct:.1f}%)")
+
+        total_saving = sum(seq_times) - sum(par_times)
+        total_pct = (total_saving / sum(seq_times) * 100) if seq_times else 0
+        sign = "+" if total_saving >= 0 else ""
+        pct_sign = "+" if total_pct >= 0 else ""
+        print(f"  {'-'*58}")
+        print(f"  {'Total saving ('+str(n)+' runs)':<22}  {'':>12}  {'':>10}  "
+              f"{sign}{total_saving:>7.0f}ms ({pct_sign}{total_pct:.1f}%)")
+        print(f"  {'Avg saving per request':<22}  {'':>12}  {'':>10}  "
+              f"{sign}{total_saving/n:>7.0f}ms")
+        print(f"{'='*72}\n")
+
+    finally:
+        os.unlink(seq_config)
+        os.unlink(par_config)
+
+
+BENCH_PROMPTS = [
+    "Check the status of srv-01",
+    "What is the CPU usage of server web-02?",
+    "Create a new environment called dev-test",
+    "Provision staging-beta environment",
+    "Deploy myrepo:main to production",
+    "Deploy frontend:release to staging",
+    "Get the status of db-primary",
+    "Check server metrics for api-gateway",
+    "Create environment called qa-regression",
+    "Deploy analytics:v2 to staging",
+]
+
+
+async def bench_main(n: int = 20):
+    """
+    Run n safe inferences alternating between sequential and parallel agents.
+    Reports per-run latency and aggregate stats (mean, median, p95, saving).
+    """
+    seq_config = _write_config("sequential", parallel=False)
+    par_config = _write_config("parallel", parallel=True)
+
+    try:
+        seq_tools = GuardedToolRegistry(TOOL_REGISTRY, TOOL_SCHEMAS, config=seq_config)
+        par_tools = GuardedToolRegistry(TOOL_REGISTRY, TOOL_SCHEMAS, config=par_config)
+
+        @guard(param="user_message", output_field="response", config=seq_config)
+        async def seq_agent(user_message: str) -> dict:
+            seq_tools.set_messages([])
+            response = await asyncio.to_thread(_run_agent_loop, user_message, seq_tools)
+            return {"response": response}
+
+        @guard(param="user_message", output_field="response", config=par_config)
+        async def par_agent(user_message: str) -> dict:
+            par_tools.set_messages([])
+            response = await asyncio.to_thread(_run_agent_loop, user_message, par_tools)
+            return {"response": response}
+
+        seq_times: list[float] = []
+        par_times: list[float] = []
+
+        print(f"\n{'='*72}")
+        print(f"  Benchmark: {n} safe inferences — Sequential vs Parallel")
+        print(f"{'='*72}")
+        print(f"  {'#':<4}  {'Prompt':<38}  {'Sequential':>11}  {'Parallel':>9}  {'Saving':>8}")
+        print(f"  {'-'*68}")
+
+        for i in range(n):
+            prompt = BENCH_PROMPTS[i % len(BENCH_PROMPTS)]
+            label = prompt[:36] + ".." if len(prompt) > 36 else prompt
+
+            print(f"  [{i+1}/{n}] sequential: \"{label}\"...", end=" ", flush=True)
+            _guardian_cache.clear()
+            seq_ms, _, _ = await run_prompt_async(seq_agent, prompt)
+            print(f"{seq_ms:.0f}ms", flush=True)
+
+            print(f"  [{i+1}/{n}] parallel:   \"{label}\"...", end=" ", flush=True)
+            _guardian_cache.clear()
+            par_ms, _, _ = await run_prompt_async(par_agent, prompt)
+            print(f"{par_ms:.0f}ms", flush=True)
+
+            seq_times.append(seq_ms)
+            par_times.append(par_ms)
+
+            saving = seq_ms - par_ms
+            sign = "+" if saving >= 0 else ""
+            print(f"  {'':4}  {label:<38}  {seq_ms:>9.0f}ms  {par_ms:>7.0f}ms  {sign}{saving:>6.0f}ms")
+
+        print(f"\n{'='*72}")
+        print(f"  {'Metric':<22}  {'Sequential':>12}  {'Parallel':>10}  {'Saving':>10}")
+        print(f"  {'-'*58}")
+
+        def _fmt(ms):
+            return f"{ms:>9.0f}ms"
+
+        mean_seq = statistics.mean(seq_times)
+        mean_par = statistics.mean(par_times)
+        med_seq  = statistics.median(seq_times)
+        med_par  = statistics.median(par_times)
+        p95_seq  = sorted(seq_times)[int(0.95 * n)]
+        p95_par  = sorted(par_times)[int(0.95 * n)]
+        min_seq  = min(seq_times)
+        min_par  = min(par_times)
+        max_seq  = max(seq_times)
+        max_par  = max(par_times)
+
+        rows = [
+            ("Mean",   mean_seq, mean_par),
+            ("Median", med_seq,  med_par),
+            ("p95",    p95_seq,  p95_par),
+            ("Min",    min_seq,  min_par),
+            ("Max",    max_seq,  max_par),
+        ]
+        for label, sv, pv in rows:
+            saving = sv - pv
+            sign = "+" if saving >= 0 else ""
+            pct = (saving / sv * 100) if sv > 0 else 0
+            pct_sign = "+" if pct >= 0 else ""
+            print(f"  {label:<22}  {_fmt(sv)}  {_fmt(pv)}  {sign}{saving:>7.0f}ms ({pct_sign}{pct:.1f}%)")
+
+        total_saving = sum(seq_times) - sum(par_times)
+        total_pct = (total_saving / sum(seq_times) * 100) if seq_times else 0
+        sign = "+" if total_saving >= 0 else ""
+        pct_sign = "+" if total_pct >= 0 else ""
+        print(f"  {'-'*58}")
+        print(f"  {'Total saving ('+str(n)+' runs)':<22}  {'':>12}  {'':>10}  {sign}{total_saving:>7.0f}ms ({pct_sign}{total_pct:.1f}%)")
+        print(f"{'='*72}\n")
+
+    finally:
+        os.unlink(seq_config)
+        os.unlink(par_config)
+
+
 if __name__ == "__main__":
-    asyncio.run(main())
+    n = next((int(a) for a in sys.argv[1:] if a.isdigit()), 5)
+    if "--mock" in sys.argv:
+        asyncio.run(bench_mock_main(n))
+    elif "--bench" in sys.argv:
+        asyncio.run(bench_main(n))
+    else:
+        asyncio.run(main())
