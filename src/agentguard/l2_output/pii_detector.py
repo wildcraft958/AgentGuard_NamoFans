@@ -13,6 +13,7 @@ import os
 
 from dotenv import load_dotenv
 from azure.ai.textanalytics import TextAnalyticsClient
+from azure.ai.textanalytics.aio import TextAnalyticsClient as AsyncTextAnalyticsClient
 from azure.core.credentials import AzureKeyCredential
 
 from agentguard.models import ValidationResult
@@ -129,3 +130,81 @@ class PIIDetector:
             logger.info("PII Detector: no PII found")
 
         return ValidationResult(is_safe=True, layer="pii_detector", details=details)
+
+    # ------------------------------------------------------------------
+    # Async variant — uses azure.ai.textanalytics.aio for real cancellation
+    # ------------------------------------------------------------------
+
+    def _get_async_client(self) -> AsyncTextAnalyticsClient:
+        if not hasattr(self, "_async_client") or self._async_client is None:
+            self._async_client = AsyncTextAnalyticsClient(
+                endpoint=self.endpoint,
+                credential=AzureKeyCredential(self.key),
+            )
+        return self._async_client
+
+    async def aanalyze(
+        self,
+        text: str,
+        block_on_pii: bool = True,
+        allowed_categories: list = None,
+    ) -> ValidationResult:
+        """Async version of analyze(). Uses azure.ai.textanalytics.aio."""
+        allowed_categories = allowed_categories or []
+        logger.info("Running PII detection check (async)...")
+
+        try:
+            client = self._get_async_client()
+            result = await client.recognize_pii_entities([text])
+            doc = result[0]
+
+            if doc.is_error:
+                logger.error("PII detection error (async): %s", doc.error.message)
+                return ValidationResult(
+                    is_safe=False, layer="pii_detector",
+                    blocked_reason=(
+                        f"PII detection API error – blocking as fail-safe: {doc.error.message}"
+                    ),
+                    details={"error": doc.error.message},
+                )
+        except Exception as e:
+            logger.error("PII detection failed (async): %s", e)
+            return ValidationResult(
+                is_safe=False, layer="pii_detector",
+                blocked_reason=f"PII detection API error – blocking as fail-safe: {e}",
+                details={"error": str(e)},
+            )
+
+        flagged_entities = [
+            {
+                "text": entity.text,
+                "category": entity.category,
+                "subcategory": entity.subcategory,
+                "confidence_score": entity.confidence_score,
+            }
+            for entity in doc.entities
+            if entity.category not in allowed_categories
+        ]
+
+        details = {
+            "redacted_text": doc.redacted_text,
+            "entities": flagged_entities,
+            "entity_count": len(flagged_entities),
+        }
+
+        if flagged_entities and block_on_pii:
+            categories_found = sorted(set(e["category"] for e in flagged_entities))
+            blocked_reason = f"PII detected in output: {', '.join(categories_found)}"
+            logger.warning("PII Detector BLOCKED (async): %s", blocked_reason)
+            return ValidationResult(
+                is_safe=False, layer="pii_detector",
+                blocked_reason=blocked_reason, details=details,
+            )
+
+        return ValidationResult(is_safe=True, layer="pii_detector", details=details)
+
+    async def aclose(self):
+        """Close the async Azure client."""
+        if hasattr(self, "_async_client") and self._async_client is not None:
+            await self._async_client.close()
+            self._async_client = None

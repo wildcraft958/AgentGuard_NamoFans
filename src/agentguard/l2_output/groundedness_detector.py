@@ -28,7 +28,7 @@ import os
 import re
 
 from dotenv import load_dotenv
-from openai import OpenAI
+from openai import AsyncOpenAI, OpenAI
 
 from agentguard.models import ValidationResult
 
@@ -355,3 +355,103 @@ class GroundednessDetector:
         if match:
             return match.group(1).strip()
         return ""
+
+    # ------------------------------------------------------------------
+    # Async variant — uses AsyncOpenAI for real cancellation
+    # ------------------------------------------------------------------
+
+    def _get_async_client(self) -> AsyncOpenAI:
+        if not hasattr(self, "_async_client") or self._async_client is None:
+            self._async_client = AsyncOpenAI(
+                api_key=self.api_key, base_url=self.base_url
+            )
+        return self._async_client
+
+    async def aanalyze(
+        self,
+        text: str,
+        user_query: str = None,
+        grounding_sources: list = None,
+        confidence_threshold: float = 3.0,
+        block_on_high_confidence: bool = True,
+    ) -> ValidationResult:
+        """Async version of analyze(). Uses AsyncOpenAI for native async I/O."""
+        if not grounding_sources and not user_query:
+            logger.info("Groundedness (async): no grounding sources or query, skipping")
+            return ValidationResult(
+                is_safe=True, layer=LAYER,
+                details={"reason": "no_grounding_sources_or_query"},
+            )
+
+        # Select prompt template — identical logic to sync analyze()
+        if grounding_sources and user_query:
+            context = "\n\n".join(grounding_sources)
+            user_msg = _WITH_QUERY_PROMPT.format(
+                context=context, query=user_query, response=text
+            )
+        elif grounding_sources:
+            context = "\n\n".join(grounding_sources)
+            user_msg = _WITHOUT_QUERY_PROMPT.format(context=context, response=text)
+        else:
+            user_msg = _QUERY_ONLY_PROMPT.format(query=user_query, response=text)
+
+        messages = [
+            {"role": "system", "content": _SYSTEM_PROMPT},
+            {"role": "user", "content": user_msg},
+        ]
+
+        try:
+            client = self._get_async_client()
+            response = await client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                temperature=0.0,
+                max_tokens=2000,
+            )
+            judge_output = response.choices[0].message.content or ""
+        except Exception as e:
+            logger.error("Groundedness LLM call failed (async): %s", e)
+            return ValidationResult(
+                is_safe=False, layer=LAYER,
+                blocked_reason=f"Groundedness LLM error – blocking as fail-safe: {e}",
+                details={"error": str(e)},
+            )
+
+        score = self._parse_score(judge_output)
+        explanation = self._parse_explanation(judge_output)
+
+        details = {
+            "groundedness_score": score,
+            "groundedness_explanation": explanation,
+            "groundedness_threshold": confidence_threshold,
+            "judge_raw_output": judge_output,
+        }
+
+        if score is None:
+            logger.error("Groundedness (async): could not parse score")
+            return ValidationResult(
+                is_safe=False, layer=LAYER,
+                blocked_reason="Groundedness score unparseable – blocking as fail-safe",
+                details=details,
+            )
+
+        passed = score >= confidence_threshold
+
+        if not passed and block_on_high_confidence:
+            blocked_reason = (
+                f"Ungrounded content detected (score: {score}/5, "
+                f"threshold: {confidence_threshold})"
+            )
+            logger.warning("Groundedness BLOCKED (async): %s", blocked_reason)
+            return ValidationResult(
+                is_safe=False, layer=LAYER,
+                blocked_reason=blocked_reason, details=details,
+            )
+
+        return ValidationResult(is_safe=True, layer=LAYER, details=details)
+
+    async def aclose(self):
+        """Close the async OpenAI client."""
+        if hasattr(self, "_async_client") and self._async_client is not None:
+            await self._async_client.close()
+            self._async_client = None

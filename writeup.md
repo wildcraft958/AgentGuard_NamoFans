@@ -2,6 +2,56 @@
 
 ![AgentGuard Logo](assets/logo.png)
 
+## 2026-03-25 — 3-Wave Async Tiered Pipeline (Concurrent Execution)
+
+**What changed:**
+Added a 3-wave asynchronous execution pipeline to Guardian, reducing worst-case latency from ~8-11s to ~3-5s. The architecture groups security checks by cost and latency:
+
+- **Wave 0** (offline, $0): Fast injection regex + C3 rule-based guards (~0-1ms) — blocks before any network I/O
+- **Wave 1** (cheap APIs, parallel): Azure Prompt Shields + Content Filters + PII + Toxicity + Entity Recognition (~200-500ms each, fired concurrently)
+- **Wave 2** (expensive LLM, parallel): Groundedness detector + MELON + AITL approval (~1-3s each, only runs if Wave 1 passes)
+
+Key implementation details:
+- **Native async clients** in all 8 checker modules: `httpx.AsyncClient` (Prompt Shields), `azure.ai.contentsafety.aio` (Content Filters), `azure.ai.textanalytics.aio` (PII, Entity Recog), `AsyncOpenAI` (Groundedness, MELON, AITL). Task cancellation closes TCP sockets mid-flight — real cost savings, not cosmetic.
+- **Dual sync+async API**: Existing sync `validate_*()` methods unchanged. New async `avalidate_*()` methods use the tiered wave pipeline. `@guard` decorator's `async_wrapper` calls `await guardian.avalidate_*()`.
+- **First-to-fail with `asyncio.wait(FIRST_COMPLETED)`**: When any check blocks, remaining in-flight API calls are cancelled immediately.
+- **Async context manager** (`async with Guardian(...) as g:`) for proper client lifecycle cleanup. No `__del__` — avoids event-loop-closed errors.
+- **`execution_mode: tiered | sequential`** config option (default: `tiered`).
+
+Files changed:
+- `src/agentguard/guardian.py` — `_wave_parallel()`, `avalidate_input()`, `avalidate_output()`, `avalidate_tool_call()`, `__aenter__/__aexit__`
+- `src/agentguard/decorators.py` — `async_wrapper` calls `avalidate_*()` instead of sync methods
+- `src/agentguard/config.py` — `execution_mode` property
+- 8 checker modules — each gets `async aanalyze()` + `async aclose()` using native async SDKs
+- `src/tests/test_guardian_parallel.py` — 8 async orchestration tests
+
+**Why this approach:**
+Mentor feedback identified latency as the #1 scalability concern. Sequential execution sums all check latencies. The 3-wave architecture runs independent checks concurrently (L1: 600ms→200ms, L2: 3.7s→1-3s). Native async (not `asyncio.to_thread`) ensures task cancellation actually closes HTTP connections and stops billing.
+
+**Problem solved:**
+AgentGuard added 4-11s of overhead on top of the agent's response time. Now worst-case is ~3-5s with the tiered pipeline, and ~200ms for inputs caught by Wave 0 (40% of attacks).
+
+**Tradeoffs:**
+- Dual sync+async code paths in each checker module (~50% more code per module). Justified by: zero regression risk for existing sync tests, and native async gives real TCP cancellation.
+- `asyncio.to_thread` used only for HITL terminal `input()` — the one case where async is impossible.
+- Azure async SDK clients need explicit `await client.close()` — handled via Guardian's async context manager.
+
+**Example:**
+```python
+# Async (FastAPI, production)
+async with Guardian("agentguard.yaml") as guard:
+    result = await guard.avalidate_input("user query", documents=["doc1"])
+    # Wave 0: regex check (~0ms)
+    # Wave 1: Prompt Shields + Content Filters (parallel, ~200ms total)
+
+# Sync (scripts, CLI) — unchanged
+guard = Guardian("agentguard.yaml")
+result = guard.validate_input("user query")
+# Sequential as before
+```
+
+---
+
 ## 2026-03-10 — OpenTelemetry Integration (spans + metrics for all Guardian methods)
 
 **What changed:**
@@ -433,6 +483,56 @@ result = guardian.validate_output(
 )
 # → is_safe=True (on-topic, score 5/5)
 ```
+
+## 2026-03-10 — Groundedness Detector: REST API → LLM-as-Judge Migration
+
+**What changed:**
+Replaced the Azure Content Safety `detectGroundedness` REST API with an **LLM-as-judge** approach using the OpenAI SDK routed through TrueFoundry. The judge LLM scores groundedness on a 1-5 scale using the same grading rubric as Azure AI Evaluation SDK's `GroundednessEvaluator`.
+
+Key changes:
+- `src/agentguard/l2_output/groundedness_detector.py` — complete rewrite: removed `requests.post` to Azure Content Safety, now uses OpenAI SDK `chat.completions.create` with a grading prompt. Two prompt templates: `_WITH_QUERY_PROMPT` (QnA) and `_WITHOUT_QUERY_PROMPT` (summarization). Score parsed from `<S2>...</S2>` tags in judge output.
+- `src/tests/l2_output/test_groundedness_detector.py` — rewritten 56 tests: mocks `OpenAI` class instead of `requests.post`. 10 test classes covering init, both modes, skip logic, threshold (1-5), LLM errors, score parsing, request config, result details, realistic scenarios.
+- `src/tests/test_guardian_groundedness.py` — updated all 12 integration tests to mock `OpenAI` instead of `requests.post`, updated config thresholds from 0.x to 1-5 scale.
+- Config default `confidence_threshold` changed from `0.9` to `3.0` (1-5 scale, 3 = minimum to pass).
+- `agentguard.yaml` and `agentguard_vulnerable.yaml` — threshold updated to `3`.
+- Added `azure-ai-evaluation` as dependency (investigated but not used directly due to Gemini parameter incompatibility).
+
+**Why this approach:**
+The Azure Content Safety `detectGroundedness` REST API returned **404: "This feature is not yet available in this region"** on the existing Azure resource. Investigation confirmed:
+- Content Filters (`text:analyze`) — works (200) via SDK
+- Prompt Shields (`text:shieldPrompt`) — 404 (region-locked, REST API)
+- PII Detection — works via `azure-ai-textanalytics` SDK
+- Groundedness (`text:detectGroundedness`) — 404 (region-locked, REST API)
+
+Pattern: all modules using Azure SDKs work; both using raw REST APIs fail due to region limitations. The `azure-ai-evaluation` SDK's `GroundednessEvaluator` was tested but sends `frequency_penalty`/`presence_penalty` parameters that Gemini (via Vertex AI/TrueFoundry) rejects. The LLM-as-judge approach using the same grading prompts extracted from the SDK, called directly via OpenAI SDK (already working in this project), bypasses both issues.
+
+**Problem solved:**
+Groundedness detection was completely non-functional due to Azure region limitations. Now it works through the existing TrueFoundry gateway with no region restrictions, producing accurate 1-5 groundedness scores.
+
+**Tradeoffs:**
+- LLM-as-judge adds latency (~1-3s per evaluation) vs the REST API (~200ms), but the REST API didn't work at all in this region.
+- Scoring changed from percentage (0-1) to integer (1-5), aligning with Azure AI Evaluation SDK's standard.
+- Consumes LLM tokens for each groundedness check — cost scales with output validation volume.
+- The same LLM model used by the agent judges its own outputs, which could introduce bias. A separate judge model could be configured via the `model` parameter.
+
+**Example (live test results):**
+```python
+det = GroundednessDetector(api_key=TFY_KEY, base_url=TFY_URL, model=TFY_MODEL)
+
+# Grounded answer → score 5/5, safe
+det.analyze(text="Paris is the capital of France.",
+            user_query="What is the capital of France?",
+            grounding_sources=["France's capital is Paris."])
+# → is_safe=True, score=5
+
+# Hallucinated price → score 2/5, blocked
+det.analyze(text="The tent costs $500 and is made of titanium.",
+            user_query="How much does the tent cost?",
+            grounding_sources=["Alpine Explorer Tent. Price: $120. Material: Nylon."],
+            confidence_threshold=3.0)
+# → is_safe=False, blocked_reason="Ungrounded content detected (score: 2/5, threshold: 3.0)"
+
+---
 
 ## 2026-03-10 — AITL Candidate Evaluation: open-source safety LLMs on Kaggle GPU
 

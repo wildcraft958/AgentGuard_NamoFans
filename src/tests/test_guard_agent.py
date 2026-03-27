@@ -2,7 +2,7 @@
 
 import asyncio
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, AsyncMock, patch
 
 from agentguard.decorators import _AGENT_REGISTRY, _guardian_cache
 from agentguard.exceptions import InputBlockedError
@@ -28,12 +28,20 @@ def _mock_guardian_safe():
     mock = MagicMock()
     mock.validate_input.return_value = InputValidationResult(is_safe=True, results=[])
     mock.validate_output.return_value = MagicMock(redacted_output=None)
+    # Async variants
+    mock.avalidate_input = AsyncMock(
+        return_value=InputValidationResult(is_safe=True, results=[])
+    )
+    mock.avalidate_output = AsyncMock(return_value=MagicMock(redacted_output=None))
     return mock
 
 
 def _mock_guardian_blocked():
     mock = MagicMock()
     mock.validate_input.side_effect = InputBlockedError(reason="Injection detected")
+    mock.avalidate_input = AsyncMock(
+        side_effect=InputBlockedError(reason="Injection detected")
+    )
     return mock
 
 
@@ -136,7 +144,7 @@ class TestGuardAgentDecorator:
 
         result = my_agent(msg="hello")
         assert result == "ok: hello"
-        mock.validate_input.assert_called_once()
+        mock.avalidate_input.assert_called_once()
 
     @patch("agentguard.decorators._get_guardian")
     def test_guard_agent_blocks_unsafe_input(self, mock_get):

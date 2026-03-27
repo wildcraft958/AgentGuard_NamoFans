@@ -64,3 +64,23 @@ class OutputToxicity:
         # Re-label the layer for L2
         result.layer = "output_toxicity"
         return result
+
+    async def aanalyze(
+        self,
+        text: str,
+        block_toxicity: bool = True,
+        block_violence: bool = True,
+        block_self_harm: bool = True,
+        severity_threshold: int = 0,
+    ) -> ValidationResult:
+        """Async version — delegates to ContentFilters.aanalyze_text()."""
+        logger.info("Running output toxicity check (async)...")
+        result = await self._content_filters.aanalyze_text(
+            text=text,
+            block_toxicity=block_toxicity,
+            block_violence=block_violence,
+            block_self_harm=block_self_harm,
+            severity_threshold=severity_threshold,
+        )
+        result.layer = "output_toxicity"
+        return result

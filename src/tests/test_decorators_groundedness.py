@@ -6,7 +6,7 @@ checking.
 """
 
 import asyncio
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, AsyncMock
 
 import pytest
 
@@ -26,12 +26,19 @@ def _mock_guardian(output_result=None):
     """Create a mock Guardian with safe L1 and configurable L2."""
     mock = MagicMock()
     mock.validate_input.return_value = InputValidationResult(is_safe=True, results=[])
+    mock.avalidate_input = AsyncMock(
+        return_value=InputValidationResult(is_safe=True, results=[])
+    )
     if output_result is None:
         mock.validate_output.return_value = OutputValidationResult(
             is_safe=True, results=[]
         )
+        mock.avalidate_output = AsyncMock(
+            return_value=OutputValidationResult(is_safe=True, results=[])
+        )
     else:
         mock.validate_output.return_value = output_result
+        mock.avalidate_output = AsyncMock(return_value=output_result)
     return mock
 
 
@@ -39,7 +46,11 @@ def _mock_guardian_output_blocked(reason="Ungrounded content detected"):
     """Create a mock Guardian that blocks output."""
     mock = MagicMock()
     mock.validate_input.return_value = InputValidationResult(is_safe=True, results=[])
+    mock.avalidate_input = AsyncMock(
+        return_value=InputValidationResult(is_safe=True, results=[])
+    )
     mock.validate_output.side_effect = OutputBlockedError(reason=reason)
+    mock.avalidate_output = AsyncMock(side_effect=OutputBlockedError(reason=reason))
     return mock
 
 
@@ -60,7 +71,7 @@ class TestDocumentThreading:
 
         search(query="What is the answer?", docs=["The answer to everything is 42."])
 
-        mock_guardian.validate_output.assert_called_once_with(
+        mock_guardian.avalidate_output.assert_called_once_with(
             "The answer is 42.",
             user_query="What is the answer?",
             grounding_sources=["The answer to everything is 42."],
@@ -78,7 +89,7 @@ class TestDocumentThreading:
 
         chat(message="Hello world")
 
-        mock_guardian.validate_output.assert_called_once_with(
+        mock_guardian.avalidate_output.assert_called_once_with(
             "Reply here.",
             user_query="Hello world",
             grounding_sources=None,
@@ -99,7 +110,7 @@ class TestDocumentThreading:
             sources=["Contoso sells camping equipment.", "Contoso has 3 stores."],
         )
 
-        mock_guardian.validate_output.assert_called_once_with(
+        mock_guardian.avalidate_output.assert_called_once_with(
             "Contoso sells camping gear.",
             user_query="What does Contoso sell?",
             grounding_sources=["Contoso sells camping equipment.", "Contoso has 3 stores."],
@@ -118,7 +129,7 @@ class TestDocumentThreading:
         process(5)
 
         # user_query=None because no string param found, grounding_sources=None
-        mock_guardian.validate_output.assert_called_once_with(
+        mock_guardian.avalidate_output.assert_called_once_with(
             "result",
             user_query=None,
             grounding_sources=None,
@@ -176,8 +187,8 @@ class TestBackwardCompatibility:
 
         result = chat(msg="Hello")
         assert result == "Reply: Hello"
-        mock_guardian.validate_input.assert_called_once()
-        mock_guardian.validate_output.assert_not_called()
+        mock_guardian.avalidate_input.assert_called_once()
+        mock_guardian.avalidate_output.assert_not_called()
 
     @patch("agentguard.decorators._get_guardian")
     def test_guard_without_output_field_no_l2(self, mock_get):
@@ -190,15 +201,15 @@ class TestBackwardCompatibility:
             return "Reply"
 
         chat(msg="Hello")
-        mock_guardian.validate_output.assert_not_called()
+        mock_guardian.avalidate_output.assert_not_called()
 
     @patch("agentguard.decorators._get_guardian")
     def test_existing_validate_output_signature_compatible(self, mock_get):
-        """guardian.validate_output('text') still works without new params
+        """guardian.avalidate_output('text') still works without new params
         (defaults to None)."""
         mock_guardian = _mock_guardian()
         mock_get.return_value = mock_guardian
 
-        # Call validate_output directly with just text (backward compat)
-        mock_guardian.validate_output("Some output")
-        mock_guardian.validate_output.assert_called_once_with("Some output")
+        # Call avalidate_output directly with just text (backward compat)
+        mock_guardian.avalidate_output("Some output")
+        mock_guardian.avalidate_output.assert_called_once_with("Some output")

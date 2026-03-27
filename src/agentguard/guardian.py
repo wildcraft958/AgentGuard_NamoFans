@@ -5,6 +5,7 @@ The main entry point for AgentGuard. Orchestrates all security layers
 and provides the validate_input() / validate_output() interface.
 """
 
+import asyncio
 import logging
 import time
 
@@ -1071,3 +1072,358 @@ class Guardian:
             reason=blocking_result.blocked_reason,
             details={"blocked_by": blocked_by, "elapsed_ms": elapsed_ms, "validation_result": result},
         )
+
+    # ==================================================================
+    # Async Tiered Pipeline — 3-Wave Concurrent Execution
+    # ==================================================================
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        await self._close_async_clients()
+
+    async def _close_async_clients(self):
+        """Close all native async clients (httpx, Azure aio, AsyncOpenAI)."""
+        for checker in [
+            self._prompt_shields, self._content_filters,
+            getattr(self, "_pii_detector", None),
+            getattr(self, "_groundedness_detector", None),
+            getattr(self, "_melon_detector", None),
+            getattr(self, "_tool_input_analyzer", None),
+            getattr(self, "_approval_workflow", None),
+        ]:
+            if checker and hasattr(checker, "aclose"):
+                try:
+                    await checker.aclose()
+                except Exception:
+                    pass
+
+    async def _wave_parallel(
+        self, checks: list[tuple[str, object]]
+    ) -> tuple[list[tuple[str, ValidationResult]], tuple[str, ValidationResult] | None]:
+        """
+        Run coroutines in parallel with first-to-fail cancellation.
+
+        When any check returns is_safe=False, cancel all remaining in-flight
+        tasks. With native async clients, cancellation closes TCP sockets.
+
+        Args:
+            checks: List of (check_name, coroutine) pairs.
+
+        Returns:
+            (all_completed_results, first_block_or_none)
+        """
+        tasks = {
+            asyncio.create_task(coro, name=name)
+            for name, coro in checks
+        }
+        results = []
+        block_result = None
+        pending = set(tasks)
+
+        while pending:
+            done, pending = await asyncio.wait(
+                pending, return_when=asyncio.FIRST_COMPLETED
+            )
+            for task in done:
+                name = task.get_name()
+                result = task.result()
+                results.append((name, result))
+                if not result.is_safe and block_result is None:
+                    block_result = (name, result)
+                    for p in pending:
+                        p.cancel()
+                    if pending:
+                        await asyncio.gather(*pending, return_exceptions=True)
+                    pending = set()
+                    break
+
+        return results, block_result
+
+    async def avalidate_input(
+        self,
+        user_input: str,
+        documents: list = None,
+        images: list = None,
+        context: dict = None,
+    ) -> InputValidationResult:
+        """
+        Async tiered input validation.
+
+        Wave 0: fast_inject_detect (offline, ~0ms)
+        Wave 1: prompt_shields + content_filters + image_filters (parallel)
+        """
+        if self.config.mode == GuardMode.DRY_RUN:
+            return InputValidationResult(is_safe=True, results=[])
+
+        start_time = time.time()
+        results = []
+
+        with self._span("agentguard.validate_input") as parent_span:
+            # --- Wave 0: Local pre-flight (sync, ~0ms) ---
+            with self._span("agentguard.check.fast_inject_detect"):
+                detected, matched_pattern = fast_inject_detect(user_input)
+            if detected:
+                logger.info("Fast inject pre-filter matched: %s", matched_pattern)
+                fake_result = ValidationResult(
+                    is_safe=False, layer="l1_input",
+                    blocked_reason=f"Prompt injection pattern detected: {matched_pattern}",
+                )
+                results.append(fake_result)
+                self._set_span_attrs(
+                    parent_span, is_safe=False, blocked_by="fast_inject",
+                    blocked_reason=fake_result.blocked_reason,
+                )
+                self._record_metrics("l1_input", "fast_inject_detect", "block", start_time)
+                if self._audit:
+                    self._audit.record(
+                        "validate_input", "l1_input", is_safe=False,
+                        reason="Fast inject detect",
+                        metadata={"blocked_by": "fast_inject", "pattern": matched_pattern},
+                    )
+                return self._handle_block(results, fake_result, "fast_inject", start_time)
+
+            # --- Wave 1: Cheap API checks (async parallel) ---
+            wave1 = []
+            sensitivity = self.config.prompt_shields_sensitivity
+            threshold = SENSITIVITY_THRESHOLDS.get(sensitivity, 0)
+
+            if self._prompt_shields and self.config.prompt_shields_enabled:
+                wave1.append((
+                    "prompt_shields",
+                    self._prompt_shields.aanalyze(user_input, documents),
+                ))
+
+            if self._content_filters and (
+                self._any_content_filter_enabled() or self._blocklist_names
+            ):
+                wave1.append((
+                    "content_filters",
+                    self._content_filters.aanalyze_text(
+                        text=user_input,
+                        block_toxicity=self.config.content_filters_block_toxicity,
+                        block_violence=self.config.content_filters_block_violence,
+                        block_self_harm=self.config.content_filters_block_self_harm,
+                        severity_threshold=threshold,
+                        blocklist_names=self._blocklist_names or None,
+                        halt_on_blocklist_hit=self.config.halt_on_blocklist_hit,
+                    ),
+                ))
+
+            if self._content_filters and self.config.image_filters_enabled and images:
+                for i, image_data in enumerate(images):
+                    wave1.append((
+                        f"image_filters_{i}",
+                        self._content_filters.aanalyze_image(
+                            image_data=image_data,
+                            block_hate=self.config.image_filters_block_hate,
+                            block_violence=self.config.image_filters_block_violence,
+                            block_self_harm=self.config.image_filters_block_self_harm,
+                            block_sexual=self.config.image_filters_block_sexual,
+                            severity_threshold=threshold,
+                        ),
+                    ))
+
+            if wave1:
+                w1_results, block = await self._wave_parallel(wave1)
+                for name, result in w1_results:
+                    results.append(result)
+                if block:
+                    name, result = block
+                    self._set_span_attrs(
+                        parent_span, is_safe=False, blocked_by=name,
+                        blocked_reason=result.blocked_reason,
+                    )
+                    self._record_metrics("l1_input", name, "block", start_time)
+                    return self._handle_block(results, result, name, start_time)
+
+            elapsed_ms = (time.time() - start_time) * 1000
+            logger.info("All L1 checks passed (async, %.1fms)", elapsed_ms)
+            self._set_span_attrs(parent_span, is_safe=True)
+            self._record_metrics("l1_input", "validate_input", "pass", start_time)
+
+        return InputValidationResult(is_safe=True, results=results)
+
+    async def avalidate_output(
+        self,
+        model_output: str,
+        user_query: str = None,
+        grounding_sources: list = None,
+    ) -> OutputValidationResult:
+        """
+        Async tiered output validation.
+
+        Wave 1: output_toxicity + pii_detection (parallel, cheap)
+        Wave 2: groundedness (expensive LLM, only if Wave 1 passes)
+        """
+        if self.config.mode == GuardMode.DRY_RUN:
+            return OutputValidationResult(is_safe=True, results=[])
+
+        start_time = time.time()
+        results = []
+        redacted_text = None
+
+        with self._span("agentguard.validate_output") as parent_span:
+            # --- Wave 1: Cheap checks (async parallel) ---
+            wave1 = []
+            if self._output_toxicity and self.config.output_toxicity_enabled:
+                wave1.append((
+                    "output_toxicity",
+                    self._output_toxicity.aanalyze(
+                        text=model_output,
+                        block_toxicity=True,
+                        block_violence=True,
+                        block_self_harm=True,
+                    ),
+                ))
+
+            if self._pii_detector and self.config.pii_detection_enabled:
+                wave1.append((
+                    "pii_detector",
+                    self._pii_detector.aanalyze(
+                        text=model_output,
+                        block_on_pii=self.config.pii_block_on_detection,
+                        allowed_categories=self.config.pii_allowed_categories,
+                    ),
+                ))
+
+            if wave1:
+                w1_results, block = await self._wave_parallel(wave1)
+                for name, result in w1_results:
+                    results.append(result)
+                    # Always capture PII redacted text
+                    if name == "pii_detector" and result.details:
+                        redacted_text = result.details.get("redacted_text")
+
+                if block:
+                    name, result = block
+                    self._set_span_attrs(
+                        parent_span, is_safe=False, blocked_by=name,
+                        blocked_reason=result.blocked_reason,
+                    )
+                    self._record_metrics("l2_output", name, "block", start_time)
+                    return self._handle_output_block(
+                        results, result, name, start_time, redacted_text
+                    )
+
+            # --- Wave 2: Expensive LLM checks (only if Wave 1 passes) ---
+            wave2 = []
+            if (
+                self._groundedness_detector
+                and self.config.groundedness_enabled
+                and (user_query or grounding_sources)
+            ):
+                wave2.append((
+                    "groundedness_detector",
+                    self._groundedness_detector.aanalyze(
+                        text=model_output,
+                        user_query=user_query,
+                        grounding_sources=grounding_sources,
+                        confidence_threshold=self.config.groundedness_confidence_threshold,
+                        block_on_high_confidence=self.config.groundedness_block_on_high_confidence,
+                    ),
+                ))
+
+            if wave2:
+                w2_results, block = await self._wave_parallel(wave2)
+                for name, result in w2_results:
+                    results.append(result)
+                if block:
+                    name, result = block
+                    self._set_span_attrs(
+                        parent_span, is_safe=False, blocked_by=name,
+                        blocked_reason=result.blocked_reason,
+                    )
+                    self._record_metrics("l2_output", name, "block", start_time)
+                    return self._handle_output_block(
+                        results, result, name, start_time, redacted_text
+                    )
+
+            elapsed_ms = (time.time() - start_time) * 1000
+            logger.info("All L2 checks passed (async, %.1fms)", elapsed_ms)
+            self._set_span_attrs(parent_span, is_safe=True)
+            self._record_metrics("l2_output", "validate_output", "pass", start_time)
+
+        return OutputValidationResult(
+            is_safe=True, results=results, redacted_text=redacted_text,
+        )
+
+    async def avalidate_tool_call(
+        self,
+        fn_name: str,
+        fn_args: dict,
+        context: dict = None,
+    ) -> ToolCallValidationResult:
+        """
+        Async tiered tool call validation.
+
+        Wave 0: C3 rule-based guards (offline, ~1ms)
+        Wave 1: C1 entity recognition + C4 approval workflow (parallel)
+        """
+        if self.config.mode == GuardMode.DRY_RUN:
+            return ToolCallValidationResult(is_safe=True, tool_name=fn_name)
+
+        start_time = time.time()
+        results = []
+
+        with self._span("agentguard.validate_tool_call") as parent_span:
+            # --- Wave 0: C3 Rule-Based Guards (sync, ~1ms) ---
+            if self._tool_specific_guards:
+                with self._span("agentguard.check.tool_specific_guards"):
+                    c3_result = self._tool_specific_guards.check(fn_name, fn_args)
+                results.append(c3_result)
+
+                if not c3_result.is_safe:
+                    self._set_span_attrs(
+                        parent_span, is_safe=False,
+                        blocked_by="tool_specific_guards",
+                        blocked_reason=c3_result.blocked_reason,
+                    )
+                    self._record_metrics(
+                        "tool_firewall", "tool_specific_guards", "block", start_time
+                    )
+                    return self._handle_tool_block(
+                        results, c3_result, "tool_specific_guards", start_time, fn_name,
+                    )
+
+            # --- Wave 1: C1 + C4 (async parallel) ---
+            wave1 = []
+            if self._tool_input_analyzer and self.config.tool_input_analysis_enabled:
+                wave1.append((
+                    "tool_input_analyzer",
+                    self._tool_input_analyzer.aanalyze(
+                        fn_name, fn_args,
+                        blocked_categories_map=self.config.tool_input_blocked_categories,
+                    ),
+                ))
+
+            if self._approval_workflow and self.config.approval_workflow_enabled:
+                wave1.append((
+                    "approval_workflow",
+                    self._approval_workflow.acheck(fn_name, fn_args, context),
+                ))
+
+            if wave1:
+                w1_results, block = await self._wave_parallel(wave1)
+                for name, result in w1_results:
+                    results.append(result)
+                if block:
+                    name, result = block
+                    self._set_span_attrs(
+                        parent_span, is_safe=False, blocked_by=name,
+                        blocked_reason=result.blocked_reason,
+                    )
+                    self._record_metrics("tool_firewall", name, "block", start_time)
+                    return self._handle_tool_block(
+                        results, result, name, start_time, fn_name,
+                    )
+
+            elapsed_ms = (time.time() - start_time) * 1000
+            logger.info(
+                "Tool call pre-checks passed (async) for '%s' (%.1fms)", fn_name, elapsed_ms
+            )
+            self._set_span_attrs(parent_span, is_safe=True)
+            self._record_metrics("tool_firewall", "validate_tool_call", "pass", start_time)
+
+        return ToolCallValidationResult(is_safe=True, results=results, tool_name=fn_name)

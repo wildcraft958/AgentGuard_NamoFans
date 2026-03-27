@@ -11,6 +11,7 @@ API: POST {endpoint}/contentsafety/text:shieldPrompt?api-version=2024-09-01
 import logging
 import os
 
+import httpx
 import requests
 from dotenv import load_dotenv
 
@@ -148,3 +149,93 @@ class PromptShields:
             layer="prompt_shields",
             details=details,
         )
+
+    # ------------------------------------------------------------------
+    # Async variant — uses httpx.AsyncClient for real cancellation
+    # ------------------------------------------------------------------
+
+    def _get_async_client(self) -> httpx.AsyncClient:
+        if not hasattr(self, "_async_client") or self._async_client is None:
+            self._async_client = httpx.AsyncClient(headers=self.headers)
+        return self._async_client
+
+    async def aanalyze(
+        self,
+        user_prompt: str,
+        documents: list = None,
+    ) -> ValidationResult:
+        """Async version of analyze(). Uses httpx for native async I/O."""
+        payload = {"userPrompt": user_prompt}
+        if documents:
+            payload["documents"] = documents
+
+        logger.debug("Prompt Shields async request: %s", payload)
+
+        try:
+            client = self._get_async_client()
+            response = await client.post(
+                self.url, json=payload, timeout=self.timeout
+            )
+            response.raise_for_status()
+            result = response.json()
+        except httpx.TimeoutException:
+            logger.error("Prompt Shields API timed out (async)")
+            return ValidationResult(
+                is_safe=False,
+                layer="prompt_shields",
+                blocked_reason="API timeout – blocking as fail-safe",
+                details={"error": "timeout"},
+            )
+        except httpx.HTTPError as e:
+            logger.error("Prompt Shields API error (async): %s", e)
+            return ValidationResult(
+                is_safe=False,
+                layer="prompt_shields",
+                blocked_reason=f"API error – blocking as fail-safe: {e}",
+                details={"error": str(e)},
+            )
+
+        logger.debug("Prompt Shields async response: %s", result)
+
+        # Parse response — identical logic to sync analyze()
+        user_attack = result.get("userPromptAnalysis", {}).get("attackDetected", False)
+        doc_analyses = result.get("documentsAnalysis", [])
+        doc_attacks = [d.get("attackDetected", False) for d in doc_analyses]
+        any_doc_attack = any(doc_attacks)
+
+        details = {
+            "userPromptAttackDetected": user_attack,
+            "documentAttacksDetected": doc_attacks,
+            "raw_response": result,
+        }
+
+        if user_attack or any_doc_attack:
+            reasons = []
+            if user_attack:
+                reasons.append("User prompt injection attack detected")
+            if any_doc_attack:
+                attacked_indices = [i for i, a in enumerate(doc_attacks) if a]
+                reasons.append(
+                    f"Document attack detected in document(s): {attacked_indices}"
+                )
+            blocked_reason = "; ".join(reasons)
+            logger.warning("Prompt Shields BLOCKED (async): %s", blocked_reason)
+            return ValidationResult(
+                is_safe=False,
+                layer="prompt_shields",
+                blocked_reason=blocked_reason,
+                details=details,
+            )
+
+        logger.info("Prompt Shields (async): input is safe")
+        return ValidationResult(
+            is_safe=True,
+            layer="prompt_shields",
+            details=details,
+        )
+
+    async def aclose(self):
+        """Close the async HTTP client."""
+        if hasattr(self, "_async_client") and self._async_client is not None:
+            await self._async_client.aclose()
+            self._async_client = None

@@ -30,6 +30,44 @@ from agentguard.parallel import ParallelContext, get_parallel_context, set_paral
 
 logger = logging.getLogger("agentguard.decorators")
 
+
+import threading
+
+# Persistent background event loop for sync→async bridge.
+# asyncio.run() creates+destroys a loop each call, which kills async HTTP clients
+# bound to the previous loop. A persistent loop keeps clients alive across calls.
+_bg_loop: asyncio.AbstractEventLoop | None = None
+_bg_thread: threading.Thread | None = None
+_bg_lock = threading.Lock()
+
+
+def _get_bg_loop() -> asyncio.AbstractEventLoop:
+    """Return a long-lived background event loop (created once, reused)."""
+    global _bg_loop, _bg_thread
+    if _bg_loop is not None and _bg_loop.is_running():
+        return _bg_loop
+    with _bg_lock:
+        if _bg_loop is not None and _bg_loop.is_running():
+            return _bg_loop
+        _bg_loop = asyncio.new_event_loop()
+        _bg_thread = threading.Thread(target=_bg_loop.run_forever, daemon=True)
+        _bg_thread.start()
+    return _bg_loop
+
+
+def _run_async_or_sync(coro, sync_fallback):
+    """Run an async coroutine from sync context. Falls back to sync if already in an event loop."""
+    try:
+        asyncio.get_running_loop()
+        # Already inside an event loop (Jupyter, nested async) — can't nest asyncio.run
+        return sync_fallback()
+    except RuntimeError:
+        # No event loop running — use persistent background loop
+        loop = _get_bg_loop()
+        future = asyncio.run_coroutine_threadsafe(coro, loop)
+        return future.result()
+
+
 # Cache Guardian instances per config path to avoid re-init overhead
 _guardian_cache: dict[str, Guardian] = {}
 
@@ -197,6 +235,7 @@ def guard(
         async def async_wrapper(*args, **kwargs):
             guardian = _get_guardian(config)
 
+            # --- L1: Async input validation (tiered waves) ---
             user_text = _resolve_text(func, args, kwargs, param)
             documents = _resolve_docs(func, args, kwargs, docs_param)
             images = _resolve_images(func, args, kwargs, image_param)
@@ -210,16 +249,17 @@ def guard(
 
             # --- Sequential path ---
             if user_text is not None:
-                logger.debug("guard: L1 validating input '%s...'", str(user_text)[:50])
-                guardian.validate_input(user_text, documents=documents, images=images)
+                logger.debug("guard: L1 async validating input '%s...'", str(user_text)[:50])
+                await guardian.avalidate_input(user_text, documents=documents, images=images)
 
             result = await func(*args, **kwargs)
 
+            # --- L2: Async output validation (tiered waves) ---
             if output_field is not None:
                 output_text = _resolve_output(result, output_field)
                 if output_text is not None:
-                    logger.debug("guard: L2 validating output '%s...'", str(output_text)[:50])
-                    guardian.validate_output(
+                    logger.debug("guard: L2 async validating output '%s...'", str(output_text)[:50])
+                    await guardian.avalidate_output(
                         output_text,
                         user_query=user_text,
                         grounding_sources=documents,
@@ -231,27 +271,37 @@ def guard(
         def sync_wrapper(*args, **kwargs):
             guardian = _get_guardian(config)
 
-            # --- L1: Input validation ---
+            # --- L1: Input validation (async parallel when possible) ---
             user_text = _resolve_text(func, args, kwargs, param)
             documents = _resolve_docs(func, args, kwargs, docs_param)
             images = _resolve_images(func, args, kwargs, image_param)
 
             if user_text is not None:
                 logger.debug("guard: L1 validating input '%s...'", str(user_text)[:50])
-                guardian.validate_input(user_text, documents=documents, images=images)
+                _run_async_or_sync(
+                    guardian.avalidate_input(user_text, documents=documents, images=images),
+                    lambda: guardian.validate_input(user_text, documents=documents, images=images),
+                )
 
             # --- Run the function ---
             result = func(*args, **kwargs)
 
-            # --- L2: Output validation ---
+            # --- L2: Output validation (async parallel when possible) ---
             if output_field is not None:
                 output_text = _resolve_output(result, output_field)
                 if output_text is not None:
                     logger.debug("guard: L2 validating output '%s...'", str(output_text)[:50])
-                    guardian.validate_output(
-                        output_text,
-                        user_query=user_text,
-                        grounding_sources=documents,
+                    _run_async_or_sync(
+                        guardian.avalidate_output(
+                            output_text,
+                            user_query=user_text,
+                            grounding_sources=documents,
+                        ),
+                        lambda: guardian.validate_output(
+                            output_text,
+                            user_query=user_text,
+                            grounding_sources=documents,
+                        ),
                     )
 
             return result
@@ -427,7 +477,10 @@ def guard_tool(
         )
 
     # Sequential path: C3 + C1 + C4 → tool → C2
-    guardian.validate_tool_call(fn_name, fn_args, ctx)
+    _run_async_or_sync(
+        guardian.avalidate_tool_call(fn_name, fn_args, ctx),
+        lambda: guardian.validate_tool_call(fn_name, fn_args, ctx),
+    )
 
     # Execute tool — inside sandbox subprocess if sandbox is enabled
     if guardian._sandbox_executor:
