@@ -288,3 +288,88 @@ tool_firewall:
 # All tool protection is handled by the 5 generic guardrails above
 # which scan every tool call's arguments automatically.
 ########################################
+
+########################################
+# L4a: RBAC / ABAC
+# Evaluates: role × verb × resource_sensitivity × upstream_risk_score
+# Design: default-deny for unknown roles (zero-trust).
+# ALLOW  — permitted by policy
+# DENY   — hard block (role missing, verb denied, tool not in allowlist)
+# ELEVATE — route into approval_workflow HITL (destructive / high-risk verbs)
+########################################
+rbac:
+  enabled: true
+  capability_model:
+
+    # default_agent: general-purpose read/write on public resources.
+    # Can fetch external URLs (network_external) but never execute shell or
+    # delete data. Destructive verbs always elevate to HITL.
+    default_agent:
+      denied_verbs: [delete, execute]
+      allowed_tools: []          # empty = no tool-level allowlist (all tools pass verb check)
+      resource_permissions:
+        public:       [read, write, network_external]
+        internal:     [read]
+        confidential: []
+      approved_domains:          # domains allowed without raising new_external_domain signal
+        - api.mycompany.com
+        - hooks.slack.com
+        - wikipedia.org
+        - docs.mycompany.com
+      elevate_on: []             # network_external always elevates via built-in logic
+
+    # read_agent: narrowest permissions — pre-approved read-only tools only.
+    # Denied verbs cover write/delete/execute/network so no exfil or mutation.
+    read_agent:
+      denied_verbs: [write, delete, execute, network_external]
+      allowed_tools:
+        - fs_read_file
+        - db_select
+        - db_list_tables
+        - db_dump_schema
+        - memory_store
+        - memory_retrieve
+      resource_permissions:
+        public:       [read]
+        internal:     [read]
+        confidential: []
+      approved_domains: []
+      elevate_on: []
+
+    # admin_agent: elevated access; destructive ops trigger JIT HITL elevation.
+    admin_agent:
+      denied_verbs: []           # no hard-blocked verbs; relies on resource permissions
+      allowed_tools: []          # no tool-level restriction
+      resource_permissions:
+        public:       [read, write, delete, network_external]
+        internal:     [read, write]
+        confidential: [read]
+      approved_domains:
+        - api.mycompany.com
+        - hooks.slack.com
+        - wikipedia.org
+        - docs.mycompany.com
+        - internal.corp.com
+      elevate_on: [any_delete, any_execute]
+
+########################################
+# L4b: Behavioral Anomaly Detection
+# 5 signals with severity weights:
+#   call_frequency_spike (high=0.6)  — z-score on tool call volume
+#   sequence_anomaly     (medium=0.3) — Levenshtein vs expected_sequence
+#   read_exfil_chain     (critical=1.0)— read-tool → net-tool in same task
+#   new_external_domain  (high=0.6)  — domain not in approved_domains
+#   resource_entropy_spike (medium=0.3)— Shannon entropy across accessed resources
+#
+# Composite score thresholds:
+#   BLOCK   > 0.7   (single critical or two highs)
+#   ELEVATE 0.4–0.7
+#   WARN    0.1–0.4
+#   ALLOW   < 0.1
+########################################
+behavioral_monitoring:
+  enabled: true
+  max_tool_calls_zscore_threshold: 2.5   # z > 2.5 → call_frequency_spike HIGH
+  sequence_divergence_threshold: 0.4     # Levenshtein > 0.4 → sequence_anomaly MEDIUM
+  exfil_chain_detection: true            # read → external-network → CRITICAL block
+  entropy_spike_multiplier: 1.5          # entropy > 2.5×1.5=3.75 → spike MEDIUM

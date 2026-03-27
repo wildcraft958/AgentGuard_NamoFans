@@ -52,6 +52,12 @@ class AgentGuardConfig:
         self.fail_safe = global_cfg.get("fail_safe", "block")
         self.max_validation_latency_ms = global_cfg.get("max_validation_latency_ms", 200)
 
+    # ----- Global: Parallel Execution -----
+
+    @property
+    def parallel_execution_enabled(self) -> bool:
+        return _deep_get(self._raw, "global", "parallel_execution", default=False)
+
     # ----- Input Security: Prompt Shields -----
 
     @property
@@ -235,11 +241,18 @@ class AgentGuardConfig:
         return _deep_get(self._raw, "tool_firewall", "melon", "enabled", default=False)
 
     @property
+    def melon_judge_model(self) -> str | None:
+        """Optional override model for the LLM judge. None = uses TFY_MODEL."""
+        return _deep_get(self._raw, "tool_firewall", "melon", "judge_model", default=None)
+
+    @property
     def melon_threshold(self) -> float:
+        """Deprecated: unused by LLM judge, kept for backward compatibility."""
         return _deep_get(self._raw, "tool_firewall", "melon", "threshold", default=0.8)
 
     @property
     def melon_embedding_model(self) -> str:
+        """Deprecated: unused by LLM judge, kept for backward compatibility."""
         return _deep_get(
             self._raw, "tool_firewall", "melon",
             "embedding_model", default="text-embedding-3-large"
@@ -291,6 +304,27 @@ class AgentGuardConfig:
     def approval_workflow_ai_supervisor_config(self) -> dict:
         return _deep_get(self._raw, "tool_firewall", "approval_workflow", "ai_supervisor", default={})
 
+    # ----- L4 RBAC -----
+
+    @property
+    def rbac_enabled(self) -> bool:
+        return _deep_get(self._raw, "rbac", "enabled", default=False)
+
+    @property
+    def rbac_capability_model(self) -> dict:
+        """Return the capability_model dict from rbac: section."""
+        return _deep_get(self._raw, "rbac", "capability_model", default={})
+
+    # ----- L4 Behavioral Monitoring -----
+
+    @property
+    def behavioral_monitoring_enabled(self) -> bool:
+        return _deep_get(self._raw, "behavioral_monitoring", "enabled", default=False)
+
+    @property
+    def behavioral_monitoring_config(self) -> dict:
+        return _deep_get(self._raw, "behavioral_monitoring", default={})
+
     # ----- Audit Log -----
 
     @property
@@ -313,16 +347,70 @@ class AgentGuardConfig:
 
     @property
     def telemetry_endpoint(self) -> str | None:
-        """OTLP endpoint from config or OTEL_EXPORTER_OTLP_ENDPOINT env var."""
-        cfg_val = _deep_get(self._raw, "observability", "otel_endpoint", default=None)
-        if cfg_val is not None:
-            return cfg_val
-        return os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT")
+        """OTLP endpoint — env var takes priority over config (OTel standard)."""
+        env_val = os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT")
+        if env_val:
+            return env_val
+        return _deep_get(self._raw, "observability", "otel_endpoint", default=None)
 
     @property
     def telemetry_service_name(self) -> str:
         """OTel service.name resource attribute."""
         return _deep_get(self._raw, "observability", "service_name", default="agentguard")
+
+    # ----- Sandbox -----
+
+    @property
+    def sandbox_enabled(self) -> bool:
+        return _deep_get(self._raw, "sandbox", "enabled", default=False)
+
+    @property
+    def sandbox_policy(self):
+        """Build a SandboxPolicy dataclass from the sandbox: config section."""
+        from agentguard.sandbox.policies import (
+            FilesystemPolicy, NetworkPolicy, ResourceLimits,
+            SandboxPolicy, SyscallPolicy,
+        )
+        raw = self._raw.get("sandbox", {})
+        fs  = raw.get("filesystem", {})
+        net = raw.get("network", {})
+        sys = raw.get("syscalls", {})
+        res = raw.get("resources", {})
+
+        return SandboxPolicy(
+            enabled=raw.get("enabled", False),
+            mode=raw.get("mode", "enforce"),
+            timeout_seconds=raw.get("timeout_seconds", 30),
+            filesystem=FilesystemPolicy(
+                enabled=fs.get("enabled", True),
+                allowed_read=fs.get("allowed_read", [
+                    "/tmp", "/usr/lib", "/usr/local/lib",
+                    "/usr/share", "/lib", "/lib64", "/usr/lib64",
+                ]),
+                allowed_write=fs.get("allowed_write", ["/tmp"]),
+            ),
+            network=NetworkPolicy(
+                enabled=net.get("enabled", True),
+                mode=net.get("mode", "whitelist"),
+                allowed_hosts=net.get("allowed_hosts", []),
+                allowed_ports=net.get("allowed_ports", [443, 80]),
+            ),
+            syscalls=SyscallPolicy(
+                enabled=sys.get("enabled", True),
+                blocked_syscalls=sys.get("blocked_syscalls", [
+                    "ptrace", "mount", "setuid", "setgid", "chroot",
+                    "sethostname", "setns", "unshare", "perf_event_open", "bpf",
+                    "pivot_root", "kexec_load", "kexec_file_load", "reboot",
+                    "init_module", "delete_module",
+                ]),
+            ),
+            resources=ResourceLimits(
+                enabled=res.get("enabled", True),
+                max_memory_mb=res.get("max_memory_mb", 512),
+                max_cpu_seconds=res.get("max_cpu_seconds", 30),
+                max_file_size_mb=res.get("max_file_size_mb", 100),
+            ),
+        )
 
     # ----- Agent Identity + Testing -----
 

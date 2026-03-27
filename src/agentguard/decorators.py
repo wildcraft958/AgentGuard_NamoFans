@@ -23,8 +23,10 @@ import asyncio
 import functools
 import inspect
 import logging
+import threading
 
 from agentguard.guardian import Guardian
+from agentguard.parallel import ParallelContext, get_parallel_context, set_parallel_context
 
 logger = logging.getLogger("agentguard.decorators")
 
@@ -79,6 +81,60 @@ _AGENT_REGISTRY: dict[str, tuple] = {}
 def get_registered_agent(agent_name: str) -> tuple | None:
     """Return the registry entry for agent_name, or None if not found."""
     return _AGENT_REGISTRY.get(agent_name)
+
+
+async def _parallel_guard(guardian, func, args, kwargs, user_text, documents, images, output_field):
+    """
+    Run L1 validation and agent concurrently.
+
+    L1 validates user_text in a thread. The agent runs immediately in parallel.
+    A threading.Event gate holds tool calls until L1 finishes. If L1 blocks,
+    the agent task is cancelled via TaskGroup, and any tools that ran
+    speculatively are logged for rollback awareness.
+    """
+    from agentguard.exceptions import InputBlockedError
+
+    par_ctx = ParallelContext(gate=threading.Event())
+    set_parallel_context(par_ctx)
+
+    async def l1_coro():
+        try:
+            logger.debug("guard[parallel]: starting L1 validation")
+            await asyncio.to_thread(
+                guardian.validate_input, user_text, documents=documents, images=images
+            )
+            par_ctx.gate.set()
+            logger.debug("guard[parallel]: L1 passed, gate open")
+        except InputBlockedError as exc:
+            par_ctx.cancelled = True
+            par_ctx.block_reason = exc.reason
+            par_ctx.gate.set()  # unblock waiting tools so they can detect cancellation
+            logger.debug("guard[parallel]: L1 blocked, gate cancelled")
+            raise
+
+    try:
+        async with asyncio.TaskGroup() as tg:
+            tg.create_task(l1_coro())
+            agent_task = tg.create_task(func(*args, **kwargs))
+    except* InputBlockedError as eg:
+        for tool_name in par_ctx.executed_tools:
+            logger.warning(
+                "guard[parallel]: rollback — tool '%s' ran speculatively before L1 block",
+                tool_name,
+            )
+        raise eg.exceptions[0]
+    finally:
+        set_parallel_context(None)
+
+    result = agent_task.result()
+
+    if output_field is not None:
+        output_text = _resolve_output(result, output_field)
+        if output_text is not None:
+            logger.debug("guard[parallel]: L2 validating output '%s...'", str(output_text)[:50])
+            guardian.validate_output(output_text, user_query=user_text, grounding_sources=documents)
+
+    return result
 
 
 def guard_agent(
@@ -184,11 +240,18 @@ def guard(
             documents = _resolve_docs(func, args, kwargs, docs_param)
             images = _resolve_images(func, args, kwargs, image_param)
 
+            if user_text is not None and guardian.config.parallel_execution_enabled:
+                result = await _parallel_guard(
+                    guardian, func, args, kwargs,
+                    user_text, documents, images, output_field,
+                )
+                return result
+
+            # --- Sequential path ---
             if user_text is not None:
                 logger.debug("guard: L1 async validating input '%s...'", str(user_text)[:50])
                 await guardian.avalidate_input(user_text, documents=documents, images=images)
 
-            # --- Run the function ---
             result = await func(*args, **kwargs)
 
             # --- L2: Async output validation (tiered waves) ---
@@ -263,6 +326,105 @@ def guard_input(config: str = _DEFAULT_CONFIG, param: str = None, docs_param: st
     return guard(config=config, param=param, docs_param=docs_param, image_param=image_param, output_field=None)
 
 
+def _parallel_guard_tool(
+    guardian,
+    fn_name: str,
+    fn_args: dict,
+    fn,
+    ctx: dict,
+    *,
+    messages: list = None,
+    tool_schemas: list = None,
+    context: dict = None,
+    rollback_fn=None,
+):
+    """
+    Run C3 sequentially, then C1 and tool execution in parallel.
+
+    C3 is zero-latency (pure Python rules) and always runs first — no point
+    parallelising it with the tool. C4 (approval workflow) also runs before
+    the tool when configured. C1 (Azure entity recognition) is the slow check;
+    running it alongside the tool saves its latency on the happy path.
+
+    If C1 blocks after the tool already executed, the tool result is discarded
+    (rolled back). An optional rollback_fn is called to undo side-effects.
+    """
+    from agentguard.exceptions import ToolCallBlockedError
+    import time
+
+    start_time = time.time()
+    results = []
+
+    # C3: rule-based guards — sequential, fast, must pass before wasting a tool call
+    block = guardian._run_c3(fn_name, fn_args, results, start_time, span=None)
+    if block is not None:
+        return block  # monitor-mode allowed result; enforce mode already raised
+
+    # C4: approval workflow — sequential; human/AI review must happen before execution
+    block = guardian._run_c4(fn_name, fn_args, ctx, results, start_time, span=None)
+    if block is not None:
+        return block
+
+    # C1 + tool execution in parallel
+    tool_result_holder = []
+    c1_error_holder = []
+
+    def run_c1():
+        try:
+            block = guardian._run_c1(fn_name, fn_args, results, start_time, span=None)
+            if block is not None:
+                c1_error_holder.append(("monitor_block", block))
+        except ToolCallBlockedError as exc:
+            c1_error_holder.append(("blocked", exc))
+
+    def run_tool():
+        tool_result_holder.append(fn(**fn_args))
+
+    c1_thread = threading.Thread(target=run_c1, daemon=True)
+    tool_thread = threading.Thread(target=run_tool, daemon=True)
+
+    c1_thread.start()
+    tool_thread.start()
+    c1_thread.join()
+    tool_thread.join()
+
+    if c1_error_holder:
+        kind, payload = c1_error_holder[0]
+        if kind == "blocked":
+            # Tool ran but C1 blocked — discard result and roll back
+            if tool_result_holder and rollback_fn is not None:
+                try:
+                    rollback_fn(**fn_args)
+                except Exception as rb_exc:
+                    logger.warning(
+                        "guard_tool[parallel]: rollback_fn for '%s' raised: %s", fn_name, rb_exc
+                    )
+            logger.warning(
+                "guard_tool[parallel]: C1 blocked '%s' after speculative execution — result discarded",
+                fn_name,
+            )
+            raise payload
+        # monitor-mode block: tool ran, C1 would have blocked but allowed through
+        return payload
+
+    if not tool_result_holder:
+        raise RuntimeError(f"Tool '{fn_name}' produced no result (thread may have crashed)")
+
+    result = tool_result_holder[0]
+
+    # C2: MELON post-execution check (sequential, needs tool output)
+    out = guardian.validate_tool_output(
+        fn_name, fn_args, str(result),
+        messages=messages,
+        tool_schemas=tool_schemas,
+        context=context,
+    )
+
+    if out.redacted_output:
+        return out.redacted_output
+    return result
+
+
 # ---------------------------------------------------------
 # Tool Firewall API
 # ---------------------------------------------------------
@@ -276,6 +438,7 @@ def guard_tool(
     tool_schemas: list = None,
     config: str = _DEFAULT_CONFIG,
     context: dict = None,
+    rollback_fn: callable = None,
 ) -> str:
     """
     Validate a tool call, execute the tool, then validate the output.
@@ -291,6 +454,8 @@ def guard_tool(
         tool_schemas: Tool schemas in OpenAI format (needed for MELON).
         config: Path to agentguard.yaml config file.
         context: Optional context dict.
+        rollback_fn: Optional callable(**fn_args) to undo tool side-effects when
+                     parallel C1 check blocks after the tool already executed.
 
     Returns:
         The tool's output string (possibly redacted by MELON).
@@ -300,20 +465,29 @@ def guard_tool(
     """
     guardian = _get_guardian(config)
 
-    # Pre-execution: C3 + C1 + C4
-    # Inject messages into context so C4 AITL can access user prompt
     ctx = dict(context) if context else {}
     if messages:
         ctx["messages"] = messages
+
+    if guardian.config.parallel_execution_enabled:
+        return _parallel_guard_tool(
+            guardian, fn_name, fn_args, fn, ctx,
+            messages=messages, tool_schemas=tool_schemas, context=context,
+            rollback_fn=rollback_fn,
+        )
+
+    # Sequential path: C3 + C1 + C4 → tool → C2
     _run_async_or_sync(
         guardian.avalidate_tool_call(fn_name, fn_args, ctx),
         lambda: guardian.validate_tool_call(fn_name, fn_args, ctx),
     )
 
-    # Execute tool
-    result = fn(**fn_args)
+    # Execute tool — inside sandbox subprocess if sandbox is enabled
+    if guardian._sandbox_executor:
+        result = guardian._sandbox_executor.execute(fn, fn_args)
+    else:
+        result = fn(**fn_args)
 
-    # Post-execution: C2 (MELON)
     out = guardian.validate_tool_output(
         fn_name, fn_args, str(result),
         messages=messages,
@@ -343,11 +517,13 @@ class GuardedToolRegistry:
         registry: dict,
         tool_schemas: list = None,
         config: str = _DEFAULT_CONFIG,
+        rollback_fns: dict = None,
     ):
         self._registry = registry
         self._tool_schemas = tool_schemas or []
         self._config = config
         self._messages: list = []
+        self._rollback_fns: dict = rollback_fns or {}
 
     def set_messages(self, messages: list):
         """Update the current conversation context (call each turn)."""
@@ -362,13 +538,26 @@ class GuardedToolRegistry:
         config = self._config
         messages = self._messages
         tool_schemas = self._tool_schemas
+        rollback_fn = self._rollback_fns.get(fn_name)
 
         def guarded_fn(**kwargs):
+            # --- Parallel gate check ---
+            par_ctx = get_parallel_context()
+            if par_ctx is not None:
+                par_ctx.gate.wait(timeout=60)
+                if par_ctx.cancelled:
+                    from agentguard.exceptions import ToolCallBlockedError
+                    raise ToolCallBlockedError(
+                        f"L1 blocked request: {par_ctx.block_reason}"
+                    )
+                par_ctx.executed_tools.append(fn_name)
+
             return guard_tool(
                 fn_name, kwargs, fn,
                 messages=messages,
                 tool_schemas=tool_schemas,
                 config=config,
+                rollback_fn=rollback_fn,
             )
 
         return guarded_fn

@@ -72,3 +72,10 @@ node_modules/
 .cache/
 *.bak
 
+CLAUDE.md
+docs/reference_materials/
+logs/
+.deepeval/
+*.docx
+*.pptx
+=*

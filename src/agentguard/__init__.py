@@ -14,6 +14,8 @@ from agentguard.exceptions import (
     InputBlockedError,
     OutputBlockedError,
     ToolCallBlockedError,
+    SandboxTimeoutError,
+    SandboxViolationError,
 )
 from agentguard.decorators import GuardedToolRegistry, guard, guard_agent, guard_input, guard_tool
 from agentguard.decorators import get_registered_agent
@@ -26,6 +28,8 @@ __all__ = [
     "InputBlockedError",
     "OutputBlockedError",
     "ToolCallBlockedError",
+    "SandboxTimeoutError",
+    "SandboxViolationError",
     "ConfigurationError",
     "guard",
     "guard_agent",
