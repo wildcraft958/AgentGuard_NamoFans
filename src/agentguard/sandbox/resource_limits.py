@@ -5,9 +5,11 @@ Applies hard resource caps to the current process using the standard
 library `resource` module (wraps Linux setrlimit(2)).
 
 Limits applied:
-- RLIMIT_AS   — virtual address space (memory)
-- RLIMIT_CPU  — CPU time in seconds
+- RLIMIT_AS    — virtual address space (memory)
+- RLIMIT_CPU   — CPU time in seconds
 - RLIMIT_FSIZE — maximum file size written
+- RLIMIT_NPROC — maximum child processes (prevents fork bombs)
+- RLIMIT_NOFILE — maximum open file descriptors (prevents FD exhaustion)
 
 All limits are self-restrictions — no root required.
 Must be called first inside the subprocess (before Landlock/seccomp)
@@ -52,6 +54,22 @@ def apply_resource_limits(limits) -> None:
             resource.RLIMIT_FSIZE,
             limits.max_file_size_mb * 1024 * 1024,
             f"file_size={limits.max_file_size_mb}MB",
+            applied,
+        )
+
+    if limits.max_processes is not None:
+        _set(
+            resource.RLIMIT_NPROC,
+            limits.max_processes,
+            f"nproc={limits.max_processes}",
+            applied,
+        )
+
+    if limits.max_open_files is not None:
+        _set(
+            resource.RLIMIT_NOFILE,
+            limits.max_open_files,
+            f"nofile={limits.max_open_files}",
             applied,
         )
 

@@ -1,0 +1,171 @@
+########################################
+# AgentGuard Sandbox Demo Configuration
+# Focused on sandbox isolation — minimal L1/L2
+########################################
+
+version: 1
+
+agent_name: "Sandbox-Demo"
+
+########################################
+# GLOBAL SETTINGS
+########################################
+global:
+  mode: enforce
+  log_level: detailed
+  fail_safe: block
+  max_validation_latency_ms: 500
+
+########################################
+# L1 — INPUT SECURITY (minimal for sandbox demo)
+########################################
+input_security:
+  prompt_shields:
+    enabled: false           # Sandbox demo focuses on tool isolation, not input
+  content_filters:
+    block_toxicity: false
+    block_violence: false
+    block_self_harm: false
+  image_filters:
+    enabled: false
+
+########################################
+# L2 — OUTPUT SECURITY (minimal for sandbox demo)
+########################################
+output_security:
+  toxicity_detection:
+    enabled: false
+  pii_detection:
+    enabled: false
+  hallucination_detection:
+    enabled: false
+
+########################################
+# PATTERN DETECTION (disabled for sandbox demo)
+########################################
+pattern_detection:
+  enabled: false
+
+########################################
+# TOOL FIREWALL
+# C3 rule-based guards still active — they complement the sandbox
+########################################
+tool_firewall:
+  default_policy: allow
+
+  file_system:
+    enabled: true
+    allowed_paths:
+      - /tmp/
+    deny_extensions:
+      - .env
+      - .pem
+      - .key
+
+  sql_query:
+    enabled: true
+    allowed_statements:
+      - SELECT
+    denied_statements:
+      - DROP
+      - DELETE
+      - UPDATE
+
+  http_post:
+    enabled: false
+
+  http_get:
+    enabled: false
+
+  shell_commands:
+    enabled: true
+    mode: denylist
+    denied_commands:
+      - rm
+      - chmod
+      - sudo
+      - kill
+      - dd
+    denied_patterns:
+      - 'rm\s+-rf'
+    block_command_chaining: true
+
+  input_analysis:
+    enabled: false
+
+  melon:
+    enabled: false
+
+  approval_workflow:
+    enabled: false
+
+########################################
+# SANDBOX — Kernel-Level Subprocess Isolation
+# This is the focus of this demo config.
+########################################
+sandbox:
+  enabled: true
+  mode: enforce              # enforce | monitor
+  timeout_seconds: 10        # Wall-clock timeout (catches infinite_sleep)
+
+  filesystem:
+    enabled: true
+    allowed_read:
+      - /tmp
+      - /usr/lib
+      - /usr/local/lib
+      - /usr/share
+      - /lib
+      - /lib64
+      - /usr/lib64
+      - /proc/self          # Needed for Python introspection
+    allowed_write:
+      - /tmp
+
+  network:
+    enabled: true
+    mode: block_all          # No outbound connections from sandboxed tools
+
+  syscalls:
+    enabled: true
+    blocked_syscalls:
+      - ptrace
+      - mount
+      - setuid
+      - setgid
+      - chroot
+      - sethostname
+      - setns
+      - unshare
+      - perf_event_open
+      - bpf
+      - pivot_root
+      - kexec_load
+      - kexec_file_load
+      - reboot
+      - init_module
+      - delete_module
+
+  resources:
+    enabled: true
+    max_memory_mb: 512       # RLIMIT_AS — kills memory_bomb
+    max_cpu_seconds: 5       # RLIMIT_CPU — kills cpu_burn
+    max_file_size_mb: 50     # RLIMIT_FSIZE
+    max_open_files: 64       # RLIMIT_NOFILE — prevents FD exhaustion attacks
+    # max_processes not set — RLIMIT_NPROC conflicts with Queue's feeder thread.
+    # Fork bombs are mitigated by wall-clock timeout + process group kill.
+
+########################################
+# AUDIT LOG
+########################################
+audit:
+  enabled: true
+  db_path: ~/.agentguard/sandbox_audit.db
+
+########################################
+# OBSERVABILITY
+########################################
+observability:
+  log_all_decisions: true
+  store_full_context: false
+  export_to: []
