@@ -761,6 +761,71 @@ class Guardian:
                         [s.name for s in ba_result.signals],
                     )
 
+            # --- L4 Adaptive: PBAC + behavioral orchestrator ---
+            if self._l4_orchestrator:
+                import asyncio
+                import hashlib
+                from datetime import datetime, timezone
+
+                from agentguard.l4.models.telemetry_span import TelemetrySpan
+                from agentguard.l4.policy_engine import AccessRequest
+                from agentguard.l4.rbac import infer_verb
+
+                role = ctx.get("agent_role", "default_agent")
+                sensitivity = ctx.get("resource_sensitivity", 0)
+
+                access_req = AccessRequest(
+                    agent_id=ctx.get("task_id", "default"),
+                    role=role,
+                    action=infer_verb(fn_name),
+                    resource=fn_name,
+                    resource_sensitivity=sensitivity,
+                    context=ctx,
+                )
+                l4_span = TelemetrySpan(
+                    session_id=ctx.get("task_id", "default"),
+                    role=role,
+                    tool_name=fn_name,
+                    args_hash=hashlib.sha256(
+                        str(sorted(fn_args.items())).encode()
+                    ).hexdigest(),
+                    resource_sensitivity=sensitivity,
+                    data_volume_kb=float(ctx.get("data_volume_kb", 0.0)),
+                    timestamp=datetime.now(tz=timezone.utc),
+                )
+                l4_result = asyncio.run(self._l4_orchestrator.evaluate(access_req, l4_span))
+
+                if l4_result["decision"] == "DENY":
+                    l4_block = ValidationResult(
+                        is_safe=False,
+                        layer="l4_adaptive",
+                        blocked_reason=(
+                            f"L4 Adaptive: {fn_name} denied "
+                            f"(risk={l4_result['risk_score']:.2f}, policy={l4_result['policy']})"
+                        ),
+                    )
+                    results.append(l4_block)
+                    return self._handle_tool_block(
+                        results,
+                        l4_block,
+                        "l4_adaptive",
+                        start_time,
+                        fn_name,
+                        span=parent_span,
+                        layer="l4_adaptive",
+                    )
+                if l4_result["decision"] == "ELEVATE":
+                    ctx = dict(ctx, _l4_elevate=True)
+                    logger.warning(
+                        "L4 adaptive ELEVATE for '%s': risk=%.2f"
+                        " (baseline=%.2f, graph=%.2f, drift=%.2f)",
+                        fn_name,
+                        l4_result["risk_score"],
+                        l4_result["baseline_score"],
+                        l4_result["graph_score"],
+                        l4_result["drift_score"],
+                    )
+
             # --- C3: Tool-Specific Guards ---
             block = self._run_c3(fn_name, fn_args, results, start_time, parent_span)
             if block is not None:
