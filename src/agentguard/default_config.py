@@ -112,6 +112,14 @@ tool_firewall:
     enabled: false
     mode: "human"       # "human" or "ai"
     tools_requiring_review: []
+  melon:
+    enabled: false
+    mode: hybrid               # hybrid | judge_only | embedding_only
+    judge_model: null           # null = uses TFY_MODEL
+    embedding_model: null       # null = skip embedding pre-filter (judge_only behavior)
+    low_threshold: 0.3          # below -> ALLOW immediately
+    high_threshold: 0.9         # above -> BLOCK immediately
+    raise_on_injection: true
 
 # ── L4: ABAC Role Policy ──────────────────────────────────────────
 # No API keys needed — fully offline.

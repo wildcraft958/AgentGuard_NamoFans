@@ -280,6 +280,26 @@ class AgentGuardConfig:
         return _deep_get(self._raw, "tool_firewall", "melon", "raise_on_injection", default=True)
 
     @property
+    def melon_embedding_model(self) -> str | None:
+        """Embedding model for the cosine-similarity pre-filter. None = skip embeddings."""
+        return _deep_get(self._raw, "tool_firewall", "melon", "embedding_model", default=None)
+
+    @property
+    def melon_low_threshold(self) -> float:
+        """Below this cosine similarity -> ALLOW (clearly different tool calls)."""
+        return _deep_get(self._raw, "tool_firewall", "melon", "low_threshold", default=0.3)
+
+    @property
+    def melon_high_threshold(self) -> float:
+        """Above this cosine similarity -> BLOCK (clearly identical tool calls)."""
+        return _deep_get(self._raw, "tool_firewall", "melon", "high_threshold", default=0.9)
+
+    @property
+    def melon_mode(self) -> str:
+        """Detection mode: 'hybrid' | 'judge_only' | 'embedding_only'."""
+        return _deep_get(self._raw, "tool_firewall", "melon", "mode", default="hybrid")
+
+    @property
     def tool_firewall_default_policy(self) -> str:
         return _deep_get(self._raw, "tool_firewall", "default_policy", default="allow")
 

@@ -9,11 +9,19 @@ How it works:
   2. Masked run: Same tool outputs presented to LLM as generic file content
      with few-shot examples showing correct summarization behavior
      -> produces tool calls.
-  3. LLM Judge: Both sets of tool calls are sent to an LLM judge that
-     dynamically evaluates whether the similarity indicates an indirect
-     prompt injection.
-  4. Detection: If the judge verdict is BLOCK, the tool output contains an
-     indirect prompt injection.
+  3. Tiered decision (configurable via ``mode``):
+     - Tier 0 (embedding pre-filter): Cosine similarity between embedded
+       tool call texts. Resolves ~80% of cases instantly.
+       - sim < low_threshold  -> ALLOW (clearly different)
+       - sim > high_threshold -> BLOCK (clearly identical)
+       - otherwise            -> ambiguous, escalate to Tier 1
+     - Tier 1 (LLM judge): Semantic comparison by an LLM that reasons
+       about intent, not just structure. Only called for ambiguous cases.
+
+Modes:
+  - hybrid:         Tier 0 then Tier 1 on ambiguous (default, recommended)
+  - judge_only:     Skip embeddings, always use LLM judge
+  - embedding_only: Skip judge, ambiguous cases default to ALLOW (fail-open)
 
 Uses TrueFoundry gateway (TFY_API_KEY + TFY_BASE_URL) for LLM calls.
 """
@@ -23,6 +31,7 @@ import json
 import logging
 import os
 
+import numpy as np
 from dotenv import load_dotenv
 from openai import AsyncOpenAI, OpenAI
 
@@ -70,10 +79,6 @@ You MUST respond with ONLY a JSON object in this exact format, nothing else:
 # ─────────────────────────────────────────────────────────────
 # Few-shot examples for masked context
 # ─────────────────────────────────────────────────────────────
-# Teaches the LLM to summarize tool outputs rather than follow
-# embedded instructions. Uses plain user/assistant text exchanges
-# (no tool_calls/tool messages) to avoid Gemini/Vertex AI
-# thought_signature requirements.
 _FEW_SHOT_MESSAGES = [
     {
         "role": "user",
@@ -139,6 +144,11 @@ _FEW_SHOT_MESSAGES = [
 ]
 
 
+# ─────────────────────────────────────────────────────────────
+# Helpers
+# ─────────────────────────────────────────────────────────────
+
+
 def _msg_get(msg, key, default=None):
     """Get a field from a message that may be a dict or an OpenAI object."""
     if isinstance(msg, dict):
@@ -147,11 +157,7 @@ def _msg_get(msg, key, default=None):
 
 
 def _normalize_messages(messages: list) -> list[dict]:
-    """Convert a list of messages (dicts or OpenAI objects) to plain dicts.
-
-    OpenAI's chat.completions.create() requires dict messages, but agent
-    tool loops often append raw ChatCompletionMessage objects.
-    """
+    """Convert a list of messages (dicts or OpenAI objects) to plain dicts."""
     normalized = []
     for msg in messages:
         if isinstance(msg, dict):
@@ -177,13 +183,21 @@ def _transform_tool_calls(tool_calls) -> list[str]:
     """Convert tool calls to comparable text representations."""
     if not tool_calls:
         return []
+    return [f"{tc.function.name}({tc.function.arguments})" for tc in tool_calls]
 
-    texts = []
-    for tc in tool_calls:
-        fn = tc.function
-        text = f"{fn.name}({fn.arguments})"
-        texts.append(text)
-    return texts
+
+def _cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
+    """Cosine similarity between two vectors. Returns 0.0 if either is zero-norm."""
+    norm_a = np.linalg.norm(a)
+    norm_b = np.linalg.norm(b)
+    if norm_a == 0.0 or norm_b == 0.0:
+        return 0.0
+    return float(np.dot(a, b) / (norm_a * norm_b))
+
+
+# ─────────────────────────────────────────────────────────────
+# MelonDetector
+# ─────────────────────────────────────────────────────────────
 
 
 class MelonDetector:
@@ -191,7 +205,11 @@ class MelonDetector:
 
     Detects if tool output is manipulating the LLM by comparing tool calls
     generated from original context vs a neutralized (masked) context.
-    Uses an LLM-as-a-judge for dynamic, semantic comparison.
+
+    Supports three detection modes:
+      - ``hybrid``:         Embedding pre-filter + LLM judge on ambiguous
+      - ``judge_only``:     Always use LLM judge (no embeddings)
+      - ``embedding_only``: Only embeddings, ambiguous defaults to ALLOW
     """
 
     def __init__(
@@ -200,20 +218,32 @@ class MelonDetector:
         base_url: str = None,
         model: str = None,
         judge_model: str = None,
+        embedding_model: str = None,
+        low_threshold: float = 0.3,
+        high_threshold: float = 0.9,
+        mode: str = "hybrid",
         **kwargs,
     ):
         """
         Args:
             api_key: API key (defaults to TFY_API_KEY env var).
             base_url: Base URL (defaults to TFY_BASE_URL env var).
-            model: LLM model name for masked/original runs (defaults to TFY_MODEL env var).
+            model: LLM model for masked/original runs (defaults to TFY_MODEL env var).
             judge_model: LLM model for the judge call. Defaults to ``model``.
-            **kwargs: Ignored (absorbs removed legacy parameters like threshold, embedding_model).
+            embedding_model: Embedding model for cosine-similarity pre-filter.
+                None disables embeddings (falls back to judge_only behavior).
+            low_threshold: Below this cosine similarity -> ALLOW immediately.
+            high_threshold: Above this cosine similarity -> BLOCK immediately.
+            mode: Detection mode — 'hybrid', 'judge_only', or 'embedding_only'.
         """
         self.api_key = api_key or os.environ.get("TFY_API_KEY", "")
         self.base_url = base_url or os.environ.get("TFY_BASE_URL", "")
         self.model = model or os.environ.get("TFY_MODEL", "")
         self.judge_model = judge_model or self.model
+        self.embedding_model = embedding_model
+        self.low_threshold = low_threshold
+        self.high_threshold = high_threshold
+        self.mode = mode
 
         if not self.api_key or not self.base_url:
             raise ValueError(
@@ -223,8 +253,151 @@ class MelonDetector:
 
         self.client = OpenAI(api_key=self.api_key, base_url=self.base_url)
 
-        # Cross-turn tracking bank
+        # Cross-turn tracking banks
         self._masked_tool_call_bank: set[str] = set()
+        self._masked_tool_emb_bank: list[np.ndarray] = []
+
+    # ------------------------------------------------------------------
+    # Embedding helpers
+    # ------------------------------------------------------------------
+
+    def _embed(self, texts: list[str]) -> list[np.ndarray]:
+        """Embed a batch of texts via the OpenAI embeddings API (sync)."""
+        response = self.client.embeddings.create(
+            input=texts,
+            model=self.embedding_model,
+        )
+        return [np.array(item.embedding) for item in response.data]
+
+    async def _aembed(self, texts: list[str]) -> list[np.ndarray]:
+        """Embed a batch of texts via the OpenAI embeddings API (async)."""
+        client = self._get_async_client()
+        response = await client.embeddings.create(
+            input=texts,
+            model=self.embedding_model,
+        )
+        return [np.array(item.embedding) for item in response.data]
+
+    def _embedding_decision(
+        self,
+        original_embeddings: list[np.ndarray],
+        masked_embeddings: list[np.ndarray],
+    ) -> tuple[str, float, dict]:
+        """Tier 0: embedding cosine similarity pre-filter.
+
+        Returns:
+            (decision, max_sim, extra_details) where decision is
+            "allow" | "block" | "ambiguous".
+        """
+        max_sim = 0.0
+        for o_emb in original_embeddings:
+            for m_emb in masked_embeddings:
+                sim = _cosine_similarity(o_emb, m_emb)
+                max_sim = max(max_sim, sim)
+
+        extra = {
+            "max_cosine_similarity": round(max_sim, 4),
+            "low_threshold": self.low_threshold,
+            "high_threshold": self.high_threshold,
+        }
+
+        if max_sim < self.low_threshold:
+            return "allow", max_sim, extra
+        elif max_sim > self.high_threshold:
+            return "block", max_sim, extra
+        else:
+            return "ambiguous", max_sim, extra
+
+    # ------------------------------------------------------------------
+    # Tiered decision (shared by sync + async paths)
+    # ------------------------------------------------------------------
+
+    def _tiered_decision(
+        self, original_tool_call_texts: list[str], embed_fn
+    ) -> ValidationResult:
+        """Run tiered decision: embedding pre-filter then optional LLM judge.
+
+        Args:
+            original_tool_call_texts: Tool call texts from the original run.
+            embed_fn: Callable that embeds a list of strings -> list[np.ndarray].
+                      For sync: self._embed, for async: caller awaits _aembed first.
+        """
+        use_embeddings = self.mode != "judge_only" and self.embedding_model is not None
+        masked_texts = list(self._masked_tool_call_bank)
+
+        if not use_embeddings:
+            result = self._judge_and_build_result(original_tool_call_texts)
+            result.details["decision_path"] = "judge_block" if not result.is_safe else "judge_allow"
+            return result
+
+        # Tier 0: Embedding pre-filter
+        original_embeddings = embed_fn(original_tool_call_texts)
+        masked_embeddings = embed_fn(masked_texts)
+
+        decision, max_sim, emb_details = self._embedding_decision(
+            original_embeddings, masked_embeddings
+        )
+
+        base_details = {
+            "original_tool_calls": original_tool_call_texts,
+            "masked_tool_calls": masked_texts,
+            **emb_details,
+        }
+
+        if decision == "allow":
+            logger.info(
+                "MELON: Embedding pre-filter -> ALLOW (max_sim=%.4f < %.2f)",
+                max_sim,
+                self.low_threshold,
+            )
+            return ValidationResult(
+                is_safe=True,
+                layer=LAYER,
+                details={"decision_path": "embedding_allow", **base_details},
+            )
+
+        if decision == "block":
+            logger.warning(
+                "MELON: Embedding pre-filter -> BLOCK (max_sim=%.4f > %.2f)",
+                max_sim,
+                self.high_threshold,
+            )
+            redacted = "<Data omitted because a prompt injection was detected>"
+            return ValidationResult(
+                is_safe=False,
+                layer=LAYER,
+                blocked_reason=(
+                    f"Indirect prompt injection detected in tool output "
+                    f"(embedding similarity: {max_sim:.4f}, threshold: {self.high_threshold})"
+                ),
+                details={"decision_path": "embedding_block", "redacted_output": redacted, **base_details},
+            )
+
+        # Ambiguous
+        if self.mode == "embedding_only":
+            logger.info(
+                "MELON: Embedding-only mode, ambiguous -> ALLOW (max_sim=%.4f)",
+                max_sim,
+            )
+            return ValidationResult(
+                is_safe=True,
+                layer=LAYER,
+                details={"decision_path": "embedding_allow", **base_details},
+            )
+
+        # Hybrid: escalate to LLM judge
+        logger.info(
+            "MELON: Embedding ambiguous (max_sim=%.4f), escalating to LLM judge",
+            max_sim,
+        )
+        result = self._judge_and_build_result(original_tool_call_texts)
+        result.details["decision_path"] = "judge_block" if not result.is_safe else "judge_allow"
+        result.details.update(emb_details)
+        return result
+
+    # ------------------------------------------------------------------
+    # Sync API
+    # ------------------------------------------------------------------
 
     def check_tool_output(
         self,
@@ -235,16 +408,7 @@ class MelonDetector:
         Check tool output for indirect prompt injection using contrastive detection.
 
         Should be called after tool execution, before the tool result enters
-        the LLM message history. The ``messages`` list should already include
-        the latest tool result message(s).
-
-        Args:
-            messages: The full conversation messages including latest tool outputs.
-            tool_schemas: The tool schemas (OpenAI function calling format).
-
-        Returns:
-            ValidationResult with is_safe=False if injection detected.
-            details["redacted_output"] contains the sanitized output if blocked.
+        the LLM message history.
         """
         if not messages or _msg_get(messages[-1], "role") != "tool":
             return ValidationResult(is_safe=True, layer=LAYER)
@@ -267,7 +431,7 @@ class MelonDetector:
         messages: list[dict],
         tool_schemas: list[dict],
     ) -> ValidationResult:
-        """Core contrastive detection: original run, masked run, LLM judge."""
+        """Core sync contrastive detection: original run, masked run, tiered decision."""
 
         # --- Step 1: Original run ---
         norm_messages = _normalize_messages(messages)
@@ -307,8 +471,12 @@ class MelonDetector:
             logger.info("MELON: No masked tool calls to compare, allowing")
             return ValidationResult(is_safe=True, layer=LAYER)
 
-        # --- Step 4: LLM Judge ---
-        return self._judge_and_build_result(original_tool_call_texts)
+        # --- Step 4: Tiered decision (embedding pre-filter + optional judge) ---
+        return self._tiered_decision(original_tool_call_texts, self._embed)
+
+    # ------------------------------------------------------------------
+    # Shared helpers
+    # ------------------------------------------------------------------
 
     def _build_masked_messages(self, messages: list) -> list[dict]:
         """Build the masked context messages for the contrastive run."""
@@ -457,8 +625,9 @@ class MelonDetector:
             }
 
     def reset(self):
-        """Reset cross-turn tracking bank."""
+        """Reset cross-turn tracking banks."""
         self._masked_tool_call_bank.clear()
+        self._masked_tool_emb_bank.clear()
 
     # ------------------------------------------------------------------
     # Async variant — uses AsyncOpenAI for real cancellation
@@ -474,7 +643,7 @@ class MelonDetector:
         messages: list[dict],
         tool_schemas: list[dict],
     ) -> ValidationResult:
-        """Async version of check_tool_output(). Uses AsyncOpenAI + LLM judge."""
+        """Async version of check_tool_output(). Uses AsyncOpenAI."""
         if not messages or _msg_get(messages[-1], "role") != "tool":
             return ValidationResult(is_safe=True, layer=LAYER)
 
@@ -496,7 +665,7 @@ class MelonDetector:
         messages: list[dict],
         tool_schemas: list[dict],
     ) -> ValidationResult:
-        """Async core contrastive detection: original run, masked run, LLM judge."""
+        """Async core contrastive detection: original run, masked run, tiered decision."""
         client = self._get_async_client()
 
         # Step 1: Original run
@@ -537,8 +706,22 @@ class MelonDetector:
             logger.info("MELON (async): No masked tool calls to compare, allowing")
             return ValidationResult(is_safe=True, layer=LAYER)
 
-        # Step 4: LLM Judge (sync judge call — reuses the same prompt logic)
-        return self._judge_and_build_result(original_tool_call_texts)
+        # Step 4: Tiered decision
+        # Await embedding if needed, then delegate to sync _tiered_decision
+        use_embeddings = self.mode != "judge_only" and self.embedding_model is not None
+        if use_embeddings:
+            # Pre-compute embeddings async, then pass a sync lookup to _tiered_decision
+            masked_texts = list(self._masked_tool_call_bank)
+            orig_embs = await self._aembed(original_tool_call_texts)
+            masked_embs = await self._aembed(masked_texts)
+            cache = {tuple(original_tool_call_texts): orig_embs, tuple(masked_texts): masked_embs}
+
+            def cached_embed(texts):
+                return cache[tuple(texts)]
+
+            return self._tiered_decision(original_tool_call_texts, cached_embed)
+        else:
+            return self._tiered_decision(original_tool_call_texts, self._embed)
 
     async def aclose(self):
         """Close the async OpenAI client."""

@@ -372,3 +372,38 @@ class TestTelemetryServiceName:
     def test_service_name_default_when_no_observability_section(self):
         cfg = _make_config(observability=None)
         assert cfg.telemetry_service_name == "agentguard"
+
+
+# ---------------------------------------------------------------------------
+# MELON hybrid config
+# ---------------------------------------------------------------------------
+
+
+def _make_melon_config(melon: dict | None = None) -> AgentGuardConfig:
+    """Build a minimal config with optional tool_firewall.melon section."""
+    raw = {
+        "global": {"mode": "enforce", "log_level": "standard"},
+    }
+    if melon is not None:
+        raw["tool_firewall"] = {"melon": melon}
+    return AgentGuardConfig(raw)
+
+
+class TestMelonConfig:
+
+    def test_melon_mode_default_hybrid(self):
+        cfg = _make_melon_config({})
+        assert cfg.melon_mode == "hybrid"
+
+    def test_melon_embedding_model_default_none(self):
+        cfg = _make_melon_config({})
+        assert cfg.melon_embedding_model is None
+
+    def test_melon_thresholds_custom(self):
+        cfg = _make_melon_config({"low_threshold": 0.2, "high_threshold": 0.95})
+        assert cfg.melon_low_threshold == 0.2
+        assert cfg.melon_high_threshold == 0.95
+
+    def test_melon_mode_custom(self):
+        cfg = _make_melon_config({"mode": "embedding_only"})
+        assert cfg.melon_mode == "embedding_only"
