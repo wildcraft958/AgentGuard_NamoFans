@@ -191,12 +191,12 @@ class Guardian:
         self._l4_behavioral = None
 
         if self.config.rbac_enabled:
-            from agentguard.l4_rbac import L4RBACEngine
+            from agentguard.l4.rbac import L4RBACEngine
             self._l4_rbac = L4RBACEngine(self.config)
             logger.info("L4 RBAC Engine: ENABLED")
 
         if self.config.behavioral_monitoring_enabled:
-            from agentguard.l4_behavioral import BehavioralAnomalyDetector
+            from agentguard.l4.behavioral import BehavioralAnomalyDetector
             self._l4_behavioral = BehavioralAnomalyDetector(self.config)
             logger.info("L4 Behavioral Anomaly Detector: ENABLED")
 
@@ -547,7 +547,7 @@ class Guardian:
         with self._span("agentguard.validate_tool_call") as parent_span:
             # --- L4a: RBAC check (zero-trust default-deny) ---
             if self._l4_rbac:
-                from agentguard.l4_rbac import AccessContext, infer_verb, infer_sensitivity
+                from agentguard.l4.rbac import AccessContext, infer_verb, infer_sensitivity
                 rbac_ctx = AccessContext(
                     agent_role=ctx.get("agent_role", "default_agent"),
                     tool_name=fn_name,
@@ -575,7 +575,7 @@ class Guardian:
 
             # --- L4b: Behavioral Anomaly Detection ---
             if self._l4_behavioral:
-                from agentguard.l4_rbac import extract_domain
+                from agentguard.l4.rbac import extract_domain
                 ba_meta = {
                     "domain": extract_domain(str(fn_args.get("url", ""))),
                     "resource": fn_args.get("path") or fn_args.get("table") or fn_args.get("query", ""),

@@ -1,5 +1,5 @@
 """
-AgentGuard OTel telemetry setup.
+AgentGuard OTel telemetry setup (agentguard.observability.telemetry).
 
 Call init_telemetry() once at Guardian init time when telemetry is enabled.
 Use get_tracer() / get_meter() everywhere else to obtain the singletons.

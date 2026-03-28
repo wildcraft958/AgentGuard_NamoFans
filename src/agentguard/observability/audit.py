@@ -1,12 +1,11 @@
 """
-AgentGuard – SQLite Audit Log.
+AgentGuard – SQLite Audit Log (agentguard.observability.audit).
 
 Persistent, queryable record of every Guardian decision.
-Adapted from claude-guard's Guard._init_db() / log() / recent_logs() pattern,
-extended with a `layer` column to match AgentGuard's layered architecture.
+Extended with a `layer` column to match AgentGuard's layered architecture.
 
 Usage:
-    from agentguard.audit_log import AuditLog
+    from agentguard.observability.audit import AuditLog
 
     log = AuditLog("~/.agentguard/audit.db")
     log.record("validate_input", "l1_input", is_safe=False, reason="Injection detected")
