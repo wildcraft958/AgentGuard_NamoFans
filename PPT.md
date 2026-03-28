@@ -67,8 +67,8 @@ AgentGuard is an **in-process security middleware** that intercepts every input,
 
 ```
   ┌──────────────┐   ┌──────────────┐   ┌──────────────┐   ┌──────────────┐
-  |  95 - 97.5%  |   |     96%      |   |    0.65 s    |   |     210      |
-  |  attack block|   |  CRITICAL    |   |  avg block   |   |  unit tests  |
+  |  95 - 97.5%  |   |     96%      |   |    0.65 s    |   |     218      |
+  |  attack block|   |  CRITICAL    |   |  avg block   |   |  unit + e2e  |
   |    rate      |   |  block rate  |   |  (offline)   |   |  0 failures  |
   └──────────────┘   └──────────────┘   └──────────────┘   └──────────────┘
    vs 7.5% unguarded   adversarial suite   no API needed     full coverage

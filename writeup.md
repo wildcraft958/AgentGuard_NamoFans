@@ -34,7 +34,7 @@ src/agentguard/l4_behavioral.py
 src/agentguard/owasp_scanner.py
 src/agentguard/guardian.py  (1429 lines)
 
-# After: 642 tests, proper subpackages + hybrid MELON
+# After: 218 tests, proper subpackages + hybrid MELON + L4 adaptive engine
 src/agentguard/observability/audit.py
 src/agentguard/observability/telemetry.py
 src/agentguard/l4/rbac.py
@@ -507,7 +507,7 @@ Two complete adversarial comparison runs captured in `log_run_benchmark/`. Resul
 - Run 2: 95.0% security rate (38/40 attacks blocked). Unguarded baseline: 92.5% vulnerable. Improvement: +87.5 pp.
 - CRITICAL severity block rate: 96%. HIGH severity: 93–100%.
 - Mean fast-path block latency (offline regex/blocklist): 0.65s. Mean Azure-backed block: 3.10s.
-- 410 unit tests pass, 0 failures.
+- 218 unit + e2e tests pass, 0 failures.
 
 **Why this matters:**
 Proves the claim in the idea submission: "95%+ detection rate." Both runs hit or exceed this threshold. The +87.5 pp improvement in Run 2 demonstrates that AgentGuard is essential when the base model has low intrinsic safety — you can't rely on model ethics alone.
