@@ -279,7 +279,7 @@ testing:
 ## OWASP Top-10 Scanner
 
 ```python
-from agentguard.owasp_scanner import scan_agent
+from agentguard.testing.owasp_scanner import scan_agent
 
 def my_agent(prompt: str) -> str:
     return call_llm(prompt)
@@ -317,7 +317,7 @@ In `dry-run` mode, all validation is skipped.
 Query the SQLite audit log programmatically:
 
 ```python
-from agentguard.audit_log import AuditLog
+from agentguard.observability.audit import AuditLog
 
 log = AuditLog("~/.agentguard/audit.db")
 print(log.recent(10))          # last 10 events

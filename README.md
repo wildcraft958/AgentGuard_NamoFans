@@ -55,54 +55,51 @@ AgentGuard_NamoFans/
 ├── src/
 │   ├── agentguard/                 # Core package
 │   │   ├── __init__.py             # Public API: Guardian, guard, AuditLog, scan_agent, ...
-│   │   ├── guardian.py             # Main orchestrator — all layers wired here
+│   │   ├── guardian.py             # Orchestrator facade — delegates to _pipeline/ modules
 │   │   ├── config.py               # YAML config loader (AgentGuardConfig)
 │   │   ├── models.py               # ValidationResult, GuardMode, Sensitivity
 │   │   ├── exceptions.py           # InputBlockedError, OutputBlockedError, ToolCallBlockedError
 │   │   ├── decorators.py           # @guard, @guard_agent, @guard_input, @guard_tool, GuardedToolRegistry
-│   │   ├── audit_log.py            # SQLite AuditLog — persistent decision record
 │   │   ├── cli.py                  # agentguard CLI (test, scan)
-│   │   ├── owasp_scanner.py        # DeepTeam OWASP red-team scanner
-│   │   ├── promptfoo_bridge.py     # Promptfoo red-team harness bridge
-│   │   ├── l1_input/
+│   │   ├── _pipeline/              # Internal validation pipeline modules
+│   │   │   ├── notifier.py         # Unified OTel + audit notification
+│   │   │   ├── handlers.py         # Mode-aware block handlers (enforce/monitor)
+│   │   │   └── wave_runner.py      # Async parallel check execution
+│   │   ├── l1_input/               # Layer 1: Input security
 │   │   │   ├── fast_injection_detect.py  # 33-regex offline pre-filter
 │   │   │   ├── prompt_shields.py         # Azure Prompt Shields
 │   │   │   ├── content_filters.py        # Azure Content Safety
 │   │   │   └── blocklist_manager.py      # Azure custom blocklists
-│   │   ├── l2_output/
+│   │   ├── l2_output/              # Layer 2: Output security
 │   │   │   ├── groundedness_detector.py  # LLM-as-judge hallucination / relevance check
 │   │   │   ├── output_toxicity.py        # Output toxicity via Content Filters
 │   │   │   └── pii_detector.py           # Azure Text Analytics PII
-│   │   ├── l4_rbac.py                  # L4a ABAC engine (ALLOW / DENY / ELEVATE)
-│   │   ├── l4_behavioral.py            # L4b behavioral anomaly detector (5 signals)
-│   │   └── tool_firewall/
-│   │       ├── tool_specific_guards.py   # C3: 5 argument-aware guardrails
-│   │       ├── rule_evaluator.py         # Shared eval_condition() operator function
-│   │       ├── tool_input_analyzer.py    # C1: Azure entity recognition on tool args
-│   │       ├── melon_detector.py         # C2: Contrastive indirect PI detection
-│   │       └── approval_workflow.py      # C4: HITL / AITL approval gate
+│   │   ├── l4/                     # Layer 4: Access control + behavioral
+│   │   │   ├── rbac.py             # L4a ABAC engine (ALLOW / DENY / ELEVATE)
+│   │   │   └── behavioral.py       # L4b behavioral anomaly detector (5 signals)
+│   │   ├── tool_firewall/          # Layer 3: Tool call validation
+│   │   │   ├── tool_specific_guards.py   # C3: 6 argument-aware guardrails
+│   │   │   ├── rule_evaluator.py         # Shared eval_condition() operator function
+│   │   │   ├── tool_input_analyzer.py    # C1: Azure entity recognition on tool args
+│   │   │   ├── melon_detector.py         # C2: Contrastive indirect PI detection (LLM judge)
+│   │   │   └── approval_workflow.py      # C4: HITL / AITL approval gate
+│   │   ├── observability/          # Audit + telemetry
+│   │   │   ├── audit.py            # SQLite AuditLog — persistent decision record
+│   │   │   └── telemetry.py        # OpenTelemetry tracing + metrics setup
+│   │   ├── testing/                # Red-team utilities
+│   │   │   ├── owasp_scanner.py    # DeepTeam OWASP red-team scanner
+│   │   │   └── promptfoo_bridge.py # Promptfoo red-team harness bridge
+│   │   ├── sandbox/                # Subprocess isolation (landlock, seccomp)
+│   │   └── dashboard/              # FastAPI real-time dashboard (optional dep)
 │   ├── agentguard.yaml             # Main config for agentguard demo
 │   ├── tests/                      # Unit tests (mirror src/agentguard/ structure)
 │   └── examples/
-│       ├── demo_agentguard.py      # L1 + L2 @guard decorator demo
-│       └── demo_owasp_scan.py      # OWASP scanner demo
 ├── test_bots/                      # Vulnerable + guarded agent pairs for demo
-│   ├── basic_agent.py              # Vulnerable DevOps agent (no security)
-│   ├── guarded_agent.py            # basic_agent wrapped with AgentGuard
-│   ├── financial_agent.py          # Vulnerable finance agent
-│   ├── guarded_financial_agent.py  # finance agent wrapped with AgentGuard
-│   ├── hr_agent.py                 # Vulnerable HR agent
-│   ├── guarded_hr_agent.py         # HR agent wrapped with AgentGuard
-│   ├── medical_agent.py            # Vulnerable medical agent
-│   ├── guarded_medical_agent.py    # Medical agent wrapped with AgentGuard
-│   ├── vulnerable_agent.py         # 82-tool maximally dangerous agent
-│   ├── guarded_vulnerable_agent.py # vulnerable_agent wrapped with AgentGuard
-│   └── agentguard_vulnerable.yaml  # Config for the 82-tool vulnerable agent
+├── tests/                          # New test suite (87 tests covering all subpackages)
 ├── notebooks/
 │   └── llm_as_a_judge_eval.ipynb   # Kaggle GPU: AITL candidate evaluation (6 safety LLMs)
 ├── writeup.md                      # Architecture & design decision log
-├── PPT.md                          # 6-slide presentation deck (Microsoft UNLOCKED template)
-└── pyproject.toml                  # Project config (managed by uv)
+└── pyproject.toml                  # Project config (managed by uv, optional extras)
 ```
 
 ---
@@ -176,7 +173,7 @@ agentguard test --config src/agentguard.yaml --module test_bots/financial_agent.
 | L2 Output: Hallucination | LLM-as-judge groundedness check (3 strategies) |
 | L4 RBAC | Pure-Python ABAC engine — ALLOW / DENY / ELEVATE outcomes |
 | L4 Behavioral | 5-signal anomaly detector: Z-score, Levenshtein, read→exfil chain, domain, entropy |
-| Tool Firewall C2 | MELON contrastive embedding (OpenAI embeddings) |
+| Tool Firewall C2 | MELON contrastive detection (LLM-as-a-judge) |
 | Tool Firewall C4 | HITL (stdin prompt) / AITL — open-source safety LLM supervisor (Llama Guard 3, ShieldGemma, WildGuard, Granite Guardian); evaluated in `notebooks/llm_as_a_judge_eval.ipynb` |
 | Audit Log | SQLite (stdlib) — persistent decision log |
 | OWASP Scanner | DeepTeam red-teamer (OpenAI API) |
