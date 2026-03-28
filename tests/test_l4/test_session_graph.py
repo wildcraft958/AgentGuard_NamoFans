@@ -62,6 +62,25 @@ class TestSessionGraphScorer:
         assert len(scorer.call_history) == 0
         assert len(scorer.session_graph.nodes) == 0
 
+    def test_interleaved_attack_still_detected(self):
+        """file_read, http_get, file_read, http_post — junk call inserted but
+        credential harvesting subsequence [file_read, file_read, http_post]
+        should still be detected."""
+        scorer = SessionGraphScorer(IOA_PATTERNS)
+        scorer.add_call("file_read", "aaa11111")
+        scorer.add_call("http_get", "junk0000")  # junk call to evade suffix match
+        scorer.add_call("file_read", "bbb22222")
+        score = scorer.add_call("http_post", "ccc33333")
+        assert score >= 0.90 * 0.5  # subsequence match should still fire
+
+    def test_recon_exfil_with_noise(self):
+        """sql_query, file_read, http_post — noise between recon and exfil."""
+        scorer = SessionGraphScorer(IOA_PATTERNS)
+        scorer.add_call("sql_query", "aaa")
+        scorer.add_call("file_read", "noise")  # noise
+        score = scorer.add_call("http_post", "bbb")
+        assert score >= 0.85 * 0.5
+
     def test_single_call_no_edge(self):
         """First call has no edge score component."""
         scorer = SessionGraphScorer(IOA_PATTERNS)

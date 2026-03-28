@@ -68,13 +68,17 @@ class SessionGraphScorer:
         return 1.0 / (1 + float(np.log1p(count)))
 
     def _score_ioa_path(self) -> float:
-        """Check recent tool history suffix against IOA patterns."""
-        recent = self._tool_history[-5:]
+        """Check recent tool history for IOA pattern as a subsequence.
+
+        Subsequence match is resilient to interleaved junk calls —
+        an attacker cannot evade detection by inserting noise between
+        attack steps.
+        """
+        recent = self._tool_history[-8:]
         for pattern in self.ioa_patterns:
             seq = pattern["sequence"]
-            if len(recent) >= len(seq):
-                if recent[-len(seq) :] == seq:
-                    return pattern["risk_delta"]
+            if len(recent) >= len(seq) and _is_subsequence(seq, recent):
+                return pattern["risk_delta"]
         return 0.0
 
     def reset(self) -> None:
@@ -83,3 +87,9 @@ class SessionGraphScorer:
         self.call_history = []
         self._tool_history = []
         self._edge_freq = defaultdict(int)
+
+
+def _is_subsequence(pattern: list[str], history: list[str]) -> bool:
+    """Check if pattern appears as a subsequence (not necessarily contiguous) in history."""
+    it = iter(history)
+    return all(elem in it for elem in pattern)
