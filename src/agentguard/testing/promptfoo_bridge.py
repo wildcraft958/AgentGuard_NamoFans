@@ -13,7 +13,7 @@ Resolution order for target function:
 
 Usage as standalone Promptfoo provider (user-authored promptfooconfig.yaml):
     providers:
-      - id: "python:src/agentguard/promptfoo_bridge.py"
+      - id: "python:src/agentguard/testing/promptfoo_bridge.py"
         config:
           AGENTGUARD_CONFIG: src/agentguard.yaml
           AGENTGUARD_AGENT_MODULE: test_bots/my_agent.py
@@ -30,7 +30,7 @@ import logging
 import os
 import sys
 
-logger = logging.getLogger("agentguard.promptfoo_bridge")
+logger = logging.getLogger("agentguard.testing.promptfoo_bridge")
 
 
 def _load_module_from_path(module_path: str):

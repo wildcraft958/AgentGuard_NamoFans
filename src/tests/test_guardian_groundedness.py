@@ -189,7 +189,7 @@ class TestGroundednessOrchestration:
     @patch("agentguard.l2_output.groundedness_detector.OpenAI")
     @patch("agentguard.l2_output.pii_detector.PIIDetector.__init__", return_value=None)
     @patch("agentguard.l2_output.pii_detector.PIIDetector.analyze")
-    @patch("agentguard.guardian.ContentFilters")
+    @patch("agentguard.l1_input.content_filters.ContentFilters")
     def test_groundedness_runs_after_toxicity_and_pii(
         self, MockCF, mock_pii_analyze, mock_pii_init, MockOpenAI
     ):
@@ -313,7 +313,7 @@ class TestGroundednessOrchestration:
         os.unlink(path)
 
     @patch("agentguard.l2_output.groundedness_detector.OpenAI")
-    @patch("agentguard.guardian.ContentFilters")
+    @patch("agentguard.l1_input.content_filters.ContentFilters")
     def test_toxicity_blocks_before_groundedness_runs(self, MockCF, MockOpenAI):
         """If toxicity blocks, groundedness should never be called."""
         mock_cf = MagicMock()
@@ -348,7 +348,7 @@ class TestGroundednessOrchestration:
     @patch("agentguard.l2_output.groundedness_detector.OpenAI")
     @patch("agentguard.l2_output.pii_detector.PIIDetector.__init__", return_value=None)
     @patch("agentguard.l2_output.pii_detector.PIIDetector.analyze")
-    @patch("agentguard.guardian.ContentFilters")
+    @patch("agentguard.l1_input.content_filters.ContentFilters")
     def test_pii_blocks_before_groundedness_runs(
         self, MockCF, mock_pii_analyze, mock_pii_init, MockOpenAI
     ):
@@ -469,7 +469,7 @@ class TestGroundednessAudit:
         with patch.dict(os.environ, LLM_ENV):
             guardian = Guardian(path)
             mock_audit = MagicMock()
-            guardian._audit = mock_audit
+            guardian._notifier._audit = mock_audit
 
             with pytest.raises(OutputBlockedError):
                 guardian.validate_output(
@@ -505,12 +505,12 @@ class TestGroundednessSpans:
 
         path = _write_config(TELEMETRY_GROUNDEDNESS_CONFIG)
         with patch.dict(os.environ, LLM_ENV):
-            with patch("agentguard.telemetry.trace") as mock_trace_mod:
+            with patch("agentguard.observability.telemetry.trace") as mock_trace_mod:
                 mock_trace_mod.get_tracer.return_value = provider.get_tracer("agentguard")
                 mock_trace_mod.set_tracer_provider = MagicMock()
 
                 guardian = Guardian(path)
-                guardian._tracer = provider.get_tracer("agentguard")
+                guardian._notifier._tracer = provider.get_tracer("agentguard")
 
                 guardian.validate_output(
                     "Grounded output.",

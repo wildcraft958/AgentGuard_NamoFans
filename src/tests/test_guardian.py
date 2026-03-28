@@ -84,8 +84,8 @@ input_security:
 class TestGuardian:
     """Tests for the Guardian L1 orchestration."""
 
-    @patch("agentguard.guardian.ContentFilters")
-    @patch("agentguard.guardian.PromptShields")
+    @patch("agentguard.l1_input.content_filters.ContentFilters")
+    @patch("agentguard.l1_input.prompt_shields.PromptShields")
     def test_all_checks_pass(self, MockPS, MockCF):
         """Test that safe input passes through all L1 checks."""
         # Mock Prompt Shields: safe
@@ -110,8 +110,8 @@ class TestGuardian:
         assert len(result.results) == 2
         os.unlink(path)
 
-    @patch("agentguard.guardian.ContentFilters")
-    @patch("agentguard.guardian.PromptShields")
+    @patch("agentguard.l1_input.content_filters.ContentFilters")
+    @patch("agentguard.l1_input.prompt_shields.PromptShields")
     def test_prompt_injection_blocked_enforce(self, MockPS, MockCF):
         """Test that prompt injection raises InputBlockedError in enforce mode."""
         mock_ps = MagicMock()
@@ -136,8 +136,8 @@ class TestGuardian:
         mock_cf.analyze_text.assert_not_called()
         os.unlink(path)
 
-    @patch("agentguard.guardian.ContentFilters")
-    @patch("agentguard.guardian.PromptShields")
+    @patch("agentguard.l1_input.content_filters.ContentFilters")
+    @patch("agentguard.l1_input.prompt_shields.PromptShields")
     def test_content_filter_blocked_enforce(self, MockPS, MockCF):
         """Test that harmful content raises InputBlockedError."""
         mock_ps = MagicMock()
@@ -163,8 +163,8 @@ class TestGuardian:
         assert "violence" in str(exc_info.value).lower()
         os.unlink(path)
 
-    @patch("agentguard.guardian.ContentFilters")
-    @patch("agentguard.guardian.PromptShields")
+    @patch("agentguard.l1_input.content_filters.ContentFilters")
+    @patch("agentguard.l1_input.prompt_shields.PromptShields")
     def test_monitor_mode_allows_blocked(self, MockPS, MockCF):
         """Test that monitor mode logs but does NOT block."""
         mock_ps = MagicMock()
@@ -187,8 +187,8 @@ class TestGuardian:
         assert result.is_safe is True  # monitor mode lets it through
         os.unlink(path)
 
-    @patch("agentguard.guardian.ContentFilters")
-    @patch("agentguard.guardian.PromptShields")
+    @patch("agentguard.l1_input.content_filters.ContentFilters")
+    @patch("agentguard.l1_input.prompt_shields.PromptShields")
     def test_dry_run_skips_checks(self, MockPS, MockCF):
         """Test that dry-run mode skips all API calls."""
         MockPS.return_value = MagicMock()
@@ -203,8 +203,8 @@ class TestGuardian:
         assert len(result.results) == 0
         os.unlink(path)
 
-    @patch("agentguard.guardian.ContentFilters")
-    @patch("agentguard.guardian.PromptShields")
+    @patch("agentguard.l1_input.content_filters.ContentFilters")
+    @patch("agentguard.l1_input.prompt_shields.PromptShields")
     def test_disabled_modules_not_called(self, MockPS, MockCF):
         """Test that disabled modules are not initialized."""
         path = _write_config(DISABLED_CONFIG)
@@ -216,8 +216,8 @@ class TestGuardian:
         MockPS.assert_not_called()
         os.unlink(path)
 
-    @patch("agentguard.guardian.ContentFilters")
-    @patch("agentguard.guardian.PromptShields")
+    @patch("agentguard.l1_input.content_filters.ContentFilters")
+    @patch("agentguard.l1_input.prompt_shields.PromptShields")
     def test_validate_input_with_documents(self, MockPS, MockCF):
         """Test that documents are passed to Prompt Shields."""
         mock_ps = MagicMock()
@@ -241,8 +241,8 @@ class TestGuardian:
         mock_ps.analyze.assert_called_once_with("Summarize these docs", docs)
         os.unlink(path)
 
-    @patch("agentguard.guardian.ContentFilters")
-    @patch("agentguard.guardian.PromptShields")
+    @patch("agentguard.l1_input.content_filters.ContentFilters")
+    @patch("agentguard.l1_input.prompt_shields.PromptShields")
     def test_l2_stubs_exist(self, MockPS, MockCF):
         """Test that L2-L4 method stubs exist and are callable."""
         MockPS.return_value = MagicMock()
@@ -293,8 +293,8 @@ def _make_in_memory_tracer_provider() -> tuple[TracerProvider, InMemorySpanExpor
 class TestGuardianSpans:
     """Tests verifying that Guardian emits correct OTel spans."""
 
-    @patch("agentguard.guardian.ContentFilters")
-    @patch("agentguard.guardian.PromptShields")
+    @patch("agentguard.l1_input.content_filters.ContentFilters")
+    @patch("agentguard.l1_input.prompt_shields.PromptShields")
     def test_validate_input_emits_parent_span(self, MockPS, MockCF):
         """validate_input should emit an agentguard.validate_input parent span."""
         provider, exporter = _make_in_memory_tracer_provider()
@@ -307,13 +307,13 @@ class TestGuardianSpans:
         MockCF.return_value = mock_cf
 
         path = _write_config(TELEMETRY_CONFIG)
-        with patch("agentguard.telemetry.trace") as mock_trace_mod:
+        with patch("agentguard.observability.telemetry.trace") as mock_trace_mod:
             mock_trace_mod.get_tracer.return_value = provider.get_tracer("agentguard")
             mock_trace_mod.set_tracer_provider = MagicMock()
 
             guardian = Guardian(path)
             # Replace tracer with InMemory-backed tracer
-            guardian._tracer = provider.get_tracer("agentguard")
+            guardian._notifier._tracer = provider.get_tracer("agentguard")
 
             guardian.validate_input("Hello, world!")
 
@@ -322,8 +322,8 @@ class TestGuardianSpans:
         assert "agentguard.validate_input" in span_names
         os.unlink(path)
 
-    @patch("agentguard.guardian.ContentFilters")
-    @patch("agentguard.guardian.PromptShields")
+    @patch("agentguard.l1_input.content_filters.ContentFilters")
+    @patch("agentguard.l1_input.prompt_shields.PromptShields")
     def test_validate_input_emits_child_spans(self, MockPS, MockCF):
         """validate_input should emit child spans for each sub-check."""
         provider, exporter = _make_in_memory_tracer_provider()
@@ -337,7 +337,7 @@ class TestGuardianSpans:
 
         path = _write_config(TELEMETRY_CONFIG)
         guardian = Guardian(path)
-        guardian._tracer = provider.get_tracer("agentguard")
+        guardian._notifier._tracer = provider.get_tracer("agentguard")
 
         guardian.validate_input("Hello, world!")
 
@@ -349,8 +349,8 @@ class TestGuardianSpans:
         assert "agentguard.check.content_filters" in span_names
         os.unlink(path)
 
-    @patch("agentguard.guardian.ContentFilters")
-    @patch("agentguard.guardian.PromptShields")
+    @patch("agentguard.l1_input.content_filters.ContentFilters")
+    @patch("agentguard.l1_input.prompt_shields.PromptShields")
     def test_validate_input_span_attributes(self, MockPS, MockCF):
         """Parent span should carry is_safe and mode attributes."""
         provider, exporter = _make_in_memory_tracer_provider()
@@ -364,7 +364,7 @@ class TestGuardianSpans:
 
         path = _write_config(TELEMETRY_CONFIG)
         guardian = Guardian(path)
-        guardian._tracer = provider.get_tracer("agentguard")
+        guardian._notifier._tracer = provider.get_tracer("agentguard")
 
         guardian.validate_input("Hello, world!")
 
@@ -375,8 +375,8 @@ class TestGuardianSpans:
         assert "agentguard.mode" in parent.attributes
         os.unlink(path)
 
-    @patch("agentguard.guardian.ContentFilters")
-    @patch("agentguard.guardian.PromptShields")
+    @patch("agentguard.l1_input.content_filters.ContentFilters")
+    @patch("agentguard.l1_input.prompt_shields.PromptShields")
     def test_validate_output_emits_parent_span(self, MockPS, MockCF):
         """validate_output should emit an agentguard.validate_output parent span."""
         provider, exporter = _make_in_memory_tracer_provider()
@@ -385,7 +385,7 @@ class TestGuardianSpans:
 
         path = _write_config(TELEMETRY_CONFIG)
         guardian = Guardian(path)
-        guardian._tracer = provider.get_tracer("agentguard")
+        guardian._notifier._tracer = provider.get_tracer("agentguard")
 
         guardian.validate_output("safe model output")
 
@@ -394,8 +394,8 @@ class TestGuardianSpans:
         assert "agentguard.validate_output" in span_names
         os.unlink(path)
 
-    @patch("agentguard.guardian.ContentFilters")
-    @patch("agentguard.guardian.PromptShields")
+    @patch("agentguard.l1_input.content_filters.ContentFilters")
+    @patch("agentguard.l1_input.prompt_shields.PromptShields")
     def test_validate_tool_call_emits_parent_span(self, MockPS, MockCF):
         """validate_tool_call should emit an agentguard.validate_tool_call span."""
         provider, exporter = _make_in_memory_tracer_provider()
@@ -404,7 +404,7 @@ class TestGuardianSpans:
 
         path = _write_config(TELEMETRY_CONFIG)
         guardian = Guardian(path)
-        guardian._tracer = provider.get_tracer("agentguard")
+        guardian._notifier._tracer = provider.get_tracer("agentguard")
 
         guardian.validate_tool_call("read_file", {"path": "/tmp/safe.txt"})
 
@@ -413,8 +413,8 @@ class TestGuardianSpans:
         assert "agentguard.validate_tool_call" in span_names
         os.unlink(path)
 
-    @patch("agentguard.guardian.ContentFilters")
-    @patch("agentguard.guardian.PromptShields")
+    @patch("agentguard.l1_input.content_filters.ContentFilters")
+    @patch("agentguard.l1_input.prompt_shields.PromptShields")
     def test_validate_tool_output_emits_parent_span(self, MockPS, MockCF):
         """validate_tool_output should emit an agentguard.validate_tool_output span."""
         provider, exporter = _make_in_memory_tracer_provider()
@@ -423,7 +423,7 @@ class TestGuardianSpans:
 
         path = _write_config(TELEMETRY_CONFIG)
         guardian = Guardian(path)
-        guardian._tracer = provider.get_tracer("agentguard")
+        guardian._notifier._tracer = provider.get_tracer("agentguard")
 
         guardian.validate_tool_output("read_file", {}, "file contents here")
 
@@ -432,8 +432,8 @@ class TestGuardianSpans:
         assert "agentguard.validate_tool_output" in span_names
         os.unlink(path)
 
-    @patch("agentguard.guardian.ContentFilters")
-    @patch("agentguard.guardian.PromptShields")
+    @patch("agentguard.l1_input.content_filters.ContentFilters")
+    @patch("agentguard.l1_input.prompt_shields.PromptShields")
     def test_no_spans_when_telemetry_disabled(self, MockPS, MockCF):
         """When telemetry_enabled is False, no spans should be emitted."""
         provider, exporter = _make_in_memory_tracer_provider()
@@ -448,7 +448,7 @@ class TestGuardianSpans:
         path = _write_config(ENFORCE_CONFIG)  # no observability section
         guardian = Guardian(path)
         # _tracer is None because telemetry not initialized
-        assert guardian._tracer is None
+        assert guardian._notifier._tracer is None
 
         guardian.validate_input("Hello!")
 

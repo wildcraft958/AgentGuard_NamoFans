@@ -20,7 +20,7 @@ import logging
 import time
 from typing import Callable, Literal, Optional
 
-logger = logging.getLogger("agentguard.owasp_scanner")
+logger = logging.getLogger("agentguard.testing.owasp_scanner")
 
 _LABEL_WIDTH = 38
 _BAR_WIDTH = 30
@@ -235,7 +235,7 @@ def scan_agent(
         TypeError: If agent is not callable.
 
     Example:
-        from agentguard.owasp_scanner import scan_agent
+        from agentguard.testing.owasp_scanner import scan_agent
 
         def my_agent(prompt: str) -> str:
             return my_llm.complete(prompt)

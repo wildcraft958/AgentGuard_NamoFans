@@ -2,9 +2,8 @@
 AgentGuard – Shared Rule Condition Evaluator.
 
 A single composable function for evaluating rule conditions against parameter
-values. Adapted from claude-guard's _eval_rule() approach, extended with
-`not_contains`, `gt`, and `lt` operators that were missing from AgentGuard's
-inline operator logic.
+values. Supports `not_contains`, `gt`, and `lt` operators in addition to
+the standard `equals`, `contains`, `matches`, `startswith`, `endswith`.
 
 Supported operators:
     equals        exact string equality

@@ -18,7 +18,7 @@ from typing import Literal
 class RBACDecision(Enum):
     ALLOW = "allow"
     DENY = "deny"
-    ELEVATE = "elevate"  # → approval_workflow.py HITL
+    ELEVATE = "elevate"  # routes into tool_firewall.approval_workflow HITL
 
 
 @dataclass

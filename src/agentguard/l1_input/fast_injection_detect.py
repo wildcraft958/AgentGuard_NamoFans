@@ -5,7 +5,7 @@ AgentGuard – Fast Offline Injection Detection (Component 0 / L1 pre-filter).
 Python with zero network latency. This runs *before* the Azure Prompt Shields
 API call to reduce API usage and add offline resilience.
 
-Adapted from claude-guard's _INJECTION_PATTERNS + inject_detect() method.
+Uses 33 compiled regexes to catch common prompt-injection patterns.
 """
 
 import re

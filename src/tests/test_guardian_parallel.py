@@ -66,9 +66,9 @@ def _make_guardian_stub(**overrides):
     g.config.image_filters_block_violence = True
     g.config.image_filters_block_self_harm = True
     g.config.image_filters_block_sexual = True
-    g._tracer = None
-    g._meter = None
-    g._audit = None
+    from agentguard._pipeline.notifier import Notifier
+
+    g._notifier = Notifier(tracer=None, meter=None, audit=None, mode="enforce")
     g._blocklist_names = []
 
     # Mock checkers
