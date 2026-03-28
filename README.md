@@ -74,9 +74,17 @@ AgentGuard_NamoFans/
 │   │   │   ├── groundedness_detector.py  # LLM-as-judge hallucination / relevance check
 │   │   │   ├── output_toxicity.py        # Output toxicity via Content Filters
 │   │   │   └── pii_detector.py           # Azure Text Analytics PII
-│   │   ├── l4/                     # Layer 4: Access control + behavioral
-│   │   │   ├── rbac.py             # L4a ABAC engine (ALLOW / DENY / ELEVATE)
-│   │   │   └── behavioral.py       # L4b behavioral anomaly detector (5 signals)
+│   │   ├── l4/                     # Layer 4: Access control + behavioral anomaly
+│   │   │   ├── rbac.py             # L4a legacy ABAC engine (backward compat)
+│   │   │   ├── policy_engine.py    # L4a PBAC — YAML policies, hot-reloadable
+│   │   │   ├── orchestrator.py     # L4Orchestrator — fuses L4a + L4b scoring
+│   │   │   ├── models/
+│   │   │   │   └── telemetry_span.py  # TelemetrySpan (L4b isolation boundary, CPF §11.2)
+│   │   │   └── behavioral/        # L4b sub-scorers
+│   │   │       ├── legacy.py       # Legacy 5-signal detector (backward compat)
+│   │   │       ├── baseline.py     # River HalfSpaceTrees online anomaly (per-role)
+│   │   │       ├── session_graph.py # NetworkX session graph + IOA pattern matching
+│   │   │       └── drift_monitor.py # Compliance drift (Pearson sensitivity trajectory)
 │   │   ├── tool_firewall/          # Layer 3: Tool call validation
 │   │   │   ├── tool_specific_guards.py   # C3: 6 argument-aware guardrails
 │   │   │   ├── rule_evaluator.py         # Shared eval_condition() operator function
@@ -103,7 +111,7 @@ AgentGuard_NamoFans/
 │   ├── guarded_financial_agent.py  # finance agent wrapped with AgentGuard
 │   ├── hr_agent.py / medical_agent.py  # + their guarded variants
 │   └── compare_*.py               # Benchmark + feature comparison scripts
-├── tests/                          # Test suite (642 tests covering all subpackages)
+├── tests/                          # Test suite (210 tests covering all subpackages)
 ├── notebooks/
 │   └── llm_as_a_judge_eval.ipynb   # Kaggle GPU: AITL candidate evaluation (6 safety LLMs)
 ├── writeup.md                      # Architecture & design decision log
@@ -179,8 +187,13 @@ agentguard test --config src/agentguard.yaml --module test_bots/financial_agent.
 | Tool Firewall C3 | Pure-Python rule-based guardrails (sqlparse, ipaddress, regex) |
 | Tool Firewall C1 | Azure AI Language — Named Entity Recognition on tool args |
 | L2 Output: Hallucination | LLM-as-judge groundedness check (3 strategies) |
-| L4 RBAC | Pure-Python ABAC engine — ALLOW / DENY / ELEVATE outcomes |
-| L4 Behavioral | 5-signal anomaly detector: Z-score, Levenshtein, read→exfil chain, domain, entropy |
+| L4a Policy Engine | YAML-driven PBAC — hot-reloadable, wildcards, condition operators, first-match-wins |
+| L4b Adaptive Baseline | River HalfSpaceTrees — per-role online ML anomaly detection with cold-start fallback |
+| L4b Session Graph | NetworkX directed graph — node/edge/path scoring + IOA pattern matching (SentinelAgent) |
+| L4b Drift Monitor | NumPy Pearson correlation — sliding-window sensitivity trajectory detection (CPF §7) |
+| L4 Orchestrator | Async two-tier engine — L4a sync policy (<2ms) + L4b behavioral scoring (<80ms) |
+| L4 Legacy RBAC | Pure-Python ABAC engine — ALLOW / DENY / ELEVATE outcomes (backward compat) |
+| L4 Legacy Behavioral | 5-signal anomaly detector: Z-score, Levenshtein, read→exfil chain, domain, entropy |
 | Tool Firewall C2 | MELON hybrid contrastive detection (embedding pre-filter + LLM judge) |
 | Tool Firewall C4 | HITL (stdin prompt) / AITL — open-source safety LLM supervisor (Llama Guard 3, ShieldGemma, WildGuard, Granite Guardian); evaluated in `notebooks/llm_as_a_judge_eval.ipynb` |
 | Audit Log | SQLite (stdlib) — persistent decision log |
@@ -218,6 +231,34 @@ result = guardian.validate_tool_call("http_post", {"url": "https://evil.com"})
 
 # L2: validate model output
 result = guardian.validate_output("Your SSN is 859-98-0987")
+```
+
+### L4 Adaptive Engine — PBAC + Behavioral Anomaly
+
+```python
+from agentguard.l4.policy_engine import PolicyDecisionPoint, AccessRequest
+from agentguard.l4.behavioral.drift_monitor import ComplianceDriftMonitor
+from agentguard.l4.behavioral.session_graph import SessionGraphScorer
+
+# PBAC policy evaluation (hot-reloadable YAML)
+pdp = PolicyDecisionPoint("l4_policies.yaml")
+req = AccessRequest(agent_id="a1", role="analyst", action="write",
+                    resource="report.csv", resource_sensitivity=2, context={})
+decision = pdp.evaluate(req)  # -> "ELEVATE"
+pdp.reload()  # hot-reload without restart
+
+# Drift detection (CPF §7: autoregressive sensitivity escalation)
+drift = ComplianceDriftMonitor(window_size=8)
+for tool, sens in [("http_get",0), ("sql_query",1), ("file_write",2), ("shell_exec",3)]:
+    score = drift.record(tool, sens)
+# score > 0.8 — escalation detected
+
+# Session graph IOA matching (SentinelAgent-inspired)
+ioa_patterns = [{"name": "CredHarvest", "sequence": ["file_read","file_read","http_post"], "risk_delta": 0.90}]
+graph = SessionGraphScorer(ioa_patterns)
+graph.add_call("file_read", "hash1")
+graph.add_call("file_read", "hash2")
+score = graph.add_call("http_post", "hash3")  # -> high score (IOA match)
 ```
 
 ### `AuditLog` — persistent decision log

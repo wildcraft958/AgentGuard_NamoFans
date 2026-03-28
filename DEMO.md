@@ -30,6 +30,13 @@ User Input
                             │ (safe input reaches agent)
                             ▼
 ┌──────────────────────────────────────────────────────────────────┐
+│                   L4 — ADAPTIVE ENGINE                            │
+│  ┌─────────────────────────────────────────────────────────────┐ │
+│  │ L4a: PBAC Policy Engine (YAML, hot-reload, <2ms)            │ │
+│  │ L4b: Behavioral Scoring (async, isolated context)           │ │
+│  │      HalfSpaceTrees + SessionGraph + DriftMonitor           │ │
+│  └─────────────────────────────────────────────────────────────┘ │
+├──────────────────────────────────────────────────────────────────┤
 │                   TOOL FIREWALL                                  │
 │                                                                  │
 │  PRE-EXECUTION (before tool runs):                               │
@@ -420,6 +427,76 @@ Step 3: TIERED DECISION (hybrid mode)
 ```
 
 If the tool output is **not** manipulative, the masked run produces different/neutral tool calls, and embedding similarity stays low → ALLOW immediately without calling the expensive LLM judge.
+
+---
+
+## L4 — Adaptive PBAC + Behavioral Anomaly Engine
+
+**Purpose:** Evaluate every tool call against dynamic security policies (L4a) and behavioral anomaly scoring (L4b). Replaces the static ABAC matrix and Z-score checks with an adaptive, research-grounded engine.
+
+### L4a: Policy Decision Point (PBAC)
+
+| | |
+|---|---|
+| **What** | YAML-defined policies with role/action wildcards, condition operators (eq/gte/lte/in/not_in), and configurable sensitivity thresholds |
+| **Latency** | <2ms (sync, in-process, zero API cost) |
+| **Outcome** | ALLOW, DENY, or ELEVATE (routes to human approval) |
+| **Hot-reload** | Change `l4_policies.yaml`, call `pdp.reload()` — no restart needed |
+
+**Example policy rule:**
+```yaml
+- id: critical_requires_hitl
+  roles: ["*"]
+  actions: ["*"]
+  min_sensitivity: 3
+  conditions:
+    - key: hitl_approved
+      operator: eq
+      value: true
+  effect: ELEVATE
+```
+
+### L4b: Three Behavioral Sub-Scorers
+
+L4b runs asynchronously in an isolated executor. It receives only a **TelemetrySpan** (hashed args, tool name, metadata) — never raw tool arguments or LLM context. This implements the CPF S11.2 external monitor independence principle.
+
+**Sub-scorer 1: Adaptive Behavioral Baseline (River HalfSpaceTrees)**
+
+| | |
+|---|---|
+| **What** | Per-role online anomaly detector that learns incrementally from every tool call |
+| **Cold-start** | First 50 calls delegate to shared global model; then per-role model takes over |
+| **Features** | tool_id (hash), arg_len, arg_entropy (Shannon), data_volume_kb, hour_of_day |
+| **Library** | `river` (online ML) |
+
+**Sub-scorer 2: Session Graph + IOA Pattern Matching**
+
+| | |
+|---|---|
+| **What** | Models the session as a NetworkX directed graph. Scores node rarity, edge frequency, and path-level IOA matches |
+| **IOA patterns** | Credential Harvesting (`file_read, file_read, http_post`), Recon+Exfil (`sql_query, http_post`), Privilege Escalation (`shell_exec, file_write, http_post`), and more |
+| **Scoring** | `0.2 * node + 0.3 * edge + 0.5 * path` |
+
+**Sub-scorer 3: Compliance Drift Monitor**
+
+| | |
+|---|---|
+| **What** | Tracks a sliding window of resource sensitivity values. Computes Pearson correlation of sensitivity vs time index. |
+| **Catches** | Slow-burn attacks: `http_get(0) -> sql_query(1) -> file_write(2) -> shell_exec(3)` — each call innocuous alone, but the trajectory reveals escalation |
+| **Theory** | CPF S7: P(comply_t \| comply_{t-1}) >> P(comply_t \| x) — autoregressive drift is detectable via trajectory |
+
+### Fusion & Final Decision
+
+```
+  risk_score = 0.35 * baseline + 0.40 * graph + 0.25 * drift
+
+  risk >= 0.90  -->  DENY   (override L4a ALLOW)
+  risk >= 0.70  -->  ELEVATE (override L4a ALLOW)
+  L4a == ELEVATE --> ELEVATE (propagated)
+  otherwise     -->  ALLOW
+```
+
+All thresholds and weights are configurable in `agentguard.yaml` under `l4_adaptive:`.
 
 ---
 
