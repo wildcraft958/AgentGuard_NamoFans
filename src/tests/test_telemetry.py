@@ -11,10 +11,20 @@ from agentguard.telemetry import get_meter, get_tracer, init_telemetry
 
 @pytest.fixture(autouse=True)
 def reset_telemetry_singletons():
-    """Reset module-level singletons between tests."""
+    """Reset module-level singletons and shut down providers between tests."""
     telemetry_module._tracer = None
     telemetry_module._meter = None
     yield
+    # Shut down providers to stop background PeriodicExportingMetricReader threads
+    # that otherwise try to flush to closed stdout at process exit.
+    from opentelemetry import metrics, trace
+
+    tp = trace.get_tracer_provider()
+    if hasattr(tp, "shutdown"):
+        tp.shutdown()
+    mp = metrics.get_meter_provider()
+    if hasattr(mp, "shutdown"):
+        mp.shutdown()
     telemetry_module._tracer = None
     telemetry_module._meter = None
 

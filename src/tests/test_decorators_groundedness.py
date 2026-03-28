@@ -211,5 +211,6 @@ class TestBackwardCompatibility:
         mock_get.return_value = mock_guardian
 
         # Call avalidate_output directly with just text (backward compat)
-        mock_guardian.avalidate_output("Some output")
+        # Must await to avoid "coroutine never awaited" warning from AsyncMock
+        asyncio.run(mock_guardian.avalidate_output("Some output"))
         mock_guardian.avalidate_output.assert_called_once_with("Some output")

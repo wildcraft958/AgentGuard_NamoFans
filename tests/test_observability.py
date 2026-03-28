@@ -1,8 +1,7 @@
-"""Tests for agentguard.observability — audit log and telemetry.
+"""Tests for agentguard.observability — audit log and telemetry."""
 
-TDD: these tests are written BEFORE moving files to verify the
-observability/ subpackage works identically to the old flat layout.
-"""
+import pytest
+from opentelemetry import metrics as _otel_metrics, trace as _otel_trace
 
 from agentguard.observability.audit import AuditLog, hash_params
 from agentguard.observability.telemetry import init_telemetry, get_tracer, get_meter
@@ -102,6 +101,18 @@ def test_backward_compat_telemetry_import():
 # ---------------------------------------------------------------------------
 # Telemetry tests (no OTLP endpoint — console exporters)
 # ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True, scope="function")
+def _shutdown_otel_providers():
+    """Shut down OTel providers after each telemetry test to stop background threads."""
+    yield
+    tp = _otel_trace.get_tracer_provider()
+    if hasattr(tp, "shutdown"):
+        tp.shutdown()
+    mp = _otel_metrics.get_meter_provider()
+    if hasattr(mp, "shutdown"):
+        mp.shutdown()
 
 
 def test_init_telemetry_returns_tracer_and_meter():
