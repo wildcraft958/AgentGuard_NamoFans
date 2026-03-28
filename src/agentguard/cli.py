@@ -25,7 +25,7 @@ import yaml
 
 logger = logging.getLogger("agentguard.cli")
 
-_BRIDGE_MODULE = os.path.join(os.path.dirname(__file__), "promptfoo_bridge.py")
+_BRIDGE_MODULE = os.path.join(os.path.dirname(__file__), "testing", "promptfoo_bridge.py")
 
 
 def generate_promptfoo_config(
