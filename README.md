@@ -81,7 +81,7 @@ AgentGuard_NamoFans/
 │   │   │   ├── tool_specific_guards.py   # C3: 6 argument-aware guardrails
 │   │   │   ├── rule_evaluator.py         # Shared eval_condition() operator function
 │   │   │   ├── tool_input_analyzer.py    # C1: Azure entity recognition on tool args
-│   │   │   ├── melon_detector.py         # C2: Contrastive indirect PI detection (LLM judge)
+│   │   │   ├── melon_detector.py         # C2: Hybrid MELON (embedding pre-filter + LLM judge)
 │   │   │   └── approval_workflow.py      # C4: HITL / AITL approval gate
 │   │   ├── observability/          # Audit + telemetry
 │   │   │   ├── audit.py            # SQLite AuditLog — persistent decision record
@@ -95,7 +95,15 @@ AgentGuard_NamoFans/
 │   ├── tests/                      # Unit tests (mirror src/agentguard/ structure)
 │   └── examples/
 ├── test_bots/                      # Vulnerable + guarded agent pairs for demo
-├── tests/                          # New test suite (87 tests covering all subpackages)
+│   ├── sandbox_agent.py            # 19-tool agent with real OS operations
+│   ├── guarded_sandbox_agent.py    # sandbox_agent with kernel-level isolation
+│   ├── vulnerable_agent.py         # 82-tool maximally dangerous agent
+│   ├── guarded_vulnerable_agent.py # vulnerable_agent wrapped with AgentGuard
+│   ├── financial_agent.py          # Vulnerable finance agent
+│   ├── guarded_financial_agent.py  # finance agent wrapped with AgentGuard
+│   ├── hr_agent.py / medical_agent.py  # + their guarded variants
+│   └── compare_*.py               # Benchmark + feature comparison scripts
+├── tests/                          # Test suite (642 tests covering all subpackages)
 ├── notebooks/
 │   └── llm_as_a_judge_eval.ipynb   # Kaggle GPU: AITL candidate evaluation (6 safety LLMs)
 ├── writeup.md                      # Architecture & design decision log
@@ -173,7 +181,7 @@ agentguard test --config src/agentguard.yaml --module test_bots/financial_agent.
 | L2 Output: Hallucination | LLM-as-judge groundedness check (3 strategies) |
 | L4 RBAC | Pure-Python ABAC engine — ALLOW / DENY / ELEVATE outcomes |
 | L4 Behavioral | 5-signal anomaly detector: Z-score, Levenshtein, read→exfil chain, domain, entropy |
-| Tool Firewall C2 | MELON contrastive detection (LLM-as-a-judge) |
+| Tool Firewall C2 | MELON hybrid contrastive detection (embedding pre-filter + LLM judge) |
 | Tool Firewall C4 | HITL (stdin prompt) / AITL — open-source safety LLM supervisor (Llama Guard 3, ShieldGemma, WildGuard, Granite Guardian); evaluated in `notebooks/llm_as_a_judge_eval.ipynb` |
 | Audit Log | SQLite (stdlib) — persistent decision log |
 | OWASP Scanner | DeepTeam red-teamer (OpenAI API) |

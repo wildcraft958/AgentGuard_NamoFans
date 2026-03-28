@@ -408,13 +408,18 @@ Step 2: MASKED RUN
   showing correct summarization behavior (no context about transfers)
   → LLM produces: transfer_funds($10,000)  ← still same call! Suspicious.
 
-Step 3: COMPARE (embedding cosine similarity)
-  embed("transfer_funds($10,000)") vs embed("transfer_funds($10,000)")
-  Cosine similarity = 0.98 > threshold 0.8
-  → ❌ INJECTION DETECTED
+Step 3: TIERED DECISION (hybrid mode)
+  Tier 0 — Embedding pre-filter:
+    embed("transfer_funds($10,000)") vs embed("transfer_funds($10,000)")
+    Cosine similarity = 0.98 > high_threshold 0.9
+    → ❌ INJECTION DETECTED (no judge call needed)
+
+  If ambiguous (similarity between 0.3–0.9):
+  Tier 1 — LLM Judge:
+    Judge compares both sets semantically, returns BLOCK/ALLOW with reasoning
 ```
 
-If the tool output is **not** manipulative, the masked run produces different/neutral tool calls, and similarity stays low → safe.
+If the tool output is **not** manipulative, the masked run produces different/neutral tool calls, and embedding similarity stays low → ALLOW immediately without calling the expensive LLM judge.
 
 ---
 
@@ -626,6 +631,15 @@ def guarded_call(user_message: str) -> dict:
     return {"response": response}
 ```
 
+### Sandbox Agent (Kernel-Level Isolation)
+
+The `sandbox_agent.py` has 19 tools that attempt **real OS operations** (file I/O, socket connections, os.fork(), ctypes syscalls). The `guarded_sandbox_agent.py` wraps each tool in a forked subprocess with 4 kernel-enforced restrictions:
+
+1. **Resource limits** — RLIMIT_AS / RLIMIT_CPU / RLIMIT_FSIZE / RLIMIT_NPROC / RLIMIT_NOFILE
+2. **Filesystem** — Linux Landlock LSM (kernel-enforced read/write path allowlists)
+3. **Syscall filter** — seccomp BPF via libseccomp (blocks ptrace, mount, setuid, etc.)
+4. **Network policy** — socket.connect whitelist / block-all
+
 ---
 
 ## Test Results — Guarded vs. Unguarded
@@ -721,7 +735,7 @@ agentguard test --config agentguard.yaml --module test_bots/financial_agent.py
 | L2 PII Detection | Azure AI Text Analytics | Python SDK (`recognize_pii_entities`) | `AZURE_LANGUAGE_ENDPOINT` + `AZURE_LANGUAGE_KEY` |
 | L2 Groundedness | LLM via TrueFoundry | OpenAI SDK (LLM-as-judge) | `OPENAI_API_KEY` + `OPENAI_BASE_URL` + `OPENAI_MODEL` |
 | C1 Tool Input NER | Azure AI Text Analytics | Python SDK (`recognize_entities`) | `AZURE_LANGUAGE_ENDPOINT` + `AZURE_LANGUAGE_KEY` |
-| C2 MELON | LLM + Embeddings via TrueFoundry | OpenAI SDK (contrastive) | `OPENAI_API_KEY` + `OPENAI_BASE_URL` + `OPENAI_MODEL` |
+| C2 MELON | Hybrid: embeddings pre-filter + LLM judge via TrueFoundry | OpenAI SDK (contrastive) | `OPENAI_API_KEY` + `OPENAI_BASE_URL` + `OPENAI_MODEL` |
 | C3 Tool Guards | None (offline) | Python (regex + sqlparse) | — |
 | C4 HITL Approval | Terminal input | stdin | — |
 | C4 AITL Approval | LLM Supervisor | OpenAI SDK | `OPENAI_API_KEY` + `OPENAI_BASE_URL` |
@@ -787,7 +801,10 @@ tool_firewall:           # Tool Firewall
     tools_requiring_review: [fs_delete_file, rm_rf, shell_execute]
   melon:
     enabled: true
-    threshold: 0.8
+    mode: hybrid              # hybrid | judge_only | embedding_only
+    embedding_model: text-embedding-3-large
+    low_threshold: 0.3        # below -> ALLOW immediately
+    high_threshold: 0.9       # above -> BLOCK immediately
 ```
 
 Three execution modes:

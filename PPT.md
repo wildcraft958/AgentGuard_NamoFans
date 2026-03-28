@@ -153,7 +153,7 @@ with awareness of who called it, why, and whether its argument came from a malic
   ║  http_get/post│ domain allowlist, HTTPS, no 169.254.x ║
   ║                                                       ║
   ║  + C1 Azure entity recog on args                      ║
-  ║  + C2 MELON contrastive check (opt-in, high-security) ║
+  ║  + C2 MELON hybrid check (embedding + LLM judge)      ║
   ║  + C4 HITL / AITL approval workflow                   ║
   ╚═══════════════════════════════════════════════════════╝
       │
@@ -282,8 +282,8 @@ with awareness of who called it, why, and whether its argument came from a malic
   │                          │  not in Guardrails AI or MS   │  edge-cases. ELEVATE routes │
   │                          │  Agent Governance Toolkit.    │  to human review instead.  │
   ├──────────────────────────┼──────────────────────────────┼────────────────────────────┤
-  │  MELON (C2) opt-in       │  Requires 2 LLM calls;        │  Always-on = 2× LLM cost.  │
-  │                          │  disabled by default.         │  Enabled for medical /     │
+  │  MELON (C2) hybrid       │  Embedding pre-filter resolves │  Always-on = 2× LLM cost.  │
+  │                          │  ~80%; judge only if ambiguous.│  Enabled for medical /     │
   │                          │  Enable in agentguard.yaml    │  financial agents only.    │
   ├──────────────────────────┼──────────────────────────────┼────────────────────────────┤
   │  AITL: open-source       │  C4 supervisor uses fine-     │  Frontier LLMs (GPT-4o)    │

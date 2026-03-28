@@ -240,6 +240,28 @@ tool_firewall:
     mode: denylist
     denied_commands: [rm, curl, bash, sudo, eval, exec]
     block_command_chaining: true
+  melon:
+    enabled: false
+    mode: hybrid                  # hybrid | judge_only | embedding_only
+    embedding_model: null         # null = judge_only behavior
+    low_threshold: 0.3
+    high_threshold: 0.9
+
+sandbox:
+  enabled: false
+  mode: enforce
+  timeout_seconds: 30
+  filesystem:
+    allowed_read: [/tmp, /usr/lib]
+    allowed_write: [/tmp]
+  network:
+    mode: whitelist
+    allowed_hosts: []
+    allowed_ports: [443, 80]
+  resources:
+    max_memory_mb: 512
+    max_processes: null           # null = disabled
+    max_open_files: 64
 
 audit:
   enabled: true

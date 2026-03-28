@@ -34,7 +34,7 @@ src/agentguard/l4_behavioral.py
 src/agentguard/owasp_scanner.py
 src/agentguard/guardian.py  (1429 lines)
 
-# After: 87 tests, proper subpackages
+# After: 642 tests, proper subpackages + hybrid MELON
 src/agentguard/observability/audit.py
 src/agentguard/observability/telemetry.py
 src/agentguard/l4/rbac.py
