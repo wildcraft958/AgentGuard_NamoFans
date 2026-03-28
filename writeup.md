@@ -52,6 +52,50 @@ from agentguard.observability.audit import AuditLog  # ← canonical new path
 
 ---
 
+## 2026-03-28 — L4 Adaptive Security Engine (PBAC + Behavioral Anomaly Detection)
+
+**What changed:**
+Replaced the static L4 layer (hardcoded ABAC matrix + Z-score/Levenshtein behavioral checks) with a two-tier adaptive security engine:
+
+- **L4a (PBAC)**: `PolicyDecisionPoint` evaluates YAML-defined, hot-reloadable policies with wildcard roles/actions, condition operators (eq/gte/lte/in), and first-match-wins semantics. Replaces the static `role x verb x resource x sensitivity` matrix.
+- **L4b (Behavioral Scoring)**: Three sub-scorers running in an isolated async executor:
+  1. `AdaptiveBehavioralBaseline` — River HalfSpaceTrees per-role online anomaly detector with cold-start fallback to a shared global model
+  2. `SessionGraphScorer` — NetworkX directed graph modeling tool call transitions with IOA (Indicators of Attack) pattern matching
+  3. `ComplianceDriftMonitor` — Pearson correlation of sensitivity trajectory in a sliding window, detecting autoregressive escalation (CPF §7)
+- **L4Orchestrator**: Fuses L4a sync policy + L4b async behavioral scores with configurable weighted fusion (0.35/0.40/0.25) and dual thresholds (ELEVATE >= 0.70, DENY >= 0.90)
+- **TelemetrySpan isolation boundary** (CPF §11.2): L4b scorers receive only hashed args, tool name, and metadata — never raw arguments or LLM context
+
+**Why this approach:**
+The theoretical basis from LLM_Security.pdf (Canale 2026) proves that: (1) guardrails are statistical bias, not walls — a sufficiently adversarial context can shift the output distribution past any prompt-based defense (§3, §11.1); (2) external monitors must be architecturally independent of the defended model (§11.2); (3) autoregressive drift makes escalating sensitivity detectable via trajectory, not just point-in-time checks (§7). The SentinelAgent paper (He et al. 2025) provides the graph-based anomaly detection framework we adapted for session-level IOA matching.
+
+**Problem solved:**
+- Cold-start failure: Z-score with seeded defaults (avg=5, std=2) produces meaningless scores early. HalfSpaceTrees learns online from the first call.
+- Syntactic-only detection: Levenshtein distance on tool sequences misses semantic attacks. Graph-based node/edge/path scoring catches structural anomalies.
+- No temporal awareness: Static ABAC can't detect slow-burn privilege escalation. Drift monitor catches progressive sensitivity increases across a session.
+- Policy rigidity: Hardcoded Python policy matrix requires code changes. YAML policies can be hot-reloaded without restart.
+
+**Tradeoffs:**
+- River HalfSpaceTrees with production parameters (25 trees, height=15) is slow for unit tests; reduced to (3 trees, height=4) in test fixtures. Production latency is acceptable (<80ms for L4b path).
+- `behavioral/` directory creation required moving legacy `behavioral.py` to `behavioral/legacy.py` with re-exports — adds one indirection but preserves all existing import paths.
+- IOA patterns are currently statically defined in YAML; a future enhancement could learn patterns from historical attack data.
+
+**Example:**
+```python
+# L4a: YAML-driven PBAC policy evaluation
+from agentguard.l4.policy_engine import PolicyDecisionPoint, AccessRequest
+pdp = PolicyDecisionPoint("l4_policies.yaml")
+req = AccessRequest(agent_id="a1", role="analyst", action="write",
+                    resource="report.csv", resource_sensitivity=2, context={})
+decision = pdp.evaluate(req)  # -> "ELEVATE"
+
+# L4b: Behavioral sub-scorers
+from agentguard.l4.behavioral.drift_monitor import ComplianceDriftMonitor
+mon = ComplianceDriftMonitor(window_size=8)
+for tool, sens in [("http_get",0), ("sql_query",1), ("file_write",2), ("shell_exec",3)]:
+    score = mon.record(tool, sens)
+print(f"Drift score: {score}")  # -> >0.8 (escalation detected)
+```
+
 # AgentGuard — Developer Writeup
 
 ![AgentGuard Logo](assets/logo.png)

@@ -33,15 +33,16 @@ def analyzer():
 
 
 class TestToolInputAnalyzer:
-
     def test_no_blocked_categories_skips(self, analyzer):
         result = analyzer.analyze("some_tool", {"arg": "value"}, blocked_categories_map={})
         assert result.is_safe is True
 
     def test_safe_args_pass(self, analyzer):
-        doc = _make_doc(entities=[
-            _make_entity("staging", "Location"),
-        ])
+        doc = _make_doc(
+            entities=[
+                _make_entity("staging", "Location"),
+            ]
+        )
         analyzer.client.recognize_entities.return_value = [doc]
 
         result = analyzer.analyze(
@@ -52,9 +53,11 @@ class TestToolInputAnalyzer:
         assert result.is_safe is True
 
     def test_blocked_ip_entity(self, analyzer):
-        doc = _make_doc(entities=[
-            _make_entity("192.168.1.1", "IPAddress"),
-        ])
+        doc = _make_doc(
+            entities=[
+                _make_entity("192.168.1.1", "IPAddress"),
+            ]
+        )
         analyzer.client.recognize_entities.return_value = [doc]
 
         result = analyzer.analyze(
@@ -67,9 +70,11 @@ class TestToolInputAnalyzer:
         assert "192.168.1.1" in result.blocked_reason
 
     def test_blocked_url_entity(self, analyzer):
-        doc = _make_doc(entities=[
-            _make_entity("https://evil.com/exfil", "URL"),
-        ])
+        doc = _make_doc(
+            entities=[
+                _make_entity("https://evil.com/exfil", "URL"),
+            ]
+        )
         analyzer.client.recognize_entities.return_value = [doc]
 
         result = analyzer.analyze(
@@ -81,10 +86,12 @@ class TestToolInputAnalyzer:
         assert "URL" in result.blocked_reason
 
     def test_allowed_category_passes(self, analyzer):
-        doc = _make_doc(entities=[
-            _make_entity("staging", "Location"),
-            _make_entity("John", "Person"),
-        ])
+        doc = _make_doc(
+            entities=[
+                _make_entity("staging", "Location"),
+                _make_entity("John", "Person"),
+            ]
+        )
         analyzer.client.recognize_entities.return_value = [doc]
 
         result = analyzer.analyze(

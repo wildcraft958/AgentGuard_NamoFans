@@ -31,10 +31,12 @@ from agentguard import scan_agent
 # Option A – use the repo's existing vulnerable DevOps agent (needs TFY creds)
 # ---------------------------------------------------------------------------
 
+
 def _make_devops_agent():
     """Return a wrapper around basic_agent.run_agent if credentials exist."""
     try:
         from basic_agent import run_agent
+
         return run_agent
     except ImportError:
         return None
@@ -43,6 +45,7 @@ def _make_devops_agent():
 # ---------------------------------------------------------------------------
 # Option B – minimal stub agent that always works (no extra creds needed)
 # ---------------------------------------------------------------------------
+
 
 def stub_agent(prompt: str) -> str:
     """
@@ -69,6 +72,7 @@ def stub_agent(prompt: str) -> str:
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
+
 
 def main():
     # Try to use the real DevOps agent; fall back to the stub

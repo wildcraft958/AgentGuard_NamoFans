@@ -10,6 +10,7 @@ from agentguard.audit_log import AuditLog, hash_params
 # Fixture: in-memory database for isolation
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def log():
     with AuditLog(":memory:") as audit:
@@ -20,6 +21,7 @@ def log():
 # Database initialization
 # ---------------------------------------------------------------------------
 
+
 class TestInit:
     def test_creates_table(self, log):
         rows = log._conn.execute(
@@ -28,9 +30,7 @@ class TestInit:
         assert len(rows) == 1
 
     def test_creates_indexes(self, log):
-        idx_rows = log._conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='index'"
-        ).fetchall()
+        idx_rows = log._conn.execute("SELECT name FROM sqlite_master WHERE type='index'").fetchall()
         names = {r[0] for r in idx_rows}
         assert "idx_audit_ts" in names
         assert "idx_audit_action" in names
@@ -42,6 +42,7 @@ class TestInit:
 # ---------------------------------------------------------------------------
 # record()
 # ---------------------------------------------------------------------------
+
 
 class TestRecord:
     def test_record_blocked(self, log):
@@ -55,7 +56,9 @@ class TestRecord:
 
     def test_record_with_metadata(self, log):
         log.record(
-            "validate_tool_call", "tool_firewall", is_safe=False,
+            "validate_tool_call",
+            "tool_firewall",
+            is_safe=False,
             reason="Domain blocked",
             metadata={"blocked_by": "http_post", "tool_name": "web_post"},
         )
@@ -82,6 +85,7 @@ class TestRecord:
 # recent()
 # ---------------------------------------------------------------------------
 
+
 class TestRecent:
     def test_returns_newest_first(self, log):
         log.record("validate_input", "l1_input", is_safe=False, reason="First")
@@ -106,6 +110,7 @@ class TestRecent:
 # ---------------------------------------------------------------------------
 # blocked_count()
 # ---------------------------------------------------------------------------
+
 
 class TestBlockedCount:
     def test_counts_only_blocked(self, log):
@@ -133,6 +138,7 @@ class TestBlockedCount:
 # pass_rate()
 # ---------------------------------------------------------------------------
 
+
 class TestPassRate:
     def test_all_safe_returns_one(self, log):
         log.record("validate_input", "l1_input", is_safe=True)
@@ -157,6 +163,7 @@ class TestPassRate:
 # ---------------------------------------------------------------------------
 # hash_params()
 # ---------------------------------------------------------------------------
+
 
 class TestHashParams:
     def test_returns_string(self):

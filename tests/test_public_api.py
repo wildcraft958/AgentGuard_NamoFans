@@ -122,4 +122,6 @@ def test_exceptions_hierarchy():
         SandboxViolationError,
         ConfigurationError,
     ]:
-        assert issubclass(exc_cls, AgentGuardError), f"{exc_cls.__name__} not subclass of AgentGuardError"
+        assert issubclass(exc_cls, AgentGuardError), (
+            f"{exc_cls.__name__} not subclass of AgentGuardError"
+        )

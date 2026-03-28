@@ -1,0 +1,56 @@
+# L4a PBAC Policy Rules
+# Evaluated in order — first matching rule wins.
+# Roles/actions support "*" wildcard.
+
+default_effect: DENY
+
+rules:
+  - id: readonly_public
+    roles: ["reader", "analyst", "executor"]
+    actions: ["read"]
+    min_sensitivity: 0
+    effect: ALLOW
+
+  - id: analyst_read_internal
+    roles: ["analyst"]
+    actions: ["read"]
+    min_sensitivity: 1
+    effect: ALLOW
+
+  - id: analyst_write_elevate
+    roles: ["analyst"]
+    actions: ["write"]
+    min_sensitivity: 2
+    effect: ELEVATE
+
+  - id: executor_write_low
+    roles: ["executor"]
+    actions: ["write", "execute"]
+    min_sensitivity: 0
+    conditions:
+      - key: resource_sensitivity
+        operator: lte
+        value: 1
+    effect: ALLOW
+
+  - id: executor_write_high_elevate
+    roles: ["executor"]
+    actions: ["write", "execute"]
+    min_sensitivity: 2
+    effect: ELEVATE
+
+  - id: critical_requires_hitl
+    roles: ["*"]
+    actions: ["*"]
+    min_sensitivity: 3
+    conditions:
+      - key: hitl_approved
+        operator: eq
+        value: true
+    effect: ELEVATE
+
+  - id: critical_deny_no_hitl
+    roles: ["*"]
+    actions: ["*"]
+    min_sensitivity: 3
+    effect: DENY

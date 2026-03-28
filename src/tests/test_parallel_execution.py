@@ -16,6 +16,7 @@ from agentguard.models import InputValidationResult, ToolCallValidationResult
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_guardian(parallel=True, l1_safe=True, c3_safe=True, c1_safe=True):
     """Build a mock Guardian with configurable behaviour."""
     mock = MagicMock()
@@ -29,9 +30,7 @@ def _make_guardian(parallel=True, l1_safe=True, c3_safe=True, c1_safe=True):
         )
     else:
         mock.validate_input.side_effect = InputBlockedError("injection detected")
-        mock.avalidate_input = AsyncMock(
-            side_effect=InputBlockedError("injection detected")
-        )
+        mock.avalidate_input = AsyncMock(side_effect=InputBlockedError("injection detected"))
 
     # _run_c3/_run_c1/_run_c4 return None on pass (raise ToolCallBlockedError on failure)
     mock._run_c3.return_value = None
@@ -51,8 +50,8 @@ def _make_guardian(parallel=True, l1_safe=True, c3_safe=True, c1_safe=True):
 # ParallelContext unit tests
 # ---------------------------------------------------------------------------
 
-class TestParallelContext:
 
+class TestParallelContext:
     def test_gate_starts_unset(self):
         ctx = ParallelContext(gate=threading.Event())
         assert not ctx.gate.is_set()
@@ -99,12 +98,13 @@ class TestParallelContext:
 # guard decorator — parallel L1 + agent
 # ---------------------------------------------------------------------------
 
-class TestGuardParallelL1:
 
+class TestGuardParallelL1:
     @pytest.mark.asyncio
     async def test_l1_safe_agent_runs_and_returns_result(self):
         """When L1 passes, agent result is returned normally."""
         from agentguard.decorators import guard, _guardian_cache
+
         _guardian_cache.clear()
 
         with patch("agentguard.decorators._get_guardian") as mock_get:
@@ -121,6 +121,7 @@ class TestGuardParallelL1:
     async def test_l1_blocks_raises_input_blocked_error(self):
         """When L1 blocks, InputBlockedError is raised and agent is cancelled."""
         from agentguard.decorators import guard, _guardian_cache
+
         _guardian_cache.clear()
 
         agent_started = threading.Event()
@@ -142,6 +143,7 @@ class TestGuardParallelL1:
         """Speculatively executed tools are logged when L1 blocks."""
         import logging
         from agentguard.decorators import guard, _guardian_cache
+
         _guardian_cache.clear()
 
         guardian = _make_guardian(parallel=True, l1_safe=False)
@@ -167,6 +169,7 @@ class TestGuardParallelL1:
     async def test_sequential_mode_unchanged(self):
         """When parallel_execution_enabled=False, no ParallelContext is created."""
         from agentguard.decorators import guard, _guardian_cache
+
         _guardian_cache.clear()
 
         seen_ctx = []
@@ -188,8 +191,8 @@ class TestGuardParallelL1:
 # Gate mechanism — GuardedToolRegistry
 # ---------------------------------------------------------------------------
 
-class TestParallelGate:
 
+class TestParallelGate:
     def test_gate_blocks_tool_until_set(self):
         """Tool execution waits on the gate and proceeds when L1 passes."""
         from agentguard.decorators import GuardedToolRegistry
@@ -256,8 +259,8 @@ class TestParallelGate:
 # guard_tool — parallel C1 + tool execution
 # ---------------------------------------------------------------------------
 
-class TestGuardToolParallel:
 
+class TestGuardToolParallel:
     def test_c3_blocks_before_tool_runs(self):
         """C3 failure prevents tool from running (C3 is always sequential)."""
         from agentguard.decorators import guard_tool

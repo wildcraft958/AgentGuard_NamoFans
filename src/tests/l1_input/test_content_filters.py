@@ -18,6 +18,7 @@ def _make_category_item(category, severity):
 # Text Moderation Tests
 # ---------------------------------------------------------------
 
+
 class TestContentFiltersText:
     """Tests for ContentFilters.analyze_text() (text moderation)."""
 
@@ -33,6 +34,7 @@ class TestContentFiltersText:
 
     def _mock_text_response(self, filters, hate=0, self_harm=0, sexual=0, violence=0):
         from azure.ai.contentsafety.models import TextCategory
+
         mock_result = MagicMock()
         mock_result.categories_analysis = [
             _make_category_item(TextCategory.HATE, hate),
@@ -98,6 +100,7 @@ class TestContentFiltersText:
 
     def test_api_error_handled(self, filters):
         from azure.core.exceptions import HttpResponseError
+
         error = HttpResponseError(message="Service unavailable")
         error.error = MagicMock()
         error.error.code = "ServiceUnavailable"
@@ -117,6 +120,7 @@ class TestContentFiltersText:
 # Image Moderation Tests
 # ---------------------------------------------------------------
 
+
 class TestContentFiltersImage:
     """Tests for ContentFilters.analyze_image() (image moderation)."""
 
@@ -131,6 +135,7 @@ class TestContentFiltersImage:
 
     def _mock_image_response(self, filters, hate=0, self_harm=0, sexual=0, violence=0):
         from azure.ai.contentsafety.models import ImageCategory
+
         mock_result = MagicMock()
         mock_result.categories_analysis = [
             _make_category_item(ImageCategory.HATE, hate),
@@ -183,6 +188,7 @@ class TestContentFiltersImage:
 
     def test_api_error_handled(self, filters):
         from azure.core.exceptions import HttpResponseError
+
         error = HttpResponseError(message="Service error")
         error.error = None
         filters.client.analyze_image.side_effect = error

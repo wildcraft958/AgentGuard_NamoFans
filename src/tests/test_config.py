@@ -348,9 +348,7 @@ class TestTelemetryEndpoint:
     def test_env_takes_precedence_over_config(self):
         """OTel standard: OTEL_EXPORTER_OTLP_ENDPOINT env var overrides config file."""
         cfg = _make_config({"otel_endpoint": "http://config-collector:4317"})
-        with patch.dict(
-            os.environ, {"OTEL_EXPORTER_OTLP_ENDPOINT": "http://env-collector:4317"}
-        ):
+        with patch.dict(os.environ, {"OTEL_EXPORTER_OTLP_ENDPOINT": "http://env-collector:4317"}):
             assert cfg.telemetry_endpoint == "http://env-collector:4317"
 
     def test_config_used_when_env_not_set(self):
@@ -390,7 +388,6 @@ def _make_melon_config(melon: dict | None = None) -> AgentGuardConfig:
 
 
 class TestMelonConfig:
-
     def test_melon_mode_default_hybrid(self):
         cfg = _make_melon_config({})
         assert cfg.melon_mode == "hybrid"

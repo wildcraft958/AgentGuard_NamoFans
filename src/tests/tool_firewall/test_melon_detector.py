@@ -30,11 +30,13 @@ def _make_chat_response(tool_calls=None, content=None):
 
 def _make_judge_response(verdict, confidence=0.9, reasoning="test"):
     """Create a mock LLM response that returns a judge verdict."""
-    judge_json = json.dumps({
-        "verdict": verdict,
-        "confidence": confidence,
-        "reasoning": reasoning,
-    })
+    judge_json = json.dumps(
+        {
+            "verdict": verdict,
+            "confidence": confidence,
+            "reasoning": reasoning,
+        }
+    )
     return _make_chat_response(content=judge_json)
 
 
@@ -52,9 +54,17 @@ def detector():
 SAMPLE_MESSAGES = [
     {"role": "system", "content": "You are a helpful assistant."},
     {"role": "user", "content": "Read my inbox"},
-    {"role": "assistant", "content": None, "tool_calls": [
-        {"id": "call_1", "type": "function", "function": {"name": "read_inbox", "arguments": "{}"}}
-    ]},
+    {
+        "role": "assistant",
+        "content": None,
+        "tool_calls": [
+            {
+                "id": "call_1",
+                "type": "function",
+                "function": {"name": "read_inbox", "arguments": "{}"},
+            }
+        ],
+    },
     {"role": "tool", "tool_call_id": "call_1", "content": "You have 3 new messages."},
 ]
 
@@ -65,7 +75,6 @@ SAMPLE_SCHEMAS = [
 
 
 class TestMelonDetector:
-
     def test_no_messages_passes(self, detector):
         result = detector.check_tool_output([], SAMPLE_SCHEMAS)
         assert result.is_safe is True
@@ -94,7 +103,9 @@ class TestMelonDetector:
         masked_response = _make_chat_response(tool_calls=[masked_tc])
 
         # Judge response: BLOCK
-        judge_response = _make_judge_response("BLOCK", confidence=0.95, reasoning="Same malicious tool call in both contexts")
+        judge_response = _make_judge_response(
+            "BLOCK", confidence=0.95, reasoning="Same malicious tool call in both contexts"
+        )
 
         detector.client.chat.completions.create.side_effect = [
             original_response,
@@ -111,14 +122,16 @@ class TestMelonDetector:
 
     def test_safe_output_judge_allows(self, detector):
         """When LLM judge returns ALLOW verdict → safe."""
-        orig_tc = _make_tool_call("read_inbox", '{}')
+        orig_tc = _make_tool_call("read_inbox", "{}")
         original_response = _make_chat_response(tool_calls=[orig_tc])
 
         masked_tc = _make_tool_call("summarize", '{"text": "..."}')
         masked_response = _make_chat_response(tool_calls=[masked_tc])
 
         # Judge response: ALLOW
-        judge_response = _make_judge_response("ALLOW", confidence=0.85, reasoning="Different tool calls, no injection")
+        judge_response = _make_judge_response(
+            "ALLOW", confidence=0.85, reasoning="Different tool calls, no injection"
+        )
 
         detector.client.chat.completions.create.side_effect = [
             original_response,
@@ -132,7 +145,7 @@ class TestMelonDetector:
 
     def test_no_masked_tool_calls_passes(self, detector):
         """If masked run produces no tool calls, no comparison → safe."""
-        orig_tc = _make_tool_call("read_inbox", '{}')
+        orig_tc = _make_tool_call("read_inbox", "{}")
         original_response = _make_chat_response(tool_calls=[orig_tc])
         masked_response = _make_chat_response(tool_calls=None, content="Summary of contents.")
 
@@ -194,10 +207,10 @@ class TestMelonDetector:
 
     def test_judge_with_markdown_fences(self, detector):
         """Judge response wrapped in markdown code fences should be parsed correctly."""
-        orig_tc = _make_tool_call("read_inbox", '{}')
+        orig_tc = _make_tool_call("read_inbox", "{}")
         original_response = _make_chat_response(tool_calls=[orig_tc])
 
-        masked_tc = _make_tool_call("summarize", '{}')
+        masked_tc = _make_tool_call("summarize", "{}")
         masked_response = _make_chat_response(tool_calls=[masked_tc])
 
         # Judge returns JSON wrapped in markdown code fences
@@ -316,14 +329,15 @@ def _setup_hybrid_responses(det, orig_name, masked_name, orig_emb, masked_emb, j
 
 
 class TestHybridMelon:
-
     def test_low_similarity_allows_without_judge(self, hybrid_detector):
         """Cosine sim < low_threshold -> ALLOW, judge NOT called."""
         # Orthogonal vectors -> cosine sim ~0.0
         _setup_hybrid_responses(
             hybrid_detector,
-            "read_inbox", "summarize",
-            [1.0, 0.0, 0.0], [0.0, 1.0, 0.0],
+            "read_inbox",
+            "summarize",
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
         )
         result = hybrid_detector.check_tool_output(SAMPLE_MESSAGES, SAMPLE_SCHEMAS)
 
@@ -337,8 +351,10 @@ class TestHybridMelon:
         # Nearly identical vectors -> cosine sim ~0.999
         _setup_hybrid_responses(
             hybrid_detector,
-            "send_email", "send_email",
-            [1.0, 0.1, 0.0], [1.0, 0.1, 0.001],
+            "send_email",
+            "send_email",
+            [1.0, 0.1, 0.0],
+            [1.0, 0.1, 0.001],
         )
         result = hybrid_detector.check_tool_output(SAMPLE_MESSAGES, SAMPLE_SCHEMAS)
 
@@ -353,8 +369,10 @@ class TestHybridMelon:
         judge = _make_judge_response("ALLOW", 0.7, "different intent")
         _setup_hybrid_responses(
             hybrid_detector,
-            "send_email", "send_email",
-            [1.0, 1.0, 0.0], [1.0, 0.0, 1.0],
+            "send_email",
+            "send_email",
+            [1.0, 1.0, 0.0],
+            [1.0, 0.0, 1.0],
             judge=judge,
         )
         result = hybrid_detector.check_tool_output(SAMPLE_MESSAGES, SAMPLE_SCHEMAS)
@@ -367,9 +385,9 @@ class TestHybridMelon:
 
     def test_judge_only_skips_embeddings(self, detector):
         """Existing detector (no embedding_model) -> embeddings.create NOT called."""
-        orig_tc = _make_tool_call("read_inbox", '{}')
+        orig_tc = _make_tool_call("read_inbox", "{}")
         orig_resp = _make_chat_response(tool_calls=[orig_tc])
-        masked_tc = _make_tool_call("summarize", '{}')
+        masked_tc = _make_tool_call("summarize", "{}")
         masked_resp = _make_chat_response(tool_calls=[masked_tc])
         judge = _make_judge_response("ALLOW", 0.8, "safe")
 
@@ -384,8 +402,10 @@ class TestHybridMelon:
         """embedding_only mode + high sim -> BLOCK, only 2 chat calls."""
         _setup_hybrid_responses(
             embedding_only_detector,
-            "send_email", "send_email",
-            [1.0, 0.1, 0.0], [1.0, 0.1, 0.001],
+            "send_email",
+            "send_email",
+            [1.0, 0.1, 0.0],
+            [1.0, 0.1, 0.001],
         )
         result = embedding_only_detector.check_tool_output(SAMPLE_MESSAGES, SAMPLE_SCHEMAS)
 
@@ -397,8 +417,10 @@ class TestHybridMelon:
         """embedding_only mode + ambiguous sim -> ALLOW (no judge)."""
         _setup_hybrid_responses(
             embedding_only_detector,
-            "send_email", "send_email",
-            [1.0, 1.0, 0.0], [1.0, 0.0, 1.0],
+            "send_email",
+            "send_email",
+            [1.0, 1.0, 0.0],
+            [1.0, 0.0, 1.0],
         )
         result = embedding_only_detector.check_tool_output(SAMPLE_MESSAGES, SAMPLE_SCHEMAS)
 
@@ -417,8 +439,10 @@ class TestHybridMelon:
         """Details dict includes cosine sim + thresholds when embedding path used."""
         _setup_hybrid_responses(
             hybrid_detector,
-            "read_inbox", "summarize",
-            [1.0, 0.0, 0.0], [0.0, 1.0, 0.0],
+            "read_inbox",
+            "summarize",
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
         )
         result = hybrid_detector.check_tool_output(SAMPLE_MESSAGES, SAMPLE_SCHEMAS)
 
@@ -430,7 +454,6 @@ class TestHybridMelon:
 
 
 class TestCosineHelper:
-
     def test_identical_vectors(self):
         v = np.array([1.0, 2.0, 3.0])
         assert abs(_cosine_similarity(v, v) - 1.0) < 1e-6
@@ -444,4 +467,3 @@ class TestCosineHelper:
         a = np.array([0.0, 0.0])
         b = np.array([1.0, 1.0])
         assert _cosine_similarity(a, b) == 0.0
-

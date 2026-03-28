@@ -366,6 +366,45 @@ class AgentGuardConfig:
     def behavioral_monitoring_config(self) -> dict:
         return _deep_get(self._raw, "behavioral_monitoring", default={})
 
+    # ----- L4 Adaptive (PBAC + Behavioral Orchestrator) -----
+
+    @property
+    def l4_adaptive_enabled(self) -> bool:
+        return _deep_get(self._raw, "l4_adaptive", "enabled", default=False)
+
+    @property
+    def l4_policies_file(self) -> str | None:
+        return _deep_get(self._raw, "l4_adaptive", "policies_file", default=None)
+
+    @property
+    def l4_ioa_patterns_file(self) -> str | None:
+        return _deep_get(self._raw, "l4_adaptive", "ioa_patterns_file", default=None)
+
+    @property
+    def l4_elevate_threshold(self) -> float:
+        return _deep_get(self._raw, "l4_adaptive", "elevate_threshold", default=0.70)
+
+    @property
+    def l4_deny_threshold(self) -> float:
+        return _deep_get(self._raw, "l4_adaptive", "deny_threshold", default=0.90)
+
+    @property
+    def l4_cold_start_threshold(self) -> int:
+        return _deep_get(self._raw, "l4_adaptive", "cold_start_threshold", default=50)
+
+    @property
+    def l4_drift_window(self) -> int:
+        return _deep_get(self._raw, "l4_adaptive", "drift_window", default=8)
+
+    @property
+    def l4_baseline_weights(self) -> dict:
+        return _deep_get(
+            self._raw,
+            "l4_adaptive",
+            "weights",
+            default={"baseline": 0.35, "graph": 0.40, "drift": 0.25},
+        )
+
     # ----- Audit Log -----
 
     @property

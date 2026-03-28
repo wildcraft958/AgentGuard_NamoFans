@@ -31,9 +31,7 @@ class TestPIIDetector:
     def test_no_pii_found(self, MockClient):
         mock_client = MagicMock()
         MockClient.return_value = mock_client
-        mock_client.recognize_pii_entities.return_value = [
-            _make_mock_doc("Hello world", [])
-        ]
+        mock_client.recognize_pii_entities.return_value = [_make_mock_doc("Hello world", [])]
 
         detector = PIIDetector(endpoint="https://test.com", key="test-key")
         result = detector.analyze("Hello world")

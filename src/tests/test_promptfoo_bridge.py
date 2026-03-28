@@ -71,7 +71,11 @@ class TestCallApi:
 
         result = call_api("test", _make_options(), {})
         assert "output" in result
-        assert "error" in result["output"].lower() or "BLOCKED" in result["output"] or result["output"].startswith("[")
+        assert (
+            "error" in result["output"].lower()
+            or "BLOCKED" in result["output"]
+            or result["output"].startswith("[")
+        )
 
     def test_extracts_output_field_from_dict(self):
         """Agent returns dict; bridge extracts output_field."""
@@ -117,7 +121,9 @@ class TestCallApi:
 
     def test_reads_agent_name_from_config(self, tmp_path):
         """Bridge reads agent_name from AGENTGUARD_CONFIG yaml."""
-        config_content = "version: 1\nagent_name: ConfigBot\nglobal:\n  mode: enforce\n  log_level: standard\n"
+        config_content = (
+            "version: 1\nagent_name: ConfigBot\nglobal:\n  mode: enforce\n  log_level: standard\n"
+        )
         config_file = tmp_path / "test_agentguard.yaml"
         config_file.write_text(config_content)
 

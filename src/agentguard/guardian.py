@@ -207,6 +207,7 @@ class Guardian:
         # ── L4: RBAC + Behavioral Anomaly ──
         self._l4_rbac = None
         self._l4_behavioral = None
+        self._l4_orchestrator = None
 
         if self.config.rbac_enabled:
             from agentguard.l4.rbac import L4RBACEngine
@@ -219,6 +220,13 @@ class Guardian:
 
             self._l4_behavioral = BehavioralAnomalyDetector(self.config)
             logger.info("L4 Behavioral Anomaly Detector: ENABLED")
+
+        if self.config.l4_adaptive_enabled:
+            try:
+                self._l4_orchestrator = self._init_l4_orchestrator()
+                logger.info("L4 Adaptive Orchestrator: ENABLED")
+            except Exception as e:
+                logger.error("Failed to initialize L4 Adaptive Orchestrator: %s", e)
 
         # ── C4: Approval Workflow (HITL / AITL) ──
         self._approval_workflow = None
@@ -253,6 +261,50 @@ class Guardian:
     # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
+
+    def _init_l4_orchestrator(self):
+        """Initialize the L4 Adaptive Orchestrator with all sub-components."""
+        import os
+
+        import yaml
+
+        from agentguard.l4.behavioral.baseline import AdaptiveBehavioralBaseline
+        from agentguard.l4.behavioral.drift_monitor import ComplianceDriftMonitor
+        from agentguard.l4.behavioral.session_graph import SessionGraphScorer
+        from agentguard.l4.orchestrator import L4Orchestrator
+        from agentguard.l4.policy_engine import PolicyDecisionPoint
+
+        # Load policy file
+        policies_file = self.config.l4_policies_file
+        if not policies_file:
+            policies_file = os.path.join(os.path.dirname(__file__), "config", "l4_policies.yaml")
+        pdp = PolicyDecisionPoint(policies_file)
+
+        # Load IOA patterns
+        ioa_file = self.config.l4_ioa_patterns_file
+        if not ioa_file:
+            ioa_file = os.path.join(os.path.dirname(__file__), "config", "ioa_patterns.yaml")
+        with open(ioa_file) as f:
+            ioa_data = yaml.safe_load(f)
+        ioa_patterns = ioa_data.get("patterns", [])
+
+        baseline = AdaptiveBehavioralBaseline(
+            cold_start_threshold=self.config.l4_cold_start_threshold,
+        )
+        graph_scorer = SessionGraphScorer(ioa_patterns)
+        drift_monitor = ComplianceDriftMonitor(
+            window_size=self.config.l4_drift_window,
+        )
+
+        return L4Orchestrator(
+            pdp=pdp,
+            baseline=baseline,
+            graph_scorer=graph_scorer,
+            drift_monitor=drift_monitor,
+            elevate_threshold=self.config.l4_elevate_threshold,
+            deny_threshold=self.config.l4_deny_threshold,
+            weights=self.config.l4_baseline_weights,
+        )
 
     def _setup_logging(self):
         """Configure logging based on config level."""

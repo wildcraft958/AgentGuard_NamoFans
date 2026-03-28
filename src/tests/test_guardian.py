@@ -90,16 +90,12 @@ class TestGuardian:
         """Test that safe input passes through all L1 checks."""
         # Mock Prompt Shields: safe
         mock_ps = MagicMock()
-        mock_ps.analyze.return_value = ValidationResult(
-            is_safe=True, layer="prompt_shields"
-        )
+        mock_ps.analyze.return_value = ValidationResult(is_safe=True, layer="prompt_shields")
         MockPS.return_value = mock_ps
 
         # Mock Content Filters: safe
         mock_cf = MagicMock()
-        mock_cf.analyze_text.return_value = ValidationResult(
-            is_safe=True, layer="content_filters"
-        )
+        mock_cf.analyze_text.return_value = ValidationResult(is_safe=True, layer="content_filters")
         MockCF.return_value = mock_cf
 
         path = _write_config(ENFORCE_CONFIG)
@@ -141,9 +137,7 @@ class TestGuardian:
     def test_content_filter_blocked_enforce(self, MockPS, MockCF):
         """Test that harmful content raises InputBlockedError."""
         mock_ps = MagicMock()
-        mock_ps.analyze.return_value = ValidationResult(
-            is_safe=True, layer="prompt_shields"
-        )
+        mock_ps.analyze.return_value = ValidationResult(is_safe=True, layer="prompt_shields")
         MockPS.return_value = mock_ps
 
         mock_cf = MagicMock()
@@ -221,15 +215,11 @@ class TestGuardian:
     def test_validate_input_with_documents(self, MockPS, MockCF):
         """Test that documents are passed to Prompt Shields."""
         mock_ps = MagicMock()
-        mock_ps.analyze.return_value = ValidationResult(
-            is_safe=True, layer="prompt_shields"
-        )
+        mock_ps.analyze.return_value = ValidationResult(is_safe=True, layer="prompt_shields")
         MockPS.return_value = mock_ps
 
         mock_cf = MagicMock()
-        mock_cf.analyze_text.return_value = ValidationResult(
-            is_safe=True, layer="content_filters"
-        )
+        mock_cf.analyze_text.return_value = ValidationResult(is_safe=True, layer="content_filters")
         MockCF.return_value = mock_cf
 
         path = _write_config(ENFORCE_CONFIG)

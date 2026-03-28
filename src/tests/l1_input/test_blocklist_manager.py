@@ -95,9 +95,11 @@ class TestBlocklistManager:
         MockClient.return_value = mock_client
 
         manager = BlocklistManager(endpoint="https://test.com", key="test-key")
-        manager.sync_blocklists([
-            {"name": "bl1", "description": "", "terms": ["a"]},
-        ])
+        manager.sync_blocklists(
+            [
+                {"name": "bl1", "description": "", "terms": ["a"]},
+            ]
+        )
 
         assert manager.blocklist_names == ["bl1"]
 
@@ -116,10 +118,12 @@ class TestBlocklistManager:
         ]
 
         manager = BlocklistManager(endpoint="https://test.com", key="test-key")
-        result = manager.sync_blocklists([
-            {"name": "fail-list", "description": "", "terms": ["a"]},
-            {"name": "ok-list", "description": "", "terms": ["b"]},
-        ])
+        result = manager.sync_blocklists(
+            [
+                {"name": "fail-list", "description": "", "terms": ["a"]},
+                {"name": "ok-list", "description": "", "terms": ["b"]},
+            ]
+        )
 
         assert result == ["ok-list"]
 

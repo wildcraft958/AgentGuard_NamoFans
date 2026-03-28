@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, patch
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_vulnerability_result(vulnerability="LLM01", passing=8, failing=2):
     r = MagicMock()
     r.vulnerability = vulnerability
@@ -117,6 +118,7 @@ class TestBuildCallback:
 
         try:
             from deepteam.test_case import RTTurn
+
             result = cb("hello")
             assert isinstance(result, RTTurn)
             assert result.role == "assistant"
@@ -133,6 +135,7 @@ class TestBuildCallback:
         cb = _build_callback(failing_agent)
         try:
             from deepteam.test_case import RTTurn
+
             result = cb("probe")
             assert isinstance(result, RTTurn)
             assert "agent error" in result.content

@@ -137,13 +137,29 @@ rbac:
       approved_domains: []
       expected_sequence: []
 
-# ── L4: Behavioral Monitoring ─────────────────────────────────────
+# ── L4: Behavioral Monitoring (legacy) ────────────────────────────
 behavioral_monitoring:
   enabled: true
   max_tool_calls_zscore_threshold: 2.5
   sequence_divergence_threshold: 0.4
   entropy_spike_multiplier: 1.5
   exfil_chain_detection: true
+
+# ── L4 Adaptive: PBAC + Behavioral Anomaly Engine ────────────────
+# Replaces static ABAC with hot-reloadable YAML policies (L4a)
+# and online behavioral anomaly detection (L4b).
+l4_adaptive:
+  enabled: false
+  policies_file: null           # path to l4_policies.yaml (null = use bundled default)
+  ioa_patterns_file: null       # path to ioa_patterns.yaml (null = use bundled default)
+  elevate_threshold: 0.70       # risk_score >= this -> ELEVATE
+  deny_threshold: 0.90          # risk_score >= this -> DENY
+  cold_start_threshold: 50      # calls before per-role model trusted
+  drift_window: 8               # sliding window for sensitivity drift
+  weights:
+    baseline: 0.35              # HalfSpaceTrees anomaly weight
+    graph: 0.40                 # session graph + IOA weight
+    drift: 0.25                 # compliance drift weight
 
 # ── Promptfoo Red-Team Testing ────────────────────────────────────
 testing:

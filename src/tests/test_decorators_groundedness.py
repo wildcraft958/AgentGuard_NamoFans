@@ -26,13 +26,9 @@ def _mock_guardian(output_result=None):
     """Create a mock Guardian with safe L1 and configurable L2."""
     mock = MagicMock()
     mock.validate_input.return_value = InputValidationResult(is_safe=True, results=[])
-    mock.avalidate_input = AsyncMock(
-        return_value=InputValidationResult(is_safe=True, results=[])
-    )
+    mock.avalidate_input = AsyncMock(return_value=InputValidationResult(is_safe=True, results=[]))
     if output_result is None:
-        mock.validate_output.return_value = OutputValidationResult(
-            is_safe=True, results=[]
-        )
+        mock.validate_output.return_value = OutputValidationResult(is_safe=True, results=[])
         mock.avalidate_output = AsyncMock(
             return_value=OutputValidationResult(is_safe=True, results=[])
         )
@@ -46,9 +42,7 @@ def _mock_guardian_output_blocked(reason="Ungrounded content detected"):
     """Create a mock Guardian that blocks output."""
     mock = MagicMock()
     mock.validate_input.return_value = InputValidationResult(is_safe=True, results=[])
-    mock.avalidate_input = AsyncMock(
-        return_value=InputValidationResult(is_safe=True, results=[])
-    )
+    mock.avalidate_input = AsyncMock(return_value=InputValidationResult(is_safe=True, results=[]))
     mock.validate_output.side_effect = OutputBlockedError(reason=reason)
     mock.avalidate_output = AsyncMock(side_effect=OutputBlockedError(reason=reason))
     return mock
@@ -56,8 +50,8 @@ def _mock_guardian_output_blocked(reason="Ungrounded content detected"):
 
 # ── Document threading (L1 input → L2 output) ────────────────────
 
-class TestDocumentThreading:
 
+class TestDocumentThreading:
     @patch("agentguard.decorators._get_guardian")
     def test_guard_passes_documents_to_validate_output(self, mock_get):
         """@guard(docs_param='docs', output_field='response') should thread
@@ -138,8 +132,8 @@ class TestDocumentThreading:
 
 # ── Blocking behavior ────────────────────────────────────────────
 
-class TestBlockingBehavior:
 
+class TestBlockingBehavior:
     @patch("agentguard.decorators._get_guardian")
     def test_guard_output_blocked_by_groundedness_raises(self, mock_get):
         """OutputBlockedError should propagate from validate_output."""
@@ -159,9 +153,7 @@ class TestBlockingBehavior:
     @patch("agentguard.decorators._get_guardian")
     def test_guard_async_output_blocked_by_groundedness(self, mock_get):
         """OutputBlockedError should propagate from async validate_output."""
-        mock_get.return_value = _mock_guardian_output_blocked(
-            "Ungrounded content detected"
-        )
+        mock_get.return_value = _mock_guardian_output_blocked("Ungrounded content detected")
 
         @guard(param="msg", output_field="response")
         async def async_chat(msg: str):
@@ -173,8 +165,8 @@ class TestBlockingBehavior:
 
 # ── Backward compatibility ───────────────────────────────────────
 
-class TestBackwardCompatibility:
 
+class TestBackwardCompatibility:
     @patch("agentguard.decorators._get_guardian")
     def test_guard_input_only_still_works(self, mock_get):
         """@guard_input() should still work — no L2 at all."""

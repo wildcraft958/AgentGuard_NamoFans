@@ -21,6 +21,7 @@ from agentguard.l2_output.groundedness_detector import (
 # Helpers
 # ══════════════════════════════════════════════════════════════════
 
+
 def _make_llm_response(content: str):
     """Create a mock OpenAI chat completion response."""
     message = MagicMock()
@@ -32,7 +33,9 @@ def _make_llm_response(content: str):
     return response
 
 
-def _judge_output(score: int, explanation: str = "test explanation", thoughts: str = "test thoughts"):
+def _judge_output(
+    score: int, explanation: str = "test explanation", thoughts: str = "test thoughts"
+):
     """Build a properly formatted judge output string."""
     return f"<S0>{thoughts}</S0>\n<S1>{explanation}</S1>\n<S2>{score}</S2>"
 
@@ -104,7 +107,9 @@ class TestGroundednessDetectorInit:
         monkeypatch.setenv("OPENAI_API_KEY", "env-key")
         monkeypatch.setenv("OPENAI_BASE_URL", "https://env.example.com/v1")
         monkeypatch.setenv("OPENAI_MODEL", "env-model")
-        det = _detector(api_key="override-key", base_url="https://override.com/v1", model="override-model")
+        det = _detector(
+            api_key="override-key", base_url="https://override.com/v1", model="override-model"
+        )
         assert det.api_key == "override-key"
         assert det.base_url == "https://override.com/v1"
         assert det.model == "override-model"
@@ -182,9 +187,7 @@ class TestWithQueryMode:
 
     def test_with_query_prompt_contains_required_fields(self):
         mock_client = MagicMock()
-        mock_client.chat.completions.create.return_value = _make_llm_response(
-            _judge_output(5)
-        )
+        mock_client.chat.completions.create.return_value = _make_llm_response(_judge_output(5))
         det = _detector(mock_client=mock_client)
         det.analyze(text="answer text", user_query="the query", grounding_sources=["source doc"])
         call_args = mock_client.chat.completions.create.call_args
@@ -195,9 +198,7 @@ class TestWithQueryMode:
 
     def test_multiple_grounding_sources_concatenated(self):
         mock_client = MagicMock()
-        mock_client.chat.completions.create.return_value = _make_llm_response(
-            _judge_output(5)
-        )
+        mock_client.chat.completions.create.return_value = _make_llm_response(_judge_output(5))
         det = _detector(mock_client=mock_client)
         det.analyze(
             text="Combined info",
@@ -280,11 +281,11 @@ class TestWithoutQueryMode:
 
     def test_multiple_docs_summarization(self):
         mock_client = MagicMock()
-        mock_client.chat.completions.create.return_value = _make_llm_response(
-            _judge_output(4)
-        )
+        mock_client.chat.completions.create.return_value = _make_llm_response(_judge_output(4))
         det = _detector(mock_client=mock_client)
-        result = det.analyze(text="Combined summary", grounding_sources=["First source.", "Second source."])
+        result = det.analyze(
+            text="Combined summary", grounding_sources=["First source.", "Second source."]
+        )
         assert result.is_safe is True
         assert result.details["groundedness_score"] == 4
 
@@ -329,9 +330,7 @@ class TestQueryOnlyMode:
     def test_query_only_prompt_has_no_context_field(self):
         """Relevance prompt should not have CONTEXT field."""
         mock_client = MagicMock()
-        mock_client.chat.completions.create.return_value = _make_llm_response(
-            _judge_output(5)
-        )
+        mock_client.chat.completions.create.return_value = _make_llm_response(_judge_output(5))
         det = _detector(mock_client=mock_client)
         det.analyze(text="Some answer", user_query="Some question")
         call_args = mock_client.chat.completions.create.call_args
@@ -397,22 +396,23 @@ class TestSkipLogic:
 class TestThresholdLogic:
     """Tests for confidence threshold and blocking logic."""
 
-    @pytest.mark.parametrize("score,threshold,expected_safe", [
-        (5, 3, True),
-        (4, 3, True),
-        (3, 3, True),
-        (2, 3, False),
-        (1, 3, False),
-        (5, 5, True),
-        (4, 5, False),
-        (1, 1, True),
-        (3, 4, False),
-    ])
+    @pytest.mark.parametrize(
+        "score,threshold,expected_safe",
+        [
+            (5, 3, True),
+            (4, 3, True),
+            (3, 3, True),
+            (2, 3, False),
+            (1, 3, False),
+            (5, 5, True),
+            (4, 5, False),
+            (1, 1, True),
+            (3, 4, False),
+        ],
+    )
     def test_threshold_boundary(self, score, threshold, expected_safe):
         mock_client = MagicMock()
-        mock_client.chat.completions.create.return_value = _make_llm_response(
-            _judge_output(score)
-        )
+        mock_client.chat.completions.create.return_value = _make_llm_response(_judge_output(score))
         det = _detector(mock_client=mock_client)
         result = det.analyze(
             text="Some response",
@@ -424,9 +424,7 @@ class TestThresholdLogic:
 
     def test_blocking_disabled_allows_low_score(self):
         mock_client = MagicMock()
-        mock_client.chat.completions.create.return_value = _make_llm_response(
-            _judge_output(1)
-        )
+        mock_client.chat.completions.create.return_value = _make_llm_response(_judge_output(1))
         det = _detector(mock_client=mock_client)
         result = det.analyze(
             text="Completely wrong answer",
@@ -440,31 +438,37 @@ class TestThresholdLogic:
 
     def test_blocked_reason_contains_score_info(self):
         mock_client = MagicMock()
-        mock_client.chat.completions.create.return_value = _make_llm_response(
-            _judge_output(2)
-        )
+        mock_client.chat.completions.create.return_value = _make_llm_response(_judge_output(2))
         det = _detector(mock_client=mock_client)
-        result = det.analyze(text="Wrong", user_query="Question", grounding_sources=["Source."], confidence_threshold=3.0)
+        result = det.analyze(
+            text="Wrong",
+            user_query="Question",
+            grounding_sources=["Source."],
+            confidence_threshold=3.0,
+        )
         assert result.is_safe is False
         assert "score: 2/5" in result.blocked_reason
         assert "threshold: 3" in result.blocked_reason
 
     def test_default_threshold_is_3(self):
         mock_client = MagicMock()
-        mock_client.chat.completions.create.return_value = _make_llm_response(
-            _judge_output(3)
-        )
+        mock_client.chat.completions.create.return_value = _make_llm_response(_judge_output(3))
         det = _detector(mock_client=mock_client)
-        result = det.analyze(text="Adequate response", user_query="Question", grounding_sources=["Source."])
+        result = det.analyze(
+            text="Adequate response", user_query="Question", grounding_sources=["Source."]
+        )
         assert result.is_safe is True
 
     def test_score_exactly_at_threshold_passes(self):
         mock_client = MagicMock()
-        mock_client.chat.completions.create.return_value = _make_llm_response(
-            _judge_output(4)
-        )
+        mock_client.chat.completions.create.return_value = _make_llm_response(_judge_output(4))
         det = _detector(mock_client=mock_client)
-        result = det.analyze(text="Good response", user_query="Query", grounding_sources=["Source."], confidence_threshold=4.0)
+        result = det.analyze(
+            text="Good response",
+            user_query="Query",
+            grounding_sources=["Source."],
+            confidence_threshold=4.0,
+        )
         assert result.is_safe is True
 
 
@@ -480,7 +484,9 @@ class TestLLMErrors:
         mock_client = MagicMock()
         mock_client.chat.completions.create.side_effect = TimeoutError("LLM timeout")
         det = _detector(mock_client=mock_client)
-        result = det.analyze(text="Some output", user_query="Some query", grounding_sources=["Source."])
+        result = det.analyze(
+            text="Some output", user_query="Some query", grounding_sources=["Source."]
+        )
         assert result.is_safe is False
         assert "fail-safe" in result.blocked_reason
 
@@ -488,7 +494,9 @@ class TestLLMErrors:
         mock_client = MagicMock()
         mock_client.chat.completions.create.side_effect = Exception("API rate limit")
         det = _detector(mock_client=mock_client)
-        result = det.analyze(text="Some output", user_query="Some query", grounding_sources=["Source."])
+        result = det.analyze(
+            text="Some output", user_query="Some query", grounding_sources=["Source."]
+        )
         assert result.is_safe is False
         assert "fail-safe" in result.blocked_reason
         assert "API rate limit" in result.blocked_reason
@@ -497,7 +505,9 @@ class TestLLMErrors:
         mock_client = MagicMock()
         mock_client.chat.completions.create.return_value = _make_llm_response(None)
         det = _detector(mock_client=mock_client)
-        result = det.analyze(text="Some output", user_query="Some query", grounding_sources=["Source."])
+        result = det.analyze(
+            text="Some output", user_query="Some query", grounding_sources=["Source."]
+        )
         assert result.is_safe is False
         assert "unparseable" in result.blocked_reason
 
@@ -505,7 +515,9 @@ class TestLLMErrors:
         mock_client = MagicMock()
         mock_client.chat.completions.create.return_value = _make_llm_response("")
         det = _detector(mock_client=mock_client)
-        result = det.analyze(text="Some output", user_query="Some query", grounding_sources=["Source."])
+        result = det.analyze(
+            text="Some output", user_query="Some query", grounding_sources=["Source."]
+        )
         assert result.is_safe is False
         assert "unparseable" in result.blocked_reason
 
@@ -658,7 +670,9 @@ class TestResultDetails:
         mock_client = MagicMock()
         mock_client.chat.completions.create.return_value = _make_llm_response(_judge_output(1))
         det = _detector(mock_client=mock_client)
-        result = det.analyze(text="Bad", user_query="Q", grounding_sources=["Source."], confidence_threshold=3.0)
+        result = det.analyze(
+            text="Bad", user_query="Q", grounding_sources=["Source."], confidence_threshold=3.0
+        )
         assert result.layer == LAYER
         assert result.is_safe is False
 
@@ -680,7 +694,9 @@ class TestRealisticScenarios:
         result = det.analyze(
             text="The Alpine Explorer Tent is $120 and weighs 5kg.",
             user_query="How much does the Alpine Explorer Tent cost?",
-            grounding_sources=["Product: Alpine Explorer Tent. Price: $120. Weight: 5kg. Waterproof: IPX4."],
+            grounding_sources=[
+                "Product: Alpine Explorer Tent. Price: $120. Weight: 5kg. Waterproof: IPX4."
+            ],
         )
         assert result.is_safe is True
         assert result.details["groundedness_score"] == 5

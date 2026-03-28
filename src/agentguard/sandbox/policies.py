@@ -78,7 +78,9 @@ class ResourceLimits:
     max_memory_mb: Optional[int] = 512  # RLIMIT_AS
     max_cpu_seconds: Optional[int] = 30  # RLIMIT_CPU
     max_file_size_mb: Optional[int] = 100  # RLIMIT_FSIZE
-    max_processes: Optional[int] = None  # RLIMIT_NPROC — None=disabled (conflicts with Queue threads)
+    max_processes: Optional[int] = (
+        None  # RLIMIT_NPROC — None=disabled (conflicts with Queue threads)
+    )
     max_open_files: Optional[int] = 64  # RLIMIT_NOFILE — prevents FD exhaustion attacks
 
 

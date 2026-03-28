@@ -24,8 +24,7 @@ def _make_config(
     config.approval_workflow_enabled = enabled
     config.approval_workflow_mode = mode
     config.approval_workflow_tools_requiring_review = (
-        tools_requiring_review if tools_requiring_review is not None
-        else _DEFAULT_REVIEW_TOOLS
+        tools_requiring_review if tools_requiring_review is not None else _DEFAULT_REVIEW_TOOLS
     )
     config.approval_workflow_ai_supervisor_config = ai_supervisor or {
         "model": "deepseek-r1",
@@ -39,6 +38,7 @@ def _make_config(
 # ------------------------------------------------------------------
 # HITL Tests
 # ------------------------------------------------------------------
+
 
 class TestHITL:
     """Human-in-the-Loop approval tests."""
@@ -94,6 +94,7 @@ class TestHITL:
 # AITL Tests
 # ------------------------------------------------------------------
 
+
 class TestAITL:
     """AI-in-the-Loop approval tests."""
 
@@ -117,9 +118,11 @@ class TestAITL:
         )
         workflow._ai_client = mock_client
 
-        result = workflow.check("shell_execute", {"command": "ls"}, context={
-            "messages": [{"role": "user", "content": "List files in current directory"}]
-        })
+        result = workflow.check(
+            "shell_execute",
+            {"command": "ls"},
+            context={"messages": [{"role": "user", "content": "List files in current directory"}]},
+        )
         assert result.is_safe
         assert result.details["mode"] == "ai"
         assert result.details["decision"] == "approved"
@@ -134,9 +137,11 @@ class TestAITL:
         )
         workflow._ai_client = mock_client
 
-        result = workflow.check("escalate_to_root", {"reason": "maintenance"}, context={
-            "messages": [{"role": "user", "content": "What tables are in the database?"}]
-        })
+        result = workflow.check(
+            "escalate_to_root",
+            {"reason": "maintenance"},
+            context={"messages": [{"role": "user", "content": "What tables are in the database?"}]},
+        )
         assert not result.is_safe
         assert "rejected" in result.blocked_reason.lower()
         assert "privileges" in result.details["reason"].lower()
@@ -159,16 +164,22 @@ class TestAITL:
         workflow = ApprovalWorkflow(config)
 
         mock_client = MagicMock()
-        mock_client.chat.completions.create.return_value = self._mock_openai_response("APPROVE: safe")
+        mock_client.chat.completions.create.return_value = self._mock_openai_response(
+            "APPROVE: safe"
+        )
         workflow._ai_client = mock_client
 
         user_msg = "Please list all database tables"
-        workflow.check("shell_execute", {"command": "ls"}, context={
-            "messages": [
-                {"role": "system", "content": "You are a helpful assistant."},
-                {"role": "user", "content": user_msg},
-            ]
-        })
+        workflow.check(
+            "shell_execute",
+            {"command": "ls"},
+            context={
+                "messages": [
+                    {"role": "system", "content": "You are a helpful assistant."},
+                    {"role": "user", "content": user_msg},
+                ]
+            },
+        )
 
         # Verify the user prompt was included in the LLM call
         call_args = mock_client.chat.completions.create.call_args
@@ -181,7 +192,9 @@ class TestAITL:
         workflow = ApprovalWorkflow(config)
 
         mock_client = MagicMock()
-        mock_client.chat.completions.create.return_value = self._mock_openai_response("APPROVE: safe")
+        mock_client.chat.completions.create.return_value = self._mock_openai_response(
+            "APPROVE: safe"
+        )
         workflow._ai_client = mock_client
 
         result = workflow.check("shell_execute", {"command": "ls"}, context=None)
@@ -197,6 +210,7 @@ class TestAITL:
 # ------------------------------------------------------------------
 # Unknown mode / edge cases
 # ------------------------------------------------------------------
+
 
 class TestEdgeCases:
     """Edge case tests."""

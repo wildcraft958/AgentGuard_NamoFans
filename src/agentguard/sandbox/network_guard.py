@@ -55,6 +55,7 @@ def apply_network_guard(network_policy) -> None:
 
 def _install_block_all() -> None:
     """Replace socket.connect, bind, and listen with functions that always raise."""
+
     def _blocked_connect(self, address):
         raise ConnectionRefusedError(
             f"[AgentGuard Sandbox] Outbound connection blocked (mode=block_all). "
@@ -63,14 +64,11 @@ def _install_block_all() -> None:
 
     def _blocked_bind(self, address):
         raise ConnectionRefusedError(
-            f"[AgentGuard Sandbox] Socket bind blocked (mode=block_all). "
-            f"Attempted: {address}"
+            f"[AgentGuard Sandbox] Socket bind blocked (mode=block_all). Attempted: {address}"
         )
 
     def _blocked_listen(self, backlog=0):
-        raise ConnectionRefusedError(
-            "[AgentGuard Sandbox] Socket listen blocked (mode=block_all)."
-        )
+        raise ConnectionRefusedError("[AgentGuard Sandbox] Socket listen blocked (mode=block_all).")
 
     _socket_module.socket.connect = _blocked_connect
     _socket_module.socket.bind = _blocked_bind

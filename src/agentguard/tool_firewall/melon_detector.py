@@ -312,9 +312,7 @@ class MelonDetector:
     # Tiered decision (shared by sync + async paths)
     # ------------------------------------------------------------------
 
-    def _tiered_decision(
-        self, original_tool_call_texts: list[str], embed_fn
-    ) -> ValidationResult:
+    def _tiered_decision(self, original_tool_call_texts: list[str], embed_fn) -> ValidationResult:
         """Run tiered decision: embedding pre-filter then optional LLM judge.
 
         Args:
@@ -370,7 +368,11 @@ class MelonDetector:
                     f"Indirect prompt injection detected in tool output "
                     f"(embedding similarity: {max_sim:.4f}, threshold: {self.high_threshold})"
                 ),
-                details={"decision_path": "embedding_block", "redacted_output": redacted, **base_details},
+                details={
+                    "decision_path": "embedding_block",
+                    "redacted_output": redacted,
+                    **base_details,
+                },
             )
 
         # Ambiguous

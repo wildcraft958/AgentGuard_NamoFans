@@ -1,0 +1,28 @@
+# IOA (Indicators of Attack) patterns for session graph scoring.
+# Each pattern is a sequence of tool names that, when matched as a suffix
+# of recent call history, indicates a specific attack behavior.
+
+patterns:
+  - name: "Credential Harvesting"
+    sequence: ["file_read", "file_read", "http_post"]
+    risk_delta: 0.90
+
+  - name: "Recon + Exfil"
+    sequence: ["sql_query", "http_post"]
+    risk_delta: 0.85
+
+  - name: "Privilege Escalation"
+    sequence: ["shell_exec", "file_write", "http_post"]
+    risk_delta: 0.95
+
+  - name: "Config Poisoning"
+    sequence: ["file_read", "file_write", "file_write"]
+    risk_delta: 0.80
+
+  - name: "Data Staging"
+    sequence: ["sql_query", "file_write", "http_post"]
+    risk_delta: 0.88
+
+  - name: "Lateral Probe"
+    sequence: ["http_get", "http_get", "shell_exec"]
+    risk_delta: 0.82

@@ -13,6 +13,7 @@ from agentguard.models import InputValidationResult
 # Fixtures
 # ---------------------------------------------------------------
 
+
 @pytest.fixture(autouse=True)
 def clear_cache():
     """Clear the Guardian cache before each test."""
@@ -27,9 +28,7 @@ def _mock_guardian_safe():
     mock.config.parallel_execution_enabled = False
     mock.validate_input.return_value = InputValidationResult(is_safe=True, results=[])
     # Async variants for async decorator wrapper
-    mock.avalidate_input = AsyncMock(
-        return_value=InputValidationResult(is_safe=True, results=[])
-    )
+    mock.avalidate_input = AsyncMock(return_value=InputValidationResult(is_safe=True, results=[]))
     mock.avalidate_output = AsyncMock(return_value=None)
     return mock
 
@@ -52,8 +51,8 @@ def _mock_guardian_blocked():
 # @guard_input tests
 # ---------------------------------------------------------------
 
-class TestGuardInput:
 
+class TestGuardInput:
     @patch("agentguard.decorators._get_guardian")
     def test_safe_input_passes(self, mock_get):
         mock_get.return_value = _mock_guardian_safe()
@@ -164,8 +163,8 @@ class TestGuardInput:
 # Async tests
 # ---------------------------------------------------------------
 
-class TestAsyncGuardInput:
 
+class TestAsyncGuardInput:
     @patch("agentguard.decorators._get_guardian")
     def test_async_safe_passes(self, mock_get):
         mock_get.return_value = _mock_guardian_safe()
@@ -194,8 +193,8 @@ class TestAsyncGuardInput:
 # Guardian caching tests
 # ---------------------------------------------------------------
 
-class TestGuardianCache:
 
+class TestGuardianCache:
     @patch("agentguard.decorators.Guardian")
     def test_same_config_reuses_guardian(self, MockGuardian):
         """Same config path should create only one Guardian instance."""

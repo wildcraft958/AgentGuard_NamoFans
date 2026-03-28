@@ -57,6 +57,7 @@ class TestGeneratePromptfooConfig:
         output_path = str(tmp_path / "promptfooconfig.yaml")
 
         from agentguard.cli import generate_promptfoo_config
+
         generate_promptfoo_config(config_path, None, None, output_path)
 
         assert os.path.exists(output_path)
@@ -69,6 +70,7 @@ class TestGeneratePromptfooConfig:
         output_path = str(tmp_path / "promptfooconfig.yaml")
 
         from agentguard.cli import generate_promptfoo_config
+
         generate_promptfoo_config(config_path, None, None, output_path)
 
         with open(output_path) as f:
@@ -88,6 +90,7 @@ class TestGeneratePromptfooConfig:
         output_path = str(tmp_path / "promptfooconfig.yaml")
 
         from agentguard.cli import generate_promptfoo_config
+
         generate_promptfoo_config(config_path, None, None, output_path)
 
         with open(output_path) as f:
@@ -102,6 +105,7 @@ class TestGeneratePromptfooConfig:
         output_path = str(tmp_path / "promptfooconfig.yaml")
 
         from agentguard.cli import generate_promptfoo_config
+
         generate_promptfoo_config(config_path, None, None, output_path)
 
         with open(output_path) as f:
@@ -109,7 +113,9 @@ class TestGeneratePromptfooConfig:
 
         tests = parsed.get("tests", [])
         assert len(tests) >= 1
-        queries = [t.get("vars", {}).get("query", t.get("vars", {}).get("prompt", "")) for t in tests]
+        queries = [
+            t.get("vars", {}).get("query", t.get("vars", {}).get("prompt", "")) for t in tests
+        ]
         assert any("Drop" in q for q in queries)
 
     def test_sets_provider_to_bridge_path(self, tmp_path):
@@ -117,6 +123,7 @@ class TestGeneratePromptfooConfig:
         output_path = str(tmp_path / "promptfooconfig.yaml")
 
         from agentguard.cli import generate_promptfoo_config
+
         generate_promptfoo_config(config_path, None, None, output_path)
 
         with open(output_path) as f:
@@ -134,6 +141,7 @@ class TestGeneratePromptfooConfig:
         agent_module = "test_bots/my_agent.py"
 
         from agentguard.cli import generate_promptfoo_config
+
         generate_promptfoo_config(config_path, agent_module, None, output_path)
 
         with open(output_path) as f:
@@ -149,6 +157,7 @@ class TestGeneratePromptfooConfig:
         output_path = str(tmp_path / "promptfooconfig.yaml")
 
         from agentguard.cli import generate_promptfoo_config
+
         # Should not raise — returns empty dict or minimal config
         result = generate_promptfoo_config(config_path, None, None, output_path)
         assert result is not None or not os.path.exists(output_path) or True  # graceful
@@ -158,6 +167,7 @@ class TestGeneratePromptfooConfig:
         output_path = str(tmp_path / "promptfooconfig.yaml")
 
         from agentguard.cli import generate_promptfoo_config
+
         generate_promptfoo_config(config_path, "agent.py", "my_run", output_path)
 
         with open(output_path) as f:
@@ -180,8 +190,14 @@ class TestRunTests:
         mock_subprocess.return_value = MagicMock(returncode=0)
 
         from agentguard.cli import run_tests
-        run_tests(config_path, agent_module=None, function_name=None, promptfoo_config=None,
-                  output_dir=str(tmp_path))
+
+        run_tests(
+            config_path,
+            agent_module=None,
+            function_name=None,
+            promptfoo_config=None,
+            output_dir=str(tmp_path),
+        )
 
         mock_subprocess.assert_called_once()
         call_args = mock_subprocess.call_args[0][0]
@@ -197,8 +213,14 @@ class TestRunTests:
         mock_subprocess.return_value = MagicMock(returncode=0)
 
         from agentguard.cli import run_tests
-        run_tests(config_path, agent_module=None, function_name=None,
-                  promptfoo_config=custom_pf, output_dir=str(tmp_path))
+
+        run_tests(
+            config_path,
+            agent_module=None,
+            function_name=None,
+            promptfoo_config=custom_pf,
+            output_dir=str(tmp_path),
+        )
 
         # npx called with the custom config, not auto-generated
         call_args = mock_subprocess.call_args[0][0]
@@ -213,8 +235,14 @@ class TestRunTests:
         mock_subprocess.return_value = MagicMock(returncode=0)
 
         from agentguard.cli import run_tests
-        run_tests(config_path, agent_module=None, function_name=None,
-                  promptfoo_config=custom_pf, output_dir=str(tmp_path))
+
+        run_tests(
+            config_path,
+            agent_module=None,
+            function_name=None,
+            promptfoo_config=custom_pf,
+            output_dir=str(tmp_path),
+        )
 
         args_str = " ".join(mock_subprocess.call_args[0][0])
         assert "my_custom.yaml" in args_str
@@ -225,8 +253,14 @@ class TestRunTests:
         mock_subprocess.return_value = MagicMock(returncode=0)
 
         from agentguard.cli import run_tests
-        run_tests(config_path, agent_module=None, function_name=None, promptfoo_config=None,
-                  output_dir=str(tmp_path))
+
+        run_tests(
+            config_path,
+            agent_module=None,
+            function_name=None,
+            promptfoo_config=None,
+            output_dir=str(tmp_path),
+        )
 
         call_args = mock_subprocess.call_args[0][0]
         args_str = " ".join(call_args)
@@ -305,6 +339,7 @@ class TestCmdInit:
 class TestCliParser:
     def _parse(self, args: list[str]):
         from agentguard.cli import build_parser
+
         parser = build_parser()
         return parser.parse_args(["test"] + args)
 

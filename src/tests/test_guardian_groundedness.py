@@ -142,14 +142,13 @@ observability:
 
 # ── Helpers ───────────────────────────────────────────────────────
 
+
 def _safe_result(layer: str) -> ValidationResult:
     return ValidationResult(is_safe=True, layer=layer, details={})
 
 
 def _unsafe_result(layer: str, reason: str) -> ValidationResult:
-    return ValidationResult(
-        is_safe=False, layer=layer, blocked_reason=reason, details={}
-    )
+    return ValidationResult(is_safe=False, layer=layer, blocked_reason=reason, details={})
 
 
 def _make_llm_response(content: str):
@@ -183,6 +182,7 @@ def _make_in_memory_tracer_provider():
 
 # ── Orchestration Tests ───────────────────────────────────────────
 
+
 class TestGroundednessOrchestration:
     """Tests verifying L2 check ordering and mode behavior."""
 
@@ -207,13 +207,16 @@ class TestGroundednessOrchestration:
         MockOpenAI.return_value = mock_client
 
         path = _write_config(ENFORCE_GROUNDEDNESS_CONFIG)
-        with patch.dict(os.environ, {
-            **LLM_ENV,
-            "CONTENT_SAFETY_ENDPOINT": "https://test.cognitiveservices.azure.com",
-            "CONTENT_SAFETY_KEY": "test-key",
-            "AZURE_LANGUAGE_ENDPOINT": "https://lang.cognitiveservices.azure.com",
-            "AZURE_LANGUAGE_KEY": "test-key",
-        }):
+        with patch.dict(
+            os.environ,
+            {
+                **LLM_ENV,
+                "CONTENT_SAFETY_ENDPOINT": "https://test.cognitiveservices.azure.com",
+                "CONTENT_SAFETY_KEY": "test-key",
+                "AZURE_LANGUAGE_ENDPOINT": "https://lang.cognitiveservices.azure.com",
+                "AZURE_LANGUAGE_KEY": "test-key",
+            },
+        ):
             guardian = Guardian(path)
             result = guardian.validate_output(
                 "Contoso sells camping gear.",
@@ -326,13 +329,16 @@ class TestGroundednessOrchestration:
         MockOpenAI.return_value = mock_client
 
         path = _write_config(ENFORCE_GROUNDEDNESS_CONFIG)
-        with patch.dict(os.environ, {
-            **LLM_ENV,
-            "CONTENT_SAFETY_ENDPOINT": "https://test.cognitiveservices.azure.com",
-            "CONTENT_SAFETY_KEY": "test-key",
-            "AZURE_LANGUAGE_ENDPOINT": "https://lang.cognitiveservices.azure.com",
-            "AZURE_LANGUAGE_KEY": "test-key",
-        }):
+        with patch.dict(
+            os.environ,
+            {
+                **LLM_ENV,
+                "CONTENT_SAFETY_ENDPOINT": "https://test.cognitiveservices.azure.com",
+                "CONTENT_SAFETY_KEY": "test-key",
+                "AZURE_LANGUAGE_ENDPOINT": "https://lang.cognitiveservices.azure.com",
+                "AZURE_LANGUAGE_KEY": "test-key",
+            },
+        ):
             guardian = Guardian(path)
 
             with pytest.raises(OutputBlockedError):
@@ -357,21 +363,22 @@ class TestGroundednessOrchestration:
         mock_cf.analyze_text.return_value = _safe_result("content_filters")
         MockCF.return_value = mock_cf
 
-        mock_pii_analyze.return_value = _unsafe_result(
-            "pii_detector", "PII detected: SSN"
-        )
+        mock_pii_analyze.return_value = _unsafe_result("pii_detector", "PII detected: SSN")
 
         mock_client = MagicMock()
         MockOpenAI.return_value = mock_client
 
         path = _write_config(ENFORCE_GROUNDEDNESS_CONFIG)
-        with patch.dict(os.environ, {
-            **LLM_ENV,
-            "CONTENT_SAFETY_ENDPOINT": "https://test.cognitiveservices.azure.com",
-            "CONTENT_SAFETY_KEY": "test-key",
-            "AZURE_LANGUAGE_ENDPOINT": "https://lang.cognitiveservices.azure.com",
-            "AZURE_LANGUAGE_KEY": "test-key",
-        }):
+        with patch.dict(
+            os.environ,
+            {
+                **LLM_ENV,
+                "CONTENT_SAFETY_ENDPOINT": "https://test.cognitiveservices.azure.com",
+                "CONTENT_SAFETY_KEY": "test-key",
+                "AZURE_LANGUAGE_ENDPOINT": "https://lang.cognitiveservices.azure.com",
+                "AZURE_LANGUAGE_KEY": "test-key",
+            },
+        ):
             guardian = Guardian(path)
 
             with pytest.raises(OutputBlockedError):
@@ -386,6 +393,7 @@ class TestGroundednessOrchestration:
 
 
 # ── Config Integration Tests ─────────────────────────────────────
+
 
 class TestGroundednessConfig:
     """Tests verifying config values flow into the detector correctly."""
@@ -453,6 +461,7 @@ output_security:
 
 # ── Audit Log Tests ──────────────────────────────────────────────
 
+
 class TestGroundednessAudit:
     """Tests verifying audit log recording on groundedness block."""
 
@@ -488,6 +497,7 @@ class TestGroundednessAudit:
 
 
 # ── Telemetry Span Tests ─────────────────────────────────────────
+
 
 class TestGroundednessSpans:
     """Tests verifying OTel spans emitted for groundedness checks."""

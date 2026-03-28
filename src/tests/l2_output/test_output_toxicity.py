@@ -20,7 +20,8 @@ def output_toxicity(mock_content_filters):
 class TestOutputToxicity:
     def test_safe_output(self, output_toxicity, mock_content_filters):
         mock_content_filters.analyze_text.return_value = ValidationResult(
-            is_safe=True, layer="content_filters",
+            is_safe=True,
+            layer="content_filters",
             details={"severities": {"hate": 0, "self_harm": 0, "sexual": 0, "violence": 0}},
         )
         result = output_toxicity.analyze("This is a helpful response about hiking.")
@@ -29,7 +30,8 @@ class TestOutputToxicity:
 
     def test_toxic_output_blocked(self, output_toxicity, mock_content_filters):
         mock_content_filters.analyze_text.return_value = ValidationResult(
-            is_safe=False, layer="content_filters",
+            is_safe=False,
+            layer="content_filters",
             blocked_reason="Harmful content detected: Hate/Toxicity (severity=4)",
             details={"severities": {"hate": 4, "self_harm": 0, "sexual": 0, "violence": 0}},
         )
@@ -40,7 +42,9 @@ class TestOutputToxicity:
 
     def test_delegates_to_content_filters(self, output_toxicity, mock_content_filters):
         mock_content_filters.analyze_text.return_value = ValidationResult(
-            is_safe=True, layer="content_filters", details={},
+            is_safe=True,
+            layer="content_filters",
+            details={},
         )
         output_toxicity.analyze(
             text="test",

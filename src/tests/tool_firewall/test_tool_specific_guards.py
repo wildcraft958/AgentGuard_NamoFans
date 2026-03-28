@@ -66,9 +66,26 @@ _SHELL_CFG = {
     "enabled": True,
     "mode": "denylist",
     "denied_commands": [
-        "rm", "chmod", "chown", "kill", "killall", "sudo", "su", "dd",
-        "curl", "wget", "nc", "ssh", "python", "python3", "bash", "sh",
-        "eval", "exec", "crontab", "mkfs",
+        "rm",
+        "chmod",
+        "chown",
+        "kill",
+        "killall",
+        "sudo",
+        "su",
+        "dd",
+        "curl",
+        "wget",
+        "nc",
+        "ssh",
+        "python",
+        "python3",
+        "bash",
+        "sh",
+        "eval",
+        "exec",
+        "crontab",
+        "mkfs",
     ],
     "denied_patterns": [
         r"curl\s.*\|\s*(?:ba)?sh",
@@ -82,6 +99,7 @@ _SHELL_CFG = {
 # ---------------------------------------------------------------
 # Generic argument scanning — any tool name triggers the right guardrail
 # ---------------------------------------------------------------
+
 
 class TestGenericScanning:
     """Guardrails run on ANY tool, not just hardcoded names."""
@@ -127,10 +145,14 @@ class TestGenericScanning:
 
     def test_no_guardrail_triggered(self):
         """Tool with non-path, non-URL, non-SQL args → no guardrail."""
-        g = ToolSpecificGuards(_make_config(
-            file_system=_FS_CFG, sql_query=_SQL_CFG,
-            http_get=_HTTP_GET_CFG, http_post=_HTTP_POST_CFG,
-        ))
+        g = ToolSpecificGuards(
+            _make_config(
+                file_system=_FS_CFG,
+                sql_query=_SQL_CFG,
+                http_get=_HTTP_GET_CFG,
+                http_post=_HTTP_POST_CFG,
+            )
+        )
         result = g.check("memory_store", {"key": "hello", "value": "world"})
         assert result.is_safe is True
 
@@ -139,8 +161,8 @@ class TestGenericScanning:
 # HTTP POST guardrail
 # ---------------------------------------------------------------
 
-class TestHttpPostGuardrail:
 
+class TestHttpPostGuardrail:
     def _guards(self, **overrides):
         cfg = {**_HTTP_POST_CFG, **overrides}
         return ToolSpecificGuards(_make_config(http_post=cfg))
@@ -223,8 +245,8 @@ class TestHttpPostGuardrail:
 # HTTP GET guardrail
 # ---------------------------------------------------------------
 
-class TestHttpGetGuardrail:
 
+class TestHttpGetGuardrail:
     def _guards(self, **overrides):
         cfg = {**_HTTP_GET_CFG, **overrides}
         return ToolSpecificGuards(_make_config(http_get=cfg))
@@ -248,7 +270,9 @@ class TestHttpGetGuardrail:
 
     def test_metadata_google_internal_blocked(self):
         g = self._guards(mode="unrestricted")
-        result = g.check("fetch_page", {"url": "http://metadata.google.internal/computeMetadata/v1/"})
+        result = g.check(
+            "fetch_page", {"url": "http://metadata.google.internal/computeMetadata/v1/"}
+        )
         assert result.is_safe is False
         assert "metadata service" in result.blocked_reason.lower()
 
@@ -262,8 +286,8 @@ class TestHttpGetGuardrail:
 # SQL Query guardrail
 # ---------------------------------------------------------------
 
-class TestSqlQueryGuardrail:
 
+class TestSqlQueryGuardrail:
     def _guards(self, **overrides):
         cfg = {**_SQL_CFG, **overrides}
         return ToolSpecificGuards(_make_config(sql_query=cfg))
@@ -318,8 +342,8 @@ class TestSqlQueryGuardrail:
 # File System guardrail
 # ---------------------------------------------------------------
 
-class TestFileSystemGuardrail:
 
+class TestFileSystemGuardrail:
     def _guards(self, **overrides):
         cfg = {**_FS_CFG, **overrides}
         return ToolSpecificGuards(_make_config(file_system=cfg))
@@ -380,15 +404,20 @@ class TestFileSystemGuardrail:
 # False positive resistance (critical for LLM contexts)
 # ---------------------------------------------------------------
 
+
 class TestFalsePositiveResistance:
     """Ensure English text and non-SQL/non-path strings don't trigger guardrails."""
 
     def _all_guards(self):
-        return ToolSpecificGuards(_make_config(
-            file_system=_FS_CFG, sql_query=_SQL_CFG,
-            http_get=_HTTP_GET_CFG, http_post=_HTTP_POST_CFG,
-            shell_commands=_SHELL_CFG,
-        ))
+        return ToolSpecificGuards(
+            _make_config(
+                file_system=_FS_CFG,
+                sql_query=_SQL_CFG,
+                http_get=_HTTP_GET_CFG,
+                http_post=_HTTP_POST_CFG,
+                shell_commands=_SHELL_CFG,
+            )
+        )
 
     def test_english_update_not_sql(self):
         """'UPDATE: meeting canceled' is English, not SQL."""
@@ -438,6 +467,7 @@ class TestFalsePositiveResistance:
 # Evasion resistance
 # ---------------------------------------------------------------
 
+
 class TestEvasionResistance:
     """Ensure comment-based and multi-line SQL evasion is caught."""
 
@@ -468,22 +498,20 @@ class TestEvasionResistance:
 # Policy enforcement: disabled tools + default_policy
 # ---------------------------------------------------------------
 
-class TestPolicyEnforcement:
 
+class TestPolicyEnforcement:
     def test_disabled_tool_blocked(self):
         """Tool with enabled: false → blocked with reason."""
-        g = ToolSpecificGuards(_make_config(
-            tools={"fs_delete_file": {"enabled": False, "reason": "Irreversible"}}
-        ))
+        g = ToolSpecificGuards(
+            _make_config(tools={"fs_delete_file": {"enabled": False, "reason": "Irreversible"}})
+        )
         result = g.check("fs_delete_file", {"path": "/tmp/file.txt"})
         assert result.is_safe is False
         assert "Irreversible" in result.blocked_reason
 
     def test_disabled_tool_default_reason(self):
         """Tool with enabled: false but no reason → generic message."""
-        g = ToolSpecificGuards(_make_config(
-            tools={"dangerous_tool": {"enabled": False}}
-        ))
+        g = ToolSpecificGuards(_make_config(tools={"dangerous_tool": {"enabled": False}}))
         result = g.check("dangerous_tool", {"arg": "value"})
         assert result.is_safe is False
         assert "disabled" in result.blocked_reason.lower()
@@ -503,10 +531,12 @@ class TestPolicyEnforcement:
 
     def test_enabled_tool_not_blocked(self):
         """Tool with enabled: true in tools: section → not blocked by policy."""
-        g = ToolSpecificGuards(_make_config(
-            tools={"safe_tool": {"enabled": True}},
-            default_policy="deny",
-        ))
+        g = ToolSpecificGuards(
+            _make_config(
+                tools={"safe_tool": {"enabled": True}},
+                default_policy="deny",
+            )
+        )
         result = g.check("safe_tool", {"arg": "value"})
         assert result.is_safe is True
 
@@ -514,6 +544,7 @@ class TestPolicyEnforcement:
 # ---------------------------------------------------------------
 # Shell Commands guardrail
 # ---------------------------------------------------------------
+
 
 class TestShellCommandsGuardrail:
     """Tests for the shell_commands guardrail."""
@@ -640,9 +671,11 @@ class TestShellCommandsGuardrail:
     # --- Config: disabled guardrail ---
 
     def test_disabled_guardrail_passes(self):
-        g = ToolSpecificGuards(_make_config(
-            shell_commands={"enabled": False, "mode": "denylist", "denied_commands": ["rm"]}
-        ))
+        g = ToolSpecificGuards(
+            _make_config(
+                shell_commands={"enabled": False, "mode": "denylist", "denied_commands": ["rm"]}
+            )
+        )
         result = g.check("any_tool", {"input": "rm -rf /"})
         assert result.is_safe is True
 
@@ -673,9 +706,12 @@ class TestShellCommandsGuardrail:
 
     def test_url_with_shell_injection_both_caught(self):
         """URL containing shell injection should trigger shell guardrail."""
-        g = ToolSpecificGuards(_make_config(
-            http_get=_HTTP_GET_CFG, shell_commands=_SHELL_CFG,
-        ))
+        g = ToolSpecificGuards(
+            _make_config(
+                http_get=_HTTP_GET_CFG,
+                shell_commands=_SHELL_CFG,
+            )
+        )
         # This contains a semicolon + rm which is shell chaining
         result = g.check("any_tool", {"input": "http://api.mycompany.com/?q=data; rm -rf /"})
         assert result.is_safe is False
