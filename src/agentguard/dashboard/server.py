@@ -24,7 +24,7 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from sse_starlette.sse import EventSourceResponse
 
-from agentguard.audit_log import AuditLog
+from agentguard.observability.audit import AuditLog
 from agentguard.dashboard.demo_router import router as demo_router
 
 logger = logging.getLogger("agentguard.dashboard")

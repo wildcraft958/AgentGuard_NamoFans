@@ -12,7 +12,7 @@ import time
 from opentelemetry.trace import Tracer
 
 from agentguard.config import load_config
-from agentguard.telemetry import init_telemetry
+from agentguard.observability.telemetry import init_telemetry
 from agentguard.models import (
     GuardMode,
     InputValidationResult,
@@ -24,7 +24,7 @@ from agentguard.models import (
 from agentguard.l1_input.prompt_shields import PromptShields
 from agentguard.l1_input.content_filters import ContentFilters
 from agentguard.l1_input.fast_injection_detect import fast_inject_detect
-from agentguard.audit_log import AuditLog
+from agentguard.observability.audit import AuditLog
 from agentguard.exceptions import InputBlockedError, OutputBlockedError, ToolCallBlockedError
 
 logger = logging.getLogger("agentguard")

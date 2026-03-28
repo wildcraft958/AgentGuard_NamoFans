@@ -20,7 +20,7 @@ from agentguard.exceptions import (
 from agentguard.decorators import GuardedToolRegistry, guard, guard_agent, guard_input, guard_tool
 from agentguard.decorators import get_registered_agent
 from agentguard.owasp_scanner import OWASPScanResult, scan_agent
-from agentguard.audit_log import AuditLog
+from agentguard.observability.audit import AuditLog
 
 __all__ = [
     "Guardian",
