@@ -226,7 +226,7 @@ class AgentGuardConfig:
         tf = self._raw.get("tool_firewall", {})
         if not isinstance(tf, dict):
             return False
-        # Check if any of the 5 guardrails are enabled
+        # Check if any guardrail is enabled
         guardrails = [
             "file_system",
             "sql_query",
@@ -274,18 +274,6 @@ class AgentGuardConfig:
     def melon_judge_model(self) -> str | None:
         """Optional override model for the LLM judge. None = uses TFY_MODEL."""
         return _deep_get(self._raw, "tool_firewall", "melon", "judge_model", default=None)
-
-    @property
-    def melon_threshold(self) -> float:
-        """Deprecated: unused by LLM judge, kept for backward compatibility."""
-        return _deep_get(self._raw, "tool_firewall", "melon", "threshold", default=0.8)
-
-    @property
-    def melon_embedding_model(self) -> str:
-        """Deprecated: unused by LLM judge, kept for backward compatibility."""
-        return _deep_get(
-            self._raw, "tool_firewall", "melon", "embedding_model", default="text-embedding-3-large"
-        )
 
     @property
     def melon_raise_on_injection(self) -> bool:

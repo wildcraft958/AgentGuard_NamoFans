@@ -2,10 +2,9 @@
 
 import json
 import pytest
-np = pytest.importorskip("numpy", reason="numpy not installed; skipping MELON tests")
-from unittest.mock import patch, MagicMock  # noqa: E402
+from unittest.mock import patch, MagicMock
 
-from agentguard.tool_firewall.melon_detector import MelonDetector, _cosine_similarity  # noqa: E402
+from agentguard.tool_firewall.melon_detector import MelonDetector  # noqa: E402
 
 
 def _make_tool_call(name, arguments):
@@ -44,7 +43,6 @@ def detector():
             api_key="test-key",
             base_url="https://test.gateway.ai",
             model="test-model",
-            threshold=0.8,
         )
     return d
 
@@ -247,19 +245,3 @@ class TestMelonDetector:
         assert d.judge_model == "main-model"
 
 
-class TestCosineHelper:
-    """Legacy tests for backward-compatible cosine similarity helper."""
-
-    def test_identical_vectors(self):
-        v = np.array([1.0, 2.0, 3.0])
-        assert abs(_cosine_similarity(v, v) - 1.0) < 1e-6
-
-    def test_orthogonal_vectors(self):
-        a = np.array([1.0, 0.0])
-        b = np.array([0.0, 1.0])
-        assert abs(_cosine_similarity(a, b)) < 1e-6
-
-    def test_zero_vector(self):
-        a = np.array([0.0, 0.0])
-        b = np.array([1.0, 1.0])
-        assert _cosine_similarity(a, b) == 0.0

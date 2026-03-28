@@ -345,11 +345,18 @@ class TestTelemetryEndpoint:
         with patch.dict(os.environ, {"OTEL_EXPORTER_OTLP_ENDPOINT": "http://env-collector:4317"}):
             assert cfg.telemetry_endpoint == "http://env-collector:4317"
 
-    def test_config_takes_precedence_over_env(self):
+    def test_env_takes_precedence_over_config(self):
+        """OTel standard: OTEL_EXPORTER_OTLP_ENDPOINT env var overrides config file."""
         cfg = _make_config({"otel_endpoint": "http://config-collector:4317"})
         with patch.dict(
             os.environ, {"OTEL_EXPORTER_OTLP_ENDPOINT": "http://env-collector:4317"}
         ):
+            assert cfg.telemetry_endpoint == "http://env-collector:4317"
+
+    def test_config_used_when_env_not_set(self):
+        """Config otel_endpoint used when env var is absent."""
+        cfg = _make_config({"otel_endpoint": "http://config-collector:4317"})
+        with patch.dict(os.environ, {}, clear=True):
             assert cfg.telemetry_endpoint == "http://config-collector:4317"
 
 

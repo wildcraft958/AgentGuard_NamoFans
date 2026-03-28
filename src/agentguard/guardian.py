@@ -189,8 +189,6 @@ class Guardian:
                 from agentguard.tool_firewall.melon_detector import MelonDetector
 
                 self._melon_detector = MelonDetector(
-                    threshold=self.config.melon_threshold,
-                    embedding_model=self.config.melon_embedding_model,
                     judge_model=self.config.melon_judge_model,
                 )
                 logger.info(
@@ -276,8 +274,7 @@ class Guardian:
         )
 
     # ------------------------------------------------------------------
-    # Backward-compat delegation properties for _pipeline.notifier
-    # These allow existing tests that access guardian._audit, guardian._span, etc.
+    # Delegation to _pipeline.notifier (telemetry + audit)
     # ------------------------------------------------------------------
 
     @property

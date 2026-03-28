@@ -24,6 +24,7 @@ def clear_cache():
 def _mock_guardian_safe():
     """Create a mock Guardian that always returns safe."""
     mock = MagicMock()
+    mock.config.parallel_execution_enabled = False
     mock.validate_input.return_value = InputValidationResult(is_safe=True, results=[])
     # Async variants for async decorator wrapper
     mock.avalidate_input = AsyncMock(
@@ -36,6 +37,7 @@ def _mock_guardian_safe():
 def _mock_guardian_blocked():
     """Create a mock Guardian that blocks input."""
     mock = MagicMock()
+    mock.config.parallel_execution_enabled = False
     mock.validate_input.side_effect = InputBlockedError(
         reason="User prompt injection attack detected"
     )

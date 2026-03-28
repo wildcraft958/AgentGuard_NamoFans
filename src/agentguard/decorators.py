@@ -1,8 +1,8 @@
 """
-AgentGuard -- Decorator API.
+AgentGuard -- Decorator API (agentguard.decorators).
 
 Provides the @guard decorator for unified L1 (input) + L2 (output) security,
-and @guard_input as a backward-compatible alias for L1-only checks.
+and @guard_input as an L1-only convenience alias.
 
 Usage:
     from agentguard import guard
@@ -11,7 +11,7 @@ Usage:
     def chat(message: str):
         return {"response": llm.complete(message)}
 
-    # L1-only (backward compat):
+    # L1-only:
     from agentguard import guard_input
 
     @guard_input(param="message")
@@ -326,7 +326,7 @@ def guard_input(
     image_param: str = None,
 ):
     """
-    Backward-compatible L1-only decorator. Alias for @guard() without output_field.
+    L1-only convenience decorator. Alias for @guard() without output_field.
 
     Args:
         config: Path to agentguard.yaml config file.

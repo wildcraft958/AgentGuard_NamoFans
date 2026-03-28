@@ -3,7 +3,7 @@
 import asyncio
 import threading
 import time
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -24,8 +24,14 @@ def _make_guardian(parallel=True, l1_safe=True, c3_safe=True, c1_safe=True):
 
     if l1_safe:
         mock.validate_input.return_value = InputValidationResult(is_safe=True, results=[])
+        mock.avalidate_input = AsyncMock(
+            return_value=InputValidationResult(is_safe=True, results=[])
+        )
     else:
         mock.validate_input.side_effect = InputBlockedError("injection detected")
+        mock.avalidate_input = AsyncMock(
+            side_effect=InputBlockedError("injection detected")
+        )
 
     # _run_c3/_run_c1/_run_c4 return None on pass (raise ToolCallBlockedError on failure)
     mock._run_c3.return_value = None

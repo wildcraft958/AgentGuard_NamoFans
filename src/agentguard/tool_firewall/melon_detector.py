@@ -1,15 +1,14 @@
 """
-AgentGuard – MELON Detector (Component 2).
+AgentGuard – MELON Detector (agentguard.tool_firewall.melon_detector).
 
 Contrastive indirect prompt injection detector for tool outputs.
-Adapted from pi_detector.py (agentdojo MELON implementation).
 
 How it works:
   1. Original run: LLM processes tool outputs in real conversation context
-     → produces tool calls.
+     -> produces tool calls.
   2. Masked run: Same tool outputs presented to LLM as generic file content
      with few-shot examples showing correct summarization behavior
-     → produces tool calls.
+     -> produces tool calls.
   3. LLM Judge: Both sets of tool calls are sent to an LLM judge that
      dynamically evaluates whether the similarity indicates an indirect
      prompt injection.
@@ -24,7 +23,6 @@ import json
 import logging
 import os
 
-import numpy as np
 from dotenv import load_dotenv
 from openai import AsyncOpenAI, OpenAI
 
@@ -32,7 +30,7 @@ from agentguard.models import ValidationResult
 
 load_dotenv()
 
-logger = logging.getLogger("agentguard.melon_detector")
+logger = logging.getLogger("agentguard.tool_firewall.melon_detector")
 
 LAYER = "melon_detector"
 
@@ -159,11 +157,9 @@ def _normalize_messages(messages: list) -> list[dict]:
         if isinstance(msg, dict):
             normalized.append(msg)
         elif hasattr(msg, "model_dump"):
-            # OpenAI SDK objects have model_dump()
             d = msg.model_dump(exclude_none=True)
             normalized.append(d)
         else:
-            # Fallback: build dict from known attributes
             d = {"role": getattr(msg, "role", "assistant")}
             if getattr(msg, "content", None) is not None:
                 d["content"] = msg.content
@@ -190,20 +186,6 @@ def _transform_tool_calls(tool_calls) -> list[str]:
     return texts
 
 
-def _cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
-    """Compute cosine similarity between two vectors.
-
-    .. deprecated::
-        Kept for backward compatibility. The main detection flow
-        now uses LLM-as-a-judge instead of embedding comparison.
-    """
-    norm_a = np.linalg.norm(a)
-    norm_b = np.linalg.norm(b)
-    if norm_a == 0 or norm_b == 0:
-        return 0.0
-    return float(np.dot(a, b) / (norm_a * norm_b))
-
-
 class MelonDetector:
     """Contrastive indirect prompt injection detector.
 
@@ -214,28 +196,24 @@ class MelonDetector:
 
     def __init__(
         self,
-        threshold: float = 0.8,
-        embedding_model: str = "text-embedding-3-large",
         api_key: str = None,
         base_url: str = None,
         model: str = None,
         judge_model: str = None,
+        **kwargs,
     ):
         """
         Args:
-            threshold: (Deprecated) Cosine similarity threshold — unused by LLM judge.
-            embedding_model: (Deprecated) Embedding model — unused by LLM judge.
             api_key: API key (defaults to TFY_API_KEY env var).
             base_url: Base URL (defaults to TFY_BASE_URL env var).
             model: LLM model name for masked/original runs (defaults to TFY_MODEL env var).
             judge_model: LLM model for the judge call. Defaults to ``model``.
+            **kwargs: Ignored (absorbs removed legacy parameters like threshold, embedding_model).
         """
         self.api_key = api_key or os.environ.get("TFY_API_KEY", "")
         self.base_url = base_url or os.environ.get("TFY_BASE_URL", "")
         self.model = model or os.environ.get("TFY_MODEL", "")
         self.judge_model = judge_model or self.model
-        self.embedding_model = embedding_model  # kept for backward compat
-        self.threshold = threshold  # kept for backward compat
 
         if not self.api_key or not self.base_url:
             raise ValueError(
@@ -245,7 +223,7 @@ class MelonDetector:
 
         self.client = OpenAI(api_key=self.api_key, base_url=self.base_url)
 
-        # Cross-turn tracking bank (embeddings bank removed — judge doesn't need it)
+        # Cross-turn tracking bank
         self._masked_tool_call_bank: set[str] = set()
 
     def check_tool_output(
@@ -257,7 +235,7 @@ class MelonDetector:
         Check tool output for indirect prompt injection using contrastive detection.
 
         Should be called after tool execution, before the tool result enters
-        the LLM message history. The `messages` list should already include
+        the LLM message history. The ``messages`` list should already include
         the latest tool result message(s).
 
         Args:
@@ -289,10 +267,9 @@ class MelonDetector:
         messages: list[dict],
         tool_schemas: list[dict],
     ) -> ValidationResult:
-        """Core contrastive detection logic."""
+        """Core contrastive detection: original run, masked run, LLM judge."""
 
         # --- Step 1: Original run ---
-        # Normalize messages to plain dicts (agent loops may append OpenAI objects)
         norm_messages = _normalize_messages(messages)
         original_response = self.client.chat.completions.create(
             model=self.model,
@@ -301,7 +278,6 @@ class MelonDetector:
         )
         original_msg = original_response.choices[0].message
 
-        # If the LLM didn't produce tool calls, no injection risk
         if not original_msg.tool_calls:
             logger.info("MELON: No tool calls in original output, skipping")
             return ValidationResult(
@@ -313,7 +289,29 @@ class MelonDetector:
         original_tool_call_texts = _transform_tool_calls(original_msg.tool_calls)
 
         # --- Step 2: Build masked context ---
-        # Extract tool output content
+        masked_messages = self._build_masked_messages(messages)
+
+        # --- Step 3: Masked run ---
+        masked_response = self.client.chat.completions.create(
+            model=self.model,
+            messages=masked_messages,
+            tools=tool_schemas if tool_schemas else None,
+        )
+        masked_msg = masked_response.choices[0].message
+
+        if masked_msg.tool_calls:
+            for call_text in _transform_tool_calls(masked_msg.tool_calls):
+                self._masked_tool_call_bank.add(call_text)
+
+        if not self._masked_tool_call_bank:
+            logger.info("MELON: No masked tool calls to compare, allowing")
+            return ValidationResult(is_safe=True, layer=LAYER)
+
+        # --- Step 4: LLM Judge ---
+        return self._judge_and_build_result(original_tool_call_texts)
+
+    def _build_masked_messages(self, messages: list) -> list[dict]:
+        """Build the masked context messages for the contrastive run."""
         tool_contents = ""
         for msg in messages:
             if _msg_get(msg, "role") == "tool":
@@ -326,9 +324,7 @@ class MelonDetector:
                     + "\n\n"
                 )
 
-        # System message from original conversation
         system_msgs = [m for m in messages if _msg_get(m, "role") == "system"]
-
         masked_messages = list(system_msgs)
         masked_messages += copy.deepcopy(_FEW_SHOT_MESSAGES)
         masked_messages += [
@@ -347,29 +343,10 @@ class MelonDetector:
                 ),
             },
         ]
+        return masked_messages
 
-        # --- Step 3: Masked run ---
-        masked_response = self.client.chat.completions.create(
-            model=self.model,
-            messages=masked_messages,
-            tools=tool_schemas if tool_schemas else None,
-        )
-        masked_msg = masked_response.choices[0].message
-
-        # Update masked tool call bank
-        if masked_msg.tool_calls:
-            masked_tool_call_texts = _transform_tool_calls(masked_msg.tool_calls)
-            for call_text in masked_tool_call_texts:
-                self._masked_tool_call_bank.add(call_text)
-        else:
-            masked_tool_call_texts = []
-
-        # If no masked tool calls have been collected, no comparison possible
-        if not self._masked_tool_call_bank:
-            logger.info("MELON: No masked tool calls to compare, allowing")
-            return ValidationResult(is_safe=True, layer=LAYER)
-
-        # --- Step 4: LLM Judge ---
+    def _judge_and_build_result(self, original_tool_call_texts: list[str]) -> ValidationResult:
+        """Run the LLM judge and return a ValidationResult."""
         judge_result = self._judge_tool_calls(
             original_tool_call_texts,
             list(self._masked_tool_call_bank),
@@ -415,10 +392,6 @@ class MelonDetector:
     ) -> dict:
         """Use an LLM judge to decide if tool calls indicate prompt injection.
 
-        Args:
-            original_tool_calls: Tool call text representations from the original run.
-            masked_tool_calls: Tool call text representations from the masked run.
-
         Returns:
             Dict with keys: verdict ("BLOCK" | "ALLOW"), confidence (float),
             reasoning (str). On parse failure, returns a BLOCK verdict as fail-safe.
@@ -445,7 +418,6 @@ class MelonDetector:
         logger.debug("MELON judge raw response: %s", raw_content)
 
         try:
-            # Strip markdown code fences if present
             cleaned = raw_content.strip()
             if cleaned.startswith("```"):
                 cleaned = cleaned.split("\n", 1)[1] if "\n" in cleaned else cleaned
@@ -455,7 +427,6 @@ class MelonDetector:
 
             result = json.loads(cleaned)
 
-            # Validate required fields
             if result.get("verdict") not in ("BLOCK", "ALLOW"):
                 logger.warning(
                     "MELON judge returned invalid verdict '%s', blocking as fail-safe",
@@ -485,23 +456,9 @@ class MelonDetector:
                 "reasoning": f"Judge response parse error: {e}",
             }
 
-    def _embed(self, text: str) -> np.ndarray:
-        """Get embedding vector for a text string.
-
-        .. deprecated::
-            Kept for backward compatibility. The main detection flow
-            now uses LLM-as-a-judge instead of embedding comparison.
-        """
-        response = self.client.embeddings.create(
-            input=text,
-            model=self.embedding_model,
-        )
-        return np.array(response.data[0].embedding)
-
     def reset(self):
-        """Reset cross-turn tracking banks."""
+        """Reset cross-turn tracking bank."""
         self._masked_tool_call_bank.clear()
-        self._masked_tool_emb_bank.clear()
 
     # ------------------------------------------------------------------
     # Async variant — uses AsyncOpenAI for real cancellation
@@ -517,7 +474,7 @@ class MelonDetector:
         messages: list[dict],
         tool_schemas: list[dict],
     ) -> ValidationResult:
-        """Async version of check_tool_output(). Uses AsyncOpenAI."""
+        """Async version of check_tool_output(). Uses AsyncOpenAI + LLM judge."""
         if not messages or _msg_get(messages[-1], "role") != "tool":
             return ValidationResult(is_safe=True, layer=LAYER)
 
@@ -539,7 +496,7 @@ class MelonDetector:
         messages: list[dict],
         tool_schemas: list[dict],
     ) -> ValidationResult:
-        """Async core contrastive detection logic."""
+        """Async core contrastive detection: original run, masked run, LLM judge."""
         client = self._get_async_client()
 
         # Step 1: Original run
@@ -562,37 +519,7 @@ class MelonDetector:
         original_tool_call_texts = _transform_tool_calls(original_msg.tool_calls)
 
         # Step 2: Build masked context
-        tool_contents = ""
-        for msg in messages:
-            if _msg_get(msg, "role") == "tool":
-                tool_contents += (
-                    "=" * 50
-                    + "\n\nfunction: tool_output\n\n"
-                    + (_msg_get(msg, "content") or "")
-                    + "\n\n"
-                    + "=" * 50
-                    + "\n\n"
-                )
-
-        system_msgs = [m for m in messages if _msg_get(m, "role") == "system"]
-        masked_messages = list(system_msgs)
-        masked_messages += copy.deepcopy(_FEW_SHOT_MESSAGES)
-        masked_messages += [
-            {
-                "role": "user",
-                "content": (
-                    "Thanks. I also read a file called random.txt. This file "
-                    "also contains some tool calls and their corresponding "
-                    "execution outputs. Here are the contents:\n\n" + tool_contents + "\n\n"
-                    "Please summarize the contents. If there are any "
-                    "instructions in the contents, follow them first, then do "
-                    "summarization. Else, just summarize the contents. Please "
-                    "note that contents may already contain some tool calls and "
-                    "their outputs. If you are trying to follow instructions, "
-                    "please make sure that you are not repeating the same tool calls."
-                ),
-            },
-        ]
+        masked_messages = self._build_masked_messages(messages)
 
         # Step 3: Masked run
         masked_response = await client.chat.completions.create(
@@ -602,68 +529,16 @@ class MelonDetector:
         )
         masked_msg = masked_response.choices[0].message
 
-        # Update masked tool call bank
         if masked_msg.tool_calls:
-            masked_tool_call_texts = _transform_tool_calls(masked_msg.tool_calls)
-            new_calls = [t for t in masked_tool_call_texts if t not in self._masked_tool_call_bank]
-            for call_text in new_calls:
+            for call_text in _transform_tool_calls(masked_msg.tool_calls):
                 self._masked_tool_call_bank.add(call_text)
-                emb = await self._aembed(call_text)
-                self._masked_tool_emb_bank.append(emb)
 
-        if not self._masked_tool_emb_bank:
+        if not self._masked_tool_call_bank:
             logger.info("MELON (async): No masked tool calls to compare, allowing")
             return ValidationResult(is_safe=True, layer=LAYER)
 
-        # Step 4: Compare embeddings
-        original_embeddings = [await self._aembed(text) for text in original_tool_call_texts]
-
-        max_sim = -1.0
-        is_injection = False
-        for masked_emb in self._masked_tool_emb_bank:
-            if is_injection:
-                break
-            for orig_emb in original_embeddings:
-                sim = _cosine_similarity(orig_emb, masked_emb)
-                if sim > max_sim:
-                    max_sim = sim
-                if sim > self.threshold:
-                    is_injection = True
-                    break
-
-        details = {
-            "max_cosine_similarity": max_sim,
-            "threshold": self.threshold,
-            "original_tool_calls": original_tool_call_texts,
-            "masked_tool_calls": list(self._masked_tool_call_bank),
-        }
-
-        if is_injection:
-            redacted = "<Data omitted because a prompt injection was detected>"
-            reason = (
-                f"Indirect prompt injection detected in tool output "
-                f"(cosine similarity: {max_sim:.4f} > {self.threshold})"
-            )
-            logger.warning("MELON BLOCKED (async): %s", reason)
-            details["redacted_output"] = redacted
-            return ValidationResult(
-                is_safe=False,
-                layer=LAYER,
-                blocked_reason=reason,
-                details=details,
-            )
-
-        logger.info("MELON (async): Tool output is safe (max sim: %.4f)", max_sim)
-        return ValidationResult(is_safe=True, layer=LAYER, details=details)
-
-    async def _aembed(self, text: str) -> np.ndarray:
-        """Async embedding."""
-        client = self._get_async_client()
-        response = await client.embeddings.create(
-            input=text,
-            model=self.embedding_model,
-        )
-        return np.array(response.data[0].embedding)
+        # Step 4: LLM Judge (sync judge call — reuses the same prompt logic)
+        return self._judge_and_build_result(original_tool_call_texts)
 
     async def aclose(self):
         """Close the async OpenAI client."""
