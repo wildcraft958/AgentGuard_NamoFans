@@ -1,18 +1,23 @@
 """
-AgentGuard – Guardian facade.
+AgentGuard – Guardian facade (agentguard.guardian).
 
-The main entry point for AgentGuard. Orchestrates all security layers
-and provides the validate_input() / validate_output() interface.
+The main entry point for AgentGuard. Thin orchestration layer that
+delegates validation logic to _pipeline/ modules:
+  - _pipeline.notifier:    OTel + audit writes
+  - _pipeline.handlers:    Mode-aware block handling (enforce/monitor)
+  - _pipeline.wave_runner: Async parallel check execution
 """
 
 import asyncio
 import logging
 import time
 
-from opentelemetry.trace import Tracer
-
+from agentguard._pipeline.handlers import handle_input_block, handle_output_block, handle_tool_block
+from agentguard._pipeline.notifier import Notifier
+from agentguard._pipeline.wave_runner import wave_parallel
 from agentguard.config import load_config
-from agentguard.observability.telemetry import init_telemetry
+from agentguard.exceptions import InputBlockedError, OutputBlockedError, ToolCallBlockedError
+from agentguard.l1_input.fast_injection_detect import fast_inject_detect
 from agentguard.models import (
     GuardMode,
     InputValidationResult,
@@ -21,11 +26,8 @@ from agentguard.models import (
     ValidationResult,
     SENSITIVITY_THRESHOLDS,
 )
-from agentguard.l1_input.prompt_shields import PromptShields
-from agentguard.l1_input.content_filters import ContentFilters
-from agentguard.l1_input.fast_injection_detect import fast_inject_detect
 from agentguard.observability.audit import AuditLog
-from agentguard.exceptions import InputBlockedError, OutputBlockedError, ToolCallBlockedError
+from agentguard.observability.telemetry import init_telemetry
 
 logger = logging.getLogger("agentguard")
 
@@ -57,11 +59,11 @@ class Guardian:
             self.config.log_level,
         )
 
-        # Initialize OTel telemetry (only when enabled in config)
-        self._tracer: Tracer | None = None
-        self._meter = None
+        # ── Telemetry ──
+        tracer = None
+        meter = None
         if self.config.telemetry_enabled:
-            self._tracer, self._meter = init_telemetry(
+            tracer, meter = init_telemetry(
                 service_name=self.config.telemetry_service_name,
                 otlp_endpoint=self.config.telemetry_endpoint,
             )
@@ -71,16 +73,19 @@ class Guardian:
                 self.config.telemetry_endpoint or "console",
             )
 
-        # Initialize Audit Log
-        self._audit: AuditLog | None = None
+        # ── Audit Log ──
+        audit = None
         if self.config.audit_enabled:
             try:
-                self._audit = AuditLog(self.config.audit_db_path)
+                audit = AuditLog(self.config.audit_db_path)
                 logger.info("Audit Log: ENABLED (%s)", self.config.audit_db_path)
             except Exception as e:
                 logger.error("Failed to initialize Audit Log: %s", e)
 
-        # Initialize L1 modules
+        # ── Notifier (unified OTel + audit) ──
+        self._notifier = Notifier(tracer, meter, audit, self.config.mode.value)
+
+        # ── L1 Input modules ──
         self._prompt_shields = None
         self._content_filters = None
         self._blocklist_manager = None
@@ -88,6 +93,7 @@ class Guardian:
 
         if self.config.prompt_shields_enabled:
             try:
+                from agentguard.l1_input.prompt_shields import PromptShields
                 self._prompt_shields = PromptShields(
                     timeout_ms=self.config.max_validation_latency_ms
                 )
@@ -103,12 +109,12 @@ class Guardian:
         )
         if needs_content_filters:
             try:
+                from agentguard.l1_input.content_filters import ContentFilters
                 self._content_filters = ContentFilters()
                 logger.info("Content Filters module: ENABLED (text + image)")
             except ValueError as e:
                 logger.error("Failed to initialize Content Filters: %s", e)
 
-        # Initialize L3: Blocklist Manager
         if self.config.pattern_detection_enabled:
             try:
                 from agentguard.l1_input.blocklist_manager import BlocklistManager
@@ -123,7 +129,7 @@ class Guardian:
             except (ValueError, Exception) as e:
                 logger.error("Failed to initialize Blocklist Manager: %s", e)
 
-        # Initialize L2 modules
+        # ── L2 Output modules ──
         self._output_toxicity = None
         self._pii_detector = None
         self._groundedness_detector = None
@@ -149,7 +155,7 @@ class Guardian:
             except ValueError as e:
                 logger.error("Failed to initialize Groundedness Detector: %s", e)
 
-        # Initialize Tool Firewall modules
+        # ── Tool Firewall modules ──
         self._tool_specific_guards = None
         self._tool_input_analyzer = None
         self._melon_detector = None
@@ -186,7 +192,7 @@ class Guardian:
             except (ValueError, Exception) as e:
                 logger.error("Failed to initialize MELON Detector: %s", e)
 
-        # Initialize L4: RBAC + Behavioral Anomaly
+        # ── L4: RBAC + Behavioral Anomaly ──
         self._l4_rbac = None
         self._l4_behavioral = None
 
@@ -200,7 +206,7 @@ class Guardian:
             self._l4_behavioral = BehavioralAnomalyDetector(self.config)
             logger.info("L4 Behavioral Anomaly Detector: ENABLED")
 
-        # Initialize C4: Approval Workflow (HITL / AITL)
+        # ── C4: Approval Workflow (HITL / AITL) ──
         self._approval_workflow = None
         if self.config.approval_workflow_enabled:
             try:
@@ -213,7 +219,7 @@ class Guardian:
             except Exception as e:
                 logger.error("Failed to initialize Approval Workflow: %s", e)
 
-        # Initialize Sandbox Executor (NemoClaw-inspired subprocess isolation)
+        # ── Sandbox Executor ──
         self._sandbox_executor = None
         if self.config.sandbox_enabled:
             try:
@@ -227,6 +233,10 @@ class Guardian:
             except Exception as e:
                 logger.error("Failed to initialize Sandbox Executor: %s", e)
 
+    # ------------------------------------------------------------------
+    # Private helpers
+    # ------------------------------------------------------------------
+
     def _setup_logging(self):
         """Configure logging based on config level."""
         level_map = {
@@ -235,15 +245,11 @@ class Guardian:
             "detailed": logging.DEBUG,
         }
         log_level = level_map.get(self.config.log_level, logging.INFO)
-
-        # Configure the agentguard logger
         ag_logger = logging.getLogger("agentguard")
         if not ag_logger.handlers:
             handler = logging.StreamHandler()
             handler.setFormatter(
-                logging.Formatter(
-                    "[AgentGuard %(levelname)s] %(name)s - %(message)s"
-                )
+                logging.Formatter("[AgentGuard %(levelname)s] %(name)s - %(message)s")
             )
             ag_logger.addHandler(handler)
         ag_logger.setLevel(log_level)
@@ -256,6 +262,46 @@ class Guardian:
             or self.config.content_filters_block_self_harm
         )
 
+    # ------------------------------------------------------------------
+    # Backward-compat delegation properties for _pipeline.notifier
+    # These allow existing tests that access guardian._audit, guardian._span, etc.
+    # ------------------------------------------------------------------
+
+    @property
+    def _audit(self) -> AuditLog | None:
+        return self._notifier.audit
+
+    def _span(self, name: str):
+        return self._notifier.span(name)
+
+    def _set_span_attrs(self, span, is_safe, blocked_by=None, blocked_reason=None):
+        self._notifier.set_span_attrs(span, is_safe, blocked_by, blocked_reason)
+
+    def _record_metrics(self, layer, check, result, start_time):
+        self._notifier.record_metrics(layer, check, result, start_time)
+
+    def _notify_security_event(self, **kwargs):
+        self._notifier.notify(**kwargs)
+
+    def _handle_block(self, results, blocking_result, blocked_by, start_time, span=None):
+        return handle_input_block(
+            self.config.mode, self._notifier, results, blocking_result, blocked_by, start_time, span,
+        )
+
+    def _handle_tool_block(self, results, blocking_result, blocked_by, start_time, tool_name, span=None, layer="tool_firewall", **l4_kwargs):
+        return handle_tool_block(
+            self.config.mode, self._notifier, results, blocking_result, blocked_by, start_time, tool_name, span, layer, **l4_kwargs,
+        )
+
+    def _handle_output_block(self, results, blocking_result, blocked_by, start_time, redacted_text=None, span=None):
+        return handle_output_block(
+            self.config.mode, self._notifier, results, blocking_result, blocked_by, start_time, redacted_text, span,
+        )
+
+    # ==================================================================
+    # Sync validation methods
+    # ==================================================================
+
     def validate_input(
         self,
         user_input: str,
@@ -267,9 +313,10 @@ class Guardian:
         Validate user input through all L1 (Input Security) checks.
 
         Runs checks in order:
-        1. Prompt Shields -- detect prompt injection attacks
-        2. Content Filters -- detect harmful content (hate, violence, etc.)
-        3. Image Filters -- detect harmful content in images
+        1. Fast offline injection pre-filter (~0ms)
+        2. Prompt Shields — detect prompt injection attacks
+        3. Content Filters — detect harmful content (hate, violence, etc.)
+        4. Image Filters — detect harmful content in images
 
         Args:
             user_input: The user's text input to validate.
@@ -291,52 +338,35 @@ class Guardian:
         results = []
 
         with self._span("agentguard.validate_input") as parent_span:
-            # -------------------------------------------------------
-            # L1 Check 0: Fast Offline Injection Pre-filter (zero latency)
-            # -------------------------------------------------------
+            # --- Wave 0: Fast offline pre-filter ---
             with self._span("agentguard.check.fast_inject_detect"):
                 detected, matched_pattern = fast_inject_detect(user_input)
             if detected:
                 logger.info("Fast inject pre-filter matched pattern: %s", matched_pattern)
-                from agentguard.models import ValidationResult
                 fake_result = ValidationResult(
-                    is_safe=False,
-                    layer="l1_input",
+                    is_safe=False, layer="l1_input",
                     blocked_reason=f"Prompt injection pattern detected: {matched_pattern}",
                 )
                 results.append(fake_result)
                 return self._handle_block(results, fake_result, "fast_inject_detect", start_time, span=parent_span)
 
-            # -------------------------------------------------------
-            # L1 Check 1: Prompt Shields (Prompt Injection Detection)
-            # -------------------------------------------------------
+            # --- Wave 1: Prompt Shields ---
             if self._prompt_shields and self.config.prompt_shields_enabled:
                 logger.info("Running Prompt Shields check...")
                 with self._span("agentguard.check.prompt_shields"):
                     ps_result = self._prompt_shields.analyze(user_input, documents)
                 results.append(ps_result)
-
                 if not ps_result.is_safe:
                     if self.config.block_on_detected_injection:
-                        return self._handle_block(
-                            results, ps_result, "prompt_shields", start_time, span=parent_span
-                        )
+                        return self._handle_block(results, ps_result, "prompt_shields", start_time, span=parent_span)
                     else:
-                        logger.warning(
-                            "Prompt injection detected but blocking is disabled"
-                        )
+                        logger.warning("Prompt injection detected but blocking is disabled")
 
-            # -------------------------------------------------------
-            # L1 Check 2: Content Filters + Blocklists (single API call)
-            # -------------------------------------------------------
-            if self._content_filters and (
-                self._any_content_filter_enabled() or self._blocklist_names
-            ):
+            # --- Wave 2: Content Filters + Blocklists ---
+            if self._content_filters and (self._any_content_filter_enabled() or self._blocklist_names):
                 logger.info("Running Content Filters check...")
-                # Determine severity threshold from sensitivity config
                 sensitivity = self.config.prompt_shields_sensitivity
                 threshold = SENSITIVITY_THRESHOLDS.get(sensitivity, 0)
-
                 with self._span("agentguard.check.content_filters"):
                     cf_result = self._content_filters.analyze_text(
                         text=user_input,
@@ -348,23 +378,15 @@ class Guardian:
                         halt_on_blocklist_hit=self.config.halt_on_blocklist_hit,
                     )
                 results.append(cf_result)
-
                 if not cf_result.is_safe:
-                    return self._handle_block(
-                        results, cf_result, "content_filters", start_time, span=parent_span
-                    )
+                    return self._handle_block(results, cf_result, "content_filters", start_time, span=parent_span)
 
-            # -------------------------------------------------------
-            # L1 Check 3: Image Content Filters (Harmful Image Detection)
-            # -------------------------------------------------------
+            # --- Wave 3: Image Content Filters ---
             if self._content_filters and self.config.image_filters_enabled and images:
                 sensitivity = self.config.prompt_shields_sensitivity
                 threshold = SENSITIVITY_THRESHOLDS.get(sensitivity, 0)
-
                 for i, image_data in enumerate(images):
-                    logger.info(
-                        "Running Image Content Filters on image %d/%d...", i + 1, len(images)
-                    )
+                    logger.info("Running Image Content Filters on image %d/%d...", i + 1, len(images))
                     with self._span("agentguard.check.image_filters"):
                         img_result = self._content_filters.analyze_image(
                             image_data=image_data,
@@ -375,15 +397,11 @@ class Guardian:
                             severity_threshold=threshold,
                         )
                     results.append(img_result)
-
                     if not img_result.is_safe:
-                        return self._handle_block(
-                            results, img_result, "image_filters", start_time, span=parent_span
-                        )
+                        return self._handle_block(results, img_result, "image_filters", start_time, span=parent_span)
 
             elapsed_ms = (time.time() - start_time) * 1000
             logger.info("All L1 checks passed (%.1fms)", elapsed_ms)
-
             self._notify_security_event(
                 action="validate_input", layer="l1_input",
                 blocked_by="", reason=None,
@@ -402,9 +420,9 @@ class Guardian:
         Validate model output through L2 (Output Security) checks.
 
         Runs checks in order:
-        1. Output Toxicity -- detect harmful content in LLM output
-        2. PII Detection -- detect and flag PII leakage in output
-        3. Groundedness Detection -- detect hallucinated content
+        1. Output Toxicity — detect harmful content in LLM output
+        2. PII Detection — detect and flag PII leakage
+        3. Groundedness Detection — detect hallucinated content
 
         Args:
             model_output: The LLM's output text to validate.
@@ -426,13 +444,10 @@ class Guardian:
         redacted_text = None
 
         with self._span("agentguard.validate_output") as parent_span:
-            # -------------------------------------------------------
-            # L2 Check 1: Output Toxicity (Content Filtering on output)
-            # -------------------------------------------------------
+            # --- Check 1: Output Toxicity ---
             if self._output_toxicity and self.config.output_toxicity_enabled:
                 sensitivity = self.config.prompt_shields_sensitivity
                 threshold = SENSITIVITY_THRESHOLDS.get(sensitivity, 0)
-
                 with self._span("agentguard.check.output_toxicity"):
                     tox_result = self._output_toxicity.analyze(
                         text=model_output,
@@ -442,15 +457,10 @@ class Guardian:
                         severity_threshold=threshold,
                     )
                 results.append(tox_result)
-
                 if not tox_result.is_safe and self.config.output_toxicity_block:
-                    return self._handle_output_block(
-                        results, tox_result, "output_toxicity", start_time, redacted_text, span=parent_span
-                    )
+                    return self._handle_output_block(results, tox_result, "output_toxicity", start_time, redacted_text, span=parent_span)
 
-            # -------------------------------------------------------
-            # L2 Check 2: PII Detection
-            # -------------------------------------------------------
+            # --- Check 2: PII Detection ---
             if self._pii_detector and self.config.pii_detection_enabled:
                 with self._span("agentguard.check.pii_detector"):
                     pii_result = self._pii_detector.analyze(
@@ -459,19 +469,12 @@ class Guardian:
                         allowed_categories=self.config.pii_allowed_categories,
                     )
                 results.append(pii_result)
-
-                # Capture redacted text regardless of blocking
                 if pii_result.details.get("redacted_text"):
                     redacted_text = pii_result.details["redacted_text"]
-
                 if not pii_result.is_safe:
-                    return self._handle_output_block(
-                        results, pii_result, "pii_detector", start_time, redacted_text, span=parent_span
-                    )
+                    return self._handle_output_block(results, pii_result, "pii_detector", start_time, redacted_text, span=parent_span)
 
-            # -------------------------------------------------------
-            # L2 Check 3: Groundedness Detection (Hallucination Detection)
-            # -------------------------------------------------------
+            # --- Check 3: Groundedness Detection ---
             if self._groundedness_detector and self.config.groundedness_enabled:
                 if user_query or grounding_sources:
                     logger.info("Running Groundedness Detection check...")
@@ -484,34 +487,24 @@ class Guardian:
                             block_on_high_confidence=self.config.groundedness_block_on_high_confidence,
                         )
                     results.append(ground_result)
-
                     if not ground_result.is_safe:
                         self._set_span_attrs(
-                            parent_span,
-                            is_safe=False,
+                            parent_span, is_safe=False,
                             blocked_by="groundedness_detector",
                             blocked_reason=ground_result.blocked_reason,
                         )
-                        self._record_metrics(
-                            "l2_output", "groundedness_detector", "block", start_time
-                        )
-                        return self._handle_output_block(
-                            results, ground_result, "groundedness_detector",
-                            start_time, redacted_text
-                        )
+                        self._record_metrics("l2_output", "groundedness_detector", "block", start_time)
+                        return self._handle_output_block(results, ground_result, "groundedness_detector", start_time, redacted_text)
 
             elapsed_ms = (time.time() - start_time) * 1000
             logger.info("All L2 checks passed (%.1fms)", elapsed_ms)
-
             self._notify_security_event(
                 action="validate_output", layer="l2_output",
                 blocked_by="", reason=None,
                 is_safe=True, start_time=start_time, span=parent_span,
             )
 
-        return OutputValidationResult(
-            is_safe=True, results=results, redacted_text=redacted_text
-        )
+        return OutputValidationResult(is_safe=True, results=results, redacted_text=redacted_text)
 
     def validate_tool_call(
         self,
@@ -522,8 +515,7 @@ class Guardian:
         """
         Pre-execution tool firewall: validate tool name + arguments.
 
-        Runs Component 3 (rule-based guards) first, then Component 1
-        (entity recognition) if C3 passes.
+        Runs L4 RBAC/behavioral first, then C3 (rule-based), C1 (entity), C4 (approval).
 
         Args:
             fn_name: Tool function name.
@@ -545,7 +537,7 @@ class Guardian:
         ctx = context or {}
 
         with self._span("agentguard.validate_tool_call") as parent_span:
-            # --- L4a: RBAC check (zero-trust default-deny) ---
+            # --- L4a: RBAC check ---
             if self._l4_rbac:
                 from agentguard.l4.rbac import AccessContext, infer_verb, infer_sensitivity
                 rbac_ctx = AccessContext(
@@ -559,8 +551,7 @@ class Guardian:
                 rbac_decision = self._l4_rbac.evaluate(rbac_ctx)
                 if rbac_decision.value == "deny":
                     rbac_result = ValidationResult(
-                        is_safe=False,
-                        layer="l4_rbac",
+                        is_safe=False, layer="l4_rbac",
                         blocked_reason=f"L4 RBAC: role '{rbac_ctx.agent_role}' denied {rbac_ctx.action_verb} on {rbac_ctx.resource_sensitivity} resource via {fn_name}",
                     )
                     results.append(rbac_result)
@@ -569,7 +560,6 @@ class Guardian:
                         span=parent_span, layer="l4_rbac",
                         l4_rbac_decision=rbac_decision.value,
                     )
-                # ELEVATE → route into approval_workflow below (set flag in context)
                 if rbac_decision.value == "elevate":
                     ctx = dict(ctx, _l4_elevate=True)
 
@@ -589,8 +579,7 @@ class Guardian:
                 if ba_result.action == "BLOCK":
                     block_reason = f"L4 Behavioral: {', '.join(s.name for s in ba_result.signals)} (score={ba_result.composite_score:.2f})"
                     ba_block = ValidationResult(
-                        is_safe=False,
-                        layer="l4_behavioral",
+                        is_safe=False, layer="l4_behavioral",
                         blocked_reason=block_reason,
                     )
                     results.append(ba_block)
@@ -608,14 +597,17 @@ class Guardian:
                         [s.name for s in ba_result.signals],
                     )
 
+            # --- C3: Tool-Specific Guards ---
             block = self._run_c3(fn_name, fn_args, results, start_time, parent_span)
             if block is not None:
                 return block
 
+            # --- C1: Tool Input Analyzer ---
             block = self._run_c1(fn_name, fn_args, results, start_time, parent_span)
             if block is not None:
                 return block
 
+            # --- C4: Approval Workflow ---
             block = self._run_c4(fn_name, fn_args, ctx, results, start_time, parent_span)
             if block is not None:
                 return block
@@ -630,14 +622,7 @@ class Guardian:
 
         return ToolCallValidationResult(is_safe=True, results=results, tool_name=fn_name)
 
-    def _run_c3(
-        self,
-        fn_name: str,
-        fn_args: dict,
-        results: list,
-        start_time: float,
-        span=None,
-    ) -> ToolCallValidationResult | None:
+    def _run_c3(self, fn_name, fn_args, results, start_time, span=None):
         """C3: Tool-Specific Guards (pure Python, zero latency). Returns None on pass."""
         if not self._tool_specific_guards:
             return None
@@ -646,19 +631,10 @@ class Guardian:
             c3_result = self._tool_specific_guards.check(fn_name, fn_args)
         results.append(c3_result)
         if not c3_result.is_safe:
-            return self._handle_tool_block(
-                results, c3_result, "tool_specific_guards", start_time, fn_name, span=span,
-            )
+            return self._handle_tool_block(results, c3_result, "tool_specific_guards", start_time, fn_name, span=span)
         return None
 
-    def _run_c1(
-        self,
-        fn_name: str,
-        fn_args: dict,
-        results: list,
-        start_time: float,
-        span=None,
-    ) -> ToolCallValidationResult | None:
+    def _run_c1(self, fn_name, fn_args, results, start_time, span=None):
         """C1: Tool Input Analyzer (Azure entity recognition). Returns None on pass."""
         if not (self._tool_input_analyzer and self.config.tool_input_analysis_enabled):
             return None
@@ -670,20 +646,10 @@ class Guardian:
             )
         results.append(c1_result)
         if not c1_result.is_safe:
-            return self._handle_tool_block(
-                results, c1_result, "tool_input_analyzer", start_time, fn_name, span=span,
-            )
+            return self._handle_tool_block(results, c1_result, "tool_input_analyzer", start_time, fn_name, span=span)
         return None
 
-    def _run_c4(
-        self,
-        fn_name: str,
-        fn_args: dict,
-        ctx: dict,
-        results: list,
-        start_time: float,
-        span=None,
-    ) -> ToolCallValidationResult | None:
+    def _run_c4(self, fn_name, fn_args, ctx, results, start_time, span=None):
         """C4: Approval Workflow (HITL / AITL). Returns None on pass."""
         if not (self._approval_workflow and self.config.approval_workflow_enabled):
             return None
@@ -692,9 +658,7 @@ class Guardian:
             c4_result = self._approval_workflow.check(fn_name, fn_args, ctx)
         results.append(c4_result)
         if not c4_result.is_safe:
-            return self._handle_tool_block(
-                results, c4_result, "approval_workflow", start_time, fn_name, span=span,
-            )
+            return self._handle_tool_block(results, c4_result, "approval_workflow", start_time, fn_name, span=span)
         return None
 
     def validate_tool_output(
@@ -736,8 +700,6 @@ class Guardian:
             # --- C2: MELON Detector ---
             if self._melon_detector and self.config.melon_enabled and messages is not None:
                 logger.info("Running MELON detection for tool '%s' output...", fn_name)
-                # Ensure the tool result is in the messages list so MELON's
-                # role check (messages[-1]["role"] == "tool") passes.
                 melon_messages = list(messages)
                 if not melon_messages or (
                     isinstance(melon_messages[-1], dict)
@@ -747,9 +709,7 @@ class Guardian:
                         {"role": "tool", "content": tool_result, "tool_call_id": "agentguard_synthetic"}
                     ]
                 with self._span("agentguard.check.melon_detector"):
-                    c2_result = self._melon_detector.check_tool_output(
-                        melon_messages, tool_schemas or []
-                    )
+                    c2_result = self._melon_detector.check_tool_output(melon_messages, tool_schemas or [])
                 results.append(c2_result)
 
                 if not c2_result.is_safe:
@@ -792,7 +752,6 @@ class Guardian:
                         redacted_output=redacted,
                         tool_name=fn_name,
                     )
-
                     if self.config.melon_raise_on_injection:
                         raise ToolCallBlockedError(
                             reason=c2_result.blocked_reason,
@@ -819,262 +778,8 @@ class Guardian:
         if self._l4_behavioral:
             self._l4_behavioral.reset_task(task_id)
 
-    # ------------------------------------------------------------------
-    # Telemetry helpers
-    # ------------------------------------------------------------------
-
-    def _span(self, name: str):
-        """Return a context-manager span if tracer available, else a no-op."""
-        if self._tracer is not None:
-            return self._tracer.start_as_current_span(name)
-        # Return a no-op context manager that yields None
-        from contextlib import nullcontext
-        return nullcontext(None)
-
-    def _set_span_attrs(
-        self,
-        span,
-        is_safe: bool,
-        blocked_by: str | None = None,
-        blocked_reason: str | None = None,
-    ) -> None:
-        """Set standard attributes on a span (no-op if span is None)."""
-        if span is None:
-            return
-        try:
-            span.set_attribute("agentguard.is_safe", is_safe)
-            span.set_attribute("agentguard.mode", self.config.mode.value)
-            if blocked_by:
-                span.set_attribute("agentguard.blocked_by", blocked_by)
-            if blocked_reason:
-                span.set_attribute("agentguard.blocked_reason", blocked_reason)
-        except Exception:
-            pass  # Never let telemetry crash the guard
-
-    def _record_metrics(
-        self, layer: str, check: str, result: str, start_time: float
-    ) -> None:
-        """Increment validation counter and record duration histogram."""
-        if self._meter is None:
-            return
-        try:
-            elapsed_ms = (time.time() - start_time) * 1000
-            attrs = {"layer": layer, "check": check, "result": result}
-            self._meter.create_counter(
-                "agentguard.validations",
-                description="Number of AgentGuard validation decisions",
-                unit="1",
-            ).add(1, attributes=attrs)
-            self._meter.create_histogram(
-                "agentguard.validation.duration",
-                description="Duration of AgentGuard validation checks",
-                unit="ms",
-            ).record(elapsed_ms, attributes={"layer": layer, "check": check})
-        except Exception:
-            pass  # Never let telemetry crash the guard
-
-    # ------------------------------------------------------------------
-    # Unified security event notification
-    # ------------------------------------------------------------------
-
-    def _notify_security_event(
-        self,
-        *,
-        action: str,
-        layer: str,
-        blocked_by: str,
-        reason: str | None,
-        is_safe: bool,
-        start_time: float,
-        span=None,
-        metadata: dict | None = None,
-        l4_rbac_decision: str = "",
-        l4_signals: str = "[]",
-        l4_composite: float = 0.0,
-        l4_action: str = "",
-    ) -> None:
-        """Single notification point for both OTel and SQLite audit log.
-
-        OTel  → span attributes + metrics histogram (performance / SRE observability).
-        Audit → structured SQLite record (compliance forensics, 100% local retention).
-
-        This is the ONLY place that writes to both systems simultaneously, eliminating
-        the scattered dual-write pattern where _set_span_attrs/_record_metrics and
-        _audit.record were called at separate points in the code.
-        """
-        # OTel: span attributes
-        self._set_span_attrs(
-            span,
-            is_safe=is_safe,
-            blocked_by=blocked_by if not is_safe else None,
-            blocked_reason=reason if not is_safe else None,
-        )
-        # OTel: metrics counter + latency histogram
-        self._record_metrics(layer, blocked_by, "pass" if is_safe else "block", start_time)
-        # Audit log: structured security compliance record
-        if self._audit:
-            self._audit.record(
-                action, layer, is_safe=is_safe,
-                reason=reason,
-                metadata=metadata,
-                l4_rbac_decision=l4_rbac_decision,
-                l4_signals=l4_signals,
-                l4_composite=l4_composite,
-                l4_action=l4_action,
-            )
-
-    # ------------------------------------------------------------------
-    # Block handlers (enforce vs monitor mode, per layer)
-    # ------------------------------------------------------------------
-
-    def _handle_block(
-        self,
-        results: list,
-        blocking_result: ValidationResult,
-        blocked_by: str,
-        start_time: float,
-        span=None,
-    ) -> InputValidationResult:
-        """Handle a blocked input — single _notify_security_event call covers OTel + audit."""
-        elapsed_ms = (time.time() - start_time) * 1000
-
-        if self.config.mode == GuardMode.MONITOR:
-            logger.warning(
-                "MONITOR mode: would block (%s: %s) but allowing through (%.1fms)",
-                blocked_by, blocking_result.blocked_reason, elapsed_ms,
-            )
-            self._notify_security_event(
-                action="validate_input", layer="l1_input",
-                blocked_by=blocked_by,
-                reason=f"MONITOR: would block via {blocked_by}",
-                is_safe=True, start_time=start_time, span=span,
-                metadata={"blocked_by": blocked_by, "elapsed_ms": elapsed_ms},
-            )
-            return InputValidationResult(is_safe=True, results=results, blocked_by=None, blocked_reason=None)
-
-        # ENFORCE mode
-        logger.warning(
-            "ENFORCE mode: BLOCKING input (%s: %s) (%.1fms)",
-            blocked_by, blocking_result.blocked_reason, elapsed_ms,
-        )
-        self._notify_security_event(
-            action="validate_input", layer="l1_input",
-            blocked_by=blocked_by,
-            reason=blocking_result.blocked_reason,
-            is_safe=False, start_time=start_time, span=span,
-            metadata={"blocked_by": blocked_by, "elapsed_ms": elapsed_ms},
-        )
-        result = InputValidationResult(
-            is_safe=False, results=results,
-            blocked_by=blocked_by, blocked_reason=blocking_result.blocked_reason,
-        )
-        raise InputBlockedError(
-            reason=blocking_result.blocked_reason,
-            details={"blocked_by": blocked_by, "elapsed_ms": elapsed_ms, "validation_result": result},
-        )
-
-    def _handle_tool_block(
-        self,
-        results: list,
-        blocking_result: ValidationResult,
-        blocked_by: str,
-        start_time: float,
-        tool_name: str,
-        span=None,
-        layer: str = "tool_firewall",
-        **l4_kwargs,
-    ) -> ToolCallValidationResult:
-        """Handle a blocked tool call — single _notify_security_event call covers OTel + audit."""
-        elapsed_ms = (time.time() - start_time) * 1000
-
-        if self.config.mode == GuardMode.MONITOR:
-            logger.warning(
-                "MONITOR mode: would block tool call (%s: %s) but allowing (%.1fms)",
-                blocked_by, blocking_result.blocked_reason, elapsed_ms,
-            )
-            self._notify_security_event(
-                action="validate_tool_call", layer=layer,
-                blocked_by=blocked_by,
-                reason=f"MONITOR: would block via {blocked_by}",
-                is_safe=True, start_time=start_time, span=span,
-                metadata={"blocked_by": blocked_by, "tool_name": tool_name, "elapsed_ms": elapsed_ms},
-                **l4_kwargs,
-            )
-            return ToolCallValidationResult(is_safe=True, results=results, tool_name=tool_name)
-
-        # ENFORCE mode
-        logger.warning(
-            "ENFORCE mode: BLOCKING tool call (%s: %s) (%.1fms)",
-            blocked_by, blocking_result.blocked_reason, elapsed_ms,
-        )
-        self._notify_security_event(
-            action="validate_tool_call", layer=layer,
-            blocked_by=blocked_by,
-            reason=blocking_result.blocked_reason,
-            is_safe=False, start_time=start_time, span=span,
-            metadata={"blocked_by": blocked_by, "tool_name": tool_name, "elapsed_ms": elapsed_ms},
-            **l4_kwargs,
-        )
-        result = ToolCallValidationResult(
-            is_safe=False, results=results,
-            blocked_by=blocked_by, blocked_reason=blocking_result.blocked_reason,
-            tool_name=tool_name,
-        )
-        raise ToolCallBlockedError(
-            reason=blocking_result.blocked_reason,
-            details={"blocked_by": blocked_by, "elapsed_ms": elapsed_ms, "validation_result": result},
-        )
-
-    def _handle_output_block(
-        self,
-        results: list,
-        blocking_result: ValidationResult,
-        blocked_by: str,
-        start_time: float,
-        redacted_text: str = None,
-        span=None,
-    ) -> OutputValidationResult:
-        """Handle a blocked output — single _notify_security_event call covers OTel + audit."""
-        elapsed_ms = (time.time() - start_time) * 1000
-
-        if self.config.mode == GuardMode.MONITOR:
-            logger.warning(
-                "MONITOR mode: would block output (%s: %s) but allowing through (%.1fms)",
-                blocked_by, blocking_result.blocked_reason, elapsed_ms,
-            )
-            self._notify_security_event(
-                action="validate_output", layer="l2_output",
-                blocked_by=blocked_by,
-                reason=f"MONITOR: would block via {blocked_by}",
-                is_safe=True, start_time=start_time, span=span,
-                metadata={"blocked_by": blocked_by, "elapsed_ms": elapsed_ms},
-            )
-            return OutputValidationResult(is_safe=True, results=results, redacted_text=redacted_text)
-
-        # ENFORCE mode
-        logger.warning(
-            "ENFORCE mode: BLOCKING output (%s: %s) (%.1fms)",
-            blocked_by, blocking_result.blocked_reason, elapsed_ms,
-        )
-        self._notify_security_event(
-            action="validate_output", layer="l2_output",
-            blocked_by=blocked_by,
-            reason=blocking_result.blocked_reason,
-            is_safe=False, start_time=start_time, span=span,
-            metadata={"blocked_by": blocked_by, "elapsed_ms": elapsed_ms},
-        )
-        result = OutputValidationResult(
-            is_safe=False, results=results,
-            blocked_by=blocked_by, blocked_reason=blocking_result.blocked_reason,
-            redacted_text=redacted_text,
-        )
-        raise OutputBlockedError(
-            reason=blocking_result.blocked_reason,
-            details={"blocked_by": blocked_by, "elapsed_ms": elapsed_ms, "validation_result": result},
-        )
-
     # ==================================================================
-    # Async Tiered Pipeline — 3-Wave Concurrent Execution
+    # Async Tiered Pipeline — wave-based concurrent execution
     # ==================================================================
 
     async def __aenter__(self):
@@ -1098,48 +803,6 @@ class Guardian:
                     await checker.aclose()
                 except Exception:
                     pass
-
-    async def _wave_parallel(
-        self, checks: list[tuple[str, object]]
-    ) -> tuple[list[tuple[str, ValidationResult]], tuple[str, ValidationResult] | None]:
-        """
-        Run coroutines in parallel with first-to-fail cancellation.
-
-        When any check returns is_safe=False, cancel all remaining in-flight
-        tasks. With native async clients, cancellation closes TCP sockets.
-
-        Args:
-            checks: List of (check_name, coroutine) pairs.
-
-        Returns:
-            (all_completed_results, first_block_or_none)
-        """
-        tasks = {
-            asyncio.create_task(coro, name=name)
-            for name, coro in checks
-        }
-        results = []
-        block_result = None
-        pending = set(tasks)
-
-        while pending:
-            done, pending = await asyncio.wait(
-                pending, return_when=asyncio.FIRST_COMPLETED
-            )
-            for task in done:
-                name = task.get_name()
-                result = task.result()
-                results.append((name, result))
-                if not result.is_safe and block_result is None:
-                    block_result = (name, result)
-                    for p in pending:
-                        p.cancel()
-                    if pending:
-                        await asyncio.gather(*pending, return_exceptions=True)
-                    pending = set()
-                    break
-
-        return results, block_result
 
     async def avalidate_input(
         self,
@@ -1226,7 +889,7 @@ class Guardian:
                     ))
 
             if wave1:
-                w1_results, block = await self._wave_parallel(wave1)
+                w1_results, block = await wave_parallel(wave1)
                 for name, result in w1_results:
                     results.append(result)
                 if block:
@@ -1289,13 +952,11 @@ class Guardian:
                 ))
 
             if wave1:
-                w1_results, block = await self._wave_parallel(wave1)
+                w1_results, block = await wave_parallel(wave1)
                 for name, result in w1_results:
                     results.append(result)
-                    # Always capture PII redacted text
                     if name == "pii_detector" and result.details:
                         redacted_text = result.details.get("redacted_text")
-
                 if block:
                     name, result = block
                     self._set_span_attrs(
@@ -1303,11 +964,9 @@ class Guardian:
                         blocked_reason=result.blocked_reason,
                     )
                     self._record_metrics("l2_output", name, "block", start_time)
-                    return self._handle_output_block(
-                        results, result, name, start_time, redacted_text
-                    )
+                    return self._handle_output_block(results, result, name, start_time, redacted_text)
 
-            # --- Wave 2: Expensive LLM checks (only if Wave 1 passes) ---
+            # --- Wave 2: Expensive LLM checks ---
             wave2 = []
             if (
                 self._groundedness_detector
@@ -1326,7 +985,7 @@ class Guardian:
                 ))
 
             if wave2:
-                w2_results, block = await self._wave_parallel(wave2)
+                w2_results, block = await wave_parallel(wave2)
                 for name, result in w2_results:
                     results.append(result)
                 if block:
@@ -1336,18 +995,14 @@ class Guardian:
                         blocked_reason=result.blocked_reason,
                     )
                     self._record_metrics("l2_output", name, "block", start_time)
-                    return self._handle_output_block(
-                        results, result, name, start_time, redacted_text
-                    )
+                    return self._handle_output_block(results, result, name, start_time, redacted_text)
 
             elapsed_ms = (time.time() - start_time) * 1000
             logger.info("All L2 checks passed (async, %.1fms)", elapsed_ms)
             self._set_span_attrs(parent_span, is_safe=True)
             self._record_metrics("l2_output", "validate_output", "pass", start_time)
 
-        return OutputValidationResult(
-            is_safe=True, results=results, redacted_text=redacted_text,
-        )
+        return OutputValidationResult(is_safe=True, results=results, redacted_text=redacted_text)
 
     async def avalidate_tool_call(
         self,
@@ -1373,16 +1028,13 @@ class Guardian:
                 with self._span("agentguard.check.tool_specific_guards"):
                     c3_result = self._tool_specific_guards.check(fn_name, fn_args)
                 results.append(c3_result)
-
                 if not c3_result.is_safe:
                     self._set_span_attrs(
                         parent_span, is_safe=False,
                         blocked_by="tool_specific_guards",
                         blocked_reason=c3_result.blocked_reason,
                     )
-                    self._record_metrics(
-                        "tool_firewall", "tool_specific_guards", "block", start_time
-                    )
+                    self._record_metrics("tool_firewall", "tool_specific_guards", "block", start_time)
                     return self._handle_tool_block(
                         results, c3_result, "tool_specific_guards", start_time, fn_name,
                     )
@@ -1405,7 +1057,7 @@ class Guardian:
                 ))
 
             if wave1:
-                w1_results, block = await self._wave_parallel(wave1)
+                w1_results, block = await wave_parallel(wave1)
                 for name, result in w1_results:
                     results.append(result)
                 if block:
@@ -1420,9 +1072,7 @@ class Guardian:
                     )
 
             elapsed_ms = (time.time() - start_time) * 1000
-            logger.info(
-                "Tool call pre-checks passed (async) for '%s' (%.1fms)", fn_name, elapsed_ms
-            )
+            logger.info("Tool call pre-checks passed (async) for '%s' (%.1fms)", fn_name, elapsed_ms)
             self._set_span_attrs(parent_span, is_safe=True)
             self._record_metrics("tool_firewall", "validate_tool_call", "pass", start_time)
 
