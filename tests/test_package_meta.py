@@ -24,8 +24,7 @@ def test_version_matches_pyproject():
         raise AssertionError("No version field found in pyproject.toml")
 
     assert agentguard.__version__ == pyproject_version, (
-        f"__init__.py says {agentguard.__version__!r}, "
-        f"pyproject.toml says {pyproject_version!r}"
+        f"__init__.py says {agentguard.__version__!r}, pyproject.toml says {pyproject_version!r}"
     )
 
 

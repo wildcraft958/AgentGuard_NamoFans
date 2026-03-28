@@ -164,9 +164,7 @@ def test_stats_endpoint_shape():
         patch("agentguard.dashboard.server.httpx.get") as mock_get,
         patch("agentguard.dashboard.server._get_audit_log", return_value=mock_audit),
     ):
-        mock_get.return_value = make_jaeger_response(
-            [FAKE_JAEGER_TRACE, FAKE_BLOCKED_TRACE]
-        )
+        mock_get.return_value = make_jaeger_response([FAKE_JAEGER_TRACE, FAKE_BLOCKED_TRACE])
 
         client = TestClient(app)
         resp = client.get("/api/stats")
@@ -198,9 +196,7 @@ def test_stats_endpoint_counts_correctly():
         patch("agentguard.dashboard.server._get_audit_log", return_value=mock_audit),
     ):
         # one safe (l1_input) + one blocked (tool_firewall)
-        mock_get.return_value = make_jaeger_response(
-            [FAKE_JAEGER_TRACE, FAKE_BLOCKED_TRACE]
-        )
+        mock_get.return_value = make_jaeger_response([FAKE_JAEGER_TRACE, FAKE_BLOCKED_TRACE])
 
         client = TestClient(app)
         resp = client.get("/api/stats")
@@ -298,10 +294,18 @@ def test_pass_rate_24h_uses_span_timestamps():
     from agentguard.dashboard.server import app
 
     recent_spans = [
-        _make_span_raw("s1", "agentguard.validate_input", True, start_ms_ago=60_000, layer_tag="l1_input"),
-        _make_span_raw("s2", "agentguard.validate_input", True, start_ms_ago=60_000, layer_tag="l1_input"),
-        _make_span_raw("s3", "agentguard.validate_input", False, start_ms_ago=60_000, layer_tag="l1_input"),
-        _make_span_raw("s4", "agentguard.validate_input", True, start_ms_ago=60_000, layer_tag="l1_input"),
+        _make_span_raw(
+            "s1", "agentguard.validate_input", True, start_ms_ago=60_000, layer_tag="l1_input"
+        ),
+        _make_span_raw(
+            "s2", "agentguard.validate_input", True, start_ms_ago=60_000, layer_tag="l1_input"
+        ),
+        _make_span_raw(
+            "s3", "agentguard.validate_input", False, start_ms_ago=60_000, layer_tag="l1_input"
+        ),
+        _make_span_raw(
+            "s4", "agentguard.validate_input", True, start_ms_ago=60_000, layer_tag="l1_input"
+        ),
     ]
     trace = _make_trace(recent_spans)
 
@@ -327,8 +331,12 @@ def test_pass_rate_24h_excludes_old_spans():
 
     # old span (25 hours ago) that is blocked — must NOT affect rate
     old_ms_ago = 25 * 3600 * 1000
-    recent_safe = _make_span_raw("s1", "agentguard.validate_input", True, start_ms_ago=60_000, layer_tag="l1_input")
-    old_blocked = _make_span_raw("s2", "agentguard.validate_input", False, start_ms_ago=old_ms_ago, layer_tag="l1_input")
+    recent_safe = _make_span_raw(
+        "s1", "agentguard.validate_input", True, start_ms_ago=60_000, layer_tag="l1_input"
+    )
+    old_blocked = _make_span_raw(
+        "s2", "agentguard.validate_input", False, start_ms_ago=old_ms_ago, layer_tag="l1_input"
+    )
     trace = _make_trace([recent_safe, old_blocked])
 
     mock_audit = MagicMock()

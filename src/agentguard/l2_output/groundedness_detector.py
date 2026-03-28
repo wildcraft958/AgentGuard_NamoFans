@@ -198,20 +198,14 @@ class GroundednessDetector:
             timeout_ms: Request timeout in milliseconds.
         """
         self.api_key = (
-            api_key
-            or os.environ.get("OPENAI_API_KEY")
-            or os.environ.get("TFY_API_KEY", "")
+            api_key or os.environ.get("OPENAI_API_KEY") or os.environ.get("TFY_API_KEY", "")
         )
         self.base_url = (
             base_url
             or os.environ.get("OPENAI_BASE_URL")
             or (os.environ.get("TFY_BASE_URL", "") + "/openai/v1")
         )
-        self.model = (
-            model
-            or os.environ.get("OPENAI_MODEL")
-            or os.environ.get("TFY_MODEL", "")
-        )
+        self.model = model or os.environ.get("OPENAI_MODEL") or os.environ.get("TFY_MODEL", "")
         self.timeout = timeout_ms / 1000.0
 
         if not self.api_key or not self.base_url or not self.model:
@@ -257,9 +251,7 @@ class GroundednessDetector:
         if grounding_sources and user_query:
             # Strategy 1: Documents + query → QnA factual grounding
             context = "\n\n".join(grounding_sources)
-            user_msg = _WITH_QUERY_PROMPT.format(
-                context=context, query=user_query, response=text
-            )
+            user_msg = _WITH_QUERY_PROMPT.format(context=context, query=user_query, response=text)
         elif grounding_sources:
             # Strategy 2: Documents only → Summarization factual grounding
             context = "\n\n".join(grounding_sources)
@@ -320,8 +312,7 @@ class GroundednessDetector:
 
         if not passed and block_on_high_confidence:
             blocked_reason = (
-                f"Ungrounded content detected (score: {score}/5, "
-                f"threshold: {confidence_threshold})"
+                f"Ungrounded content detected (score: {score}/5, threshold: {confidence_threshold})"
             )
             logger.warning("Groundedness BLOCKED: %s", blocked_reason)
             return ValidationResult(
@@ -334,9 +325,7 @@ class GroundednessDetector:
         if passed:
             logger.info("Groundedness: output is grounded (score: %d/5)", score)
         else:
-            logger.info(
-                "Groundedness: low score (%d/5) but blocking disabled", score
-            )
+            logger.info("Groundedness: low score (%d/5) but blocking disabled", score)
 
         return ValidationResult(is_safe=True, layer=LAYER, details=details)
 
@@ -362,9 +351,7 @@ class GroundednessDetector:
 
     def _get_async_client(self) -> AsyncOpenAI:
         if not hasattr(self, "_async_client") or self._async_client is None:
-            self._async_client = AsyncOpenAI(
-                api_key=self.api_key, base_url=self.base_url
-            )
+            self._async_client = AsyncOpenAI(api_key=self.api_key, base_url=self.base_url)
         return self._async_client
 
     async def aanalyze(
@@ -379,16 +366,15 @@ class GroundednessDetector:
         if not grounding_sources and not user_query:
             logger.info("Groundedness (async): no grounding sources or query, skipping")
             return ValidationResult(
-                is_safe=True, layer=LAYER,
+                is_safe=True,
+                layer=LAYER,
                 details={"reason": "no_grounding_sources_or_query"},
             )
 
         # Select prompt template — identical logic to sync analyze()
         if grounding_sources and user_query:
             context = "\n\n".join(grounding_sources)
-            user_msg = _WITH_QUERY_PROMPT.format(
-                context=context, query=user_query, response=text
-            )
+            user_msg = _WITH_QUERY_PROMPT.format(context=context, query=user_query, response=text)
         elif grounding_sources:
             context = "\n\n".join(grounding_sources)
             user_msg = _WITHOUT_QUERY_PROMPT.format(context=context, response=text)
@@ -412,7 +398,8 @@ class GroundednessDetector:
         except Exception as e:
             logger.error("Groundedness LLM call failed (async): %s", e)
             return ValidationResult(
-                is_safe=False, layer=LAYER,
+                is_safe=False,
+                layer=LAYER,
                 blocked_reason=f"Groundedness LLM error – blocking as fail-safe: {e}",
                 details={"error": str(e)},
             )
@@ -430,7 +417,8 @@ class GroundednessDetector:
         if score is None:
             logger.error("Groundedness (async): could not parse score")
             return ValidationResult(
-                is_safe=False, layer=LAYER,
+                is_safe=False,
+                layer=LAYER,
                 blocked_reason="Groundedness score unparseable – blocking as fail-safe",
                 details=details,
             )
@@ -439,13 +427,14 @@ class GroundednessDetector:
 
         if not passed and block_on_high_confidence:
             blocked_reason = (
-                f"Ungrounded content detected (score: {score}/5, "
-                f"threshold: {confidence_threshold})"
+                f"Ungrounded content detected (score: {score}/5, threshold: {confidence_threshold})"
             )
             logger.warning("Groundedness BLOCKED (async): %s", blocked_reason)
             return ValidationResult(
-                is_safe=False, layer=LAYER,
-                blocked_reason=blocked_reason, details=details,
+                is_safe=False,
+                layer=LAYER,
+                blocked_reason=blocked_reason,
+                details=details,
             )
 
         return ValidationResult(is_safe=True, layer=LAYER, details=details)

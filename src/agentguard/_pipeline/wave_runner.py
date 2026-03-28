@@ -28,9 +28,7 @@ async def wave_parallel(
     pending = set(tasks)
 
     while pending:
-        done, pending = await asyncio.wait(
-            pending, return_when=asyncio.FIRST_COMPLETED
-        )
+        done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
         for task in done:
             name = task.get_name()
             result = task.result()

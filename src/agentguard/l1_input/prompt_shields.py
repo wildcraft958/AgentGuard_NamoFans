@@ -47,10 +47,7 @@ class PromptShields:
         # Strip trailing slash from endpoint
         self.endpoint = self.endpoint.rstrip("/")
 
-        self.url = (
-            f"{self.endpoint}/contentsafety/text:shieldPrompt"
-            f"?api-version={API_VERSION}"
-        )
+        self.url = f"{self.endpoint}/contentsafety/text:shieldPrompt?api-version={API_VERSION}"
         self.headers = {
             "Ocp-Apim-Subscription-Key": self.key,
             "Content-Type": "application/json",
@@ -129,9 +126,7 @@ class PromptShields:
                 reasons.append("User prompt injection attack detected")
             if any_doc_attack:
                 attacked_indices = [i for i, a in enumerate(doc_attacks) if a]
-                reasons.append(
-                    f"Document attack detected in document(s): {attacked_indices}"
-                )
+                reasons.append(f"Document attack detected in document(s): {attacked_indices}")
             blocked_reason = "; ".join(reasons)
 
             logger.warning("Prompt Shields BLOCKED: %s", blocked_reason)
@@ -173,9 +168,7 @@ class PromptShields:
 
         try:
             client = self._get_async_client()
-            response = await client.post(
-                self.url, json=payload, timeout=self.timeout
-            )
+            response = await client.post(self.url, json=payload, timeout=self.timeout)
             response.raise_for_status()
             result = response.json()
         except httpx.TimeoutException:
@@ -215,9 +208,7 @@ class PromptShields:
                 reasons.append("User prompt injection attack detected")
             if any_doc_attack:
                 attacked_indices = [i for i, a in enumerate(doc_attacks) if a]
-                reasons.append(
-                    f"Document attack detected in document(s): {attacked_indices}"
-                )
+                reasons.append(f"Document attack detected in document(s): {attacked_indices}")
             blocked_reason = "; ".join(reasons)
             logger.warning("Prompt Shields BLOCKED (async): %s", blocked_reason)
             return ValidationResult(

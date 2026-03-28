@@ -39,7 +39,8 @@ def apply_network_guard(network_policy) -> None:
         _install_whitelist(network_policy.allowed_hosts, network_policy.allowed_ports)
         logger.info(
             "Network guard: WHITELIST — allowed hosts=%s ports=%s",
-            network_policy.allowed_hosts, network_policy.allowed_ports,
+            network_policy.allowed_hosts,
+            network_policy.allowed_ports,
         )
 
     else:
@@ -50,6 +51,7 @@ def apply_network_guard(network_policy) -> None:
 
 
 # ── Patch implementations ─────────────────────────────────────────────────────
+
 
 def _install_block_all() -> None:
     """Replace socket.connect with a function that always raises."""
@@ -82,6 +84,7 @@ def _install_whitelist(allowed_hosts: List[str], allowed_ports: List[int]) -> No
 
 
 # ── Allow-check helper ────────────────────────────────────────────────────────
+
 
 def _is_allowed(
     host: str,

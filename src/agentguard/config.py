@@ -66,7 +66,9 @@ class AgentGuardConfig:
 
     @property
     def prompt_shields_sensitivity(self) -> Sensitivity:
-        val = _deep_get(self._raw, "input_security", "prompt_shields", "sensitivity", default="high")
+        val = _deep_get(
+            self._raw, "input_security", "prompt_shields", "sensitivity", default="high"
+        )
         try:
             return Sensitivity(val)
         except ValueError:
@@ -75,23 +77,32 @@ class AgentGuardConfig:
     @property
     def block_on_detected_injection(self) -> bool:
         return _deep_get(
-            self._raw, "input_security", "prompt_shields",
-            "block_on_detected_injection", default=True
+            self._raw,
+            "input_security",
+            "prompt_shields",
+            "block_on_detected_injection",
+            default=True,
         )
 
     # ----- Input Security: Content Filters -----
 
     @property
     def content_filters_block_toxicity(self) -> bool:
-        return _deep_get(self._raw, "input_security", "content_filters", "block_toxicity", default=True)
+        return _deep_get(
+            self._raw, "input_security", "content_filters", "block_toxicity", default=True
+        )
 
     @property
     def content_filters_block_violence(self) -> bool:
-        return _deep_get(self._raw, "input_security", "content_filters", "block_violence", default=True)
+        return _deep_get(
+            self._raw, "input_security", "content_filters", "block_violence", default=True
+        )
 
     @property
     def content_filters_block_self_harm(self) -> bool:
-        return _deep_get(self._raw, "input_security", "content_filters", "block_self_harm", default=True)
+        return _deep_get(
+            self._raw, "input_security", "content_filters", "block_self_harm", default=True
+        )
 
     # ----- Input Security: Image Filters -----
 
@@ -105,11 +116,15 @@ class AgentGuardConfig:
 
     @property
     def image_filters_block_violence(self) -> bool:
-        return _deep_get(self._raw, "input_security", "image_filters", "block_violence", default=True)
+        return _deep_get(
+            self._raw, "input_security", "image_filters", "block_violence", default=True
+        )
 
     @property
     def image_filters_block_self_harm(self) -> bool:
-        return _deep_get(self._raw, "input_security", "image_filters", "block_self_harm", default=True)
+        return _deep_get(
+            self._raw, "input_security", "image_filters", "block_self_harm", default=True
+        )
 
     @property
     def image_filters_block_sexual(self) -> bool:
@@ -125,13 +140,18 @@ class AgentGuardConfig:
 
     @property
     def output_toxicity_enabled(self) -> bool:
-        return _deep_get(self._raw, "output_security", "toxicity_detection", "enabled", default=False)
+        return _deep_get(
+            self._raw, "output_security", "toxicity_detection", "enabled", default=False
+        )
 
     @property
     def output_toxicity_block(self) -> bool:
         return _deep_get(
-            self._raw, "output_security", "toxicity_detection",
-            "block_on_detected_toxicity", default=True
+            self._raw,
+            "output_security",
+            "toxicity_detection",
+            "block_on_detected_toxicity",
+            default=True,
         )
 
     # ----- Output Security: PII Detection -----
@@ -143,15 +163,13 @@ class AgentGuardConfig:
     @property
     def pii_block_on_detection(self) -> bool:
         return _deep_get(
-            self._raw, "output_security", "pii_detection",
-            "block_on_pii_exfiltration", default=True
+            self._raw, "output_security", "pii_detection", "block_on_pii_exfiltration", default=True
         )
 
     @property
     def pii_allowed_categories(self) -> list:
         return _deep_get(
-            self._raw, "output_security", "pii_detection",
-            "allowed_categories", default=[]
+            self._raw, "output_security", "pii_detection", "allowed_categories", default=[]
         )
 
     # ----- Output Security: Groundedness / Hallucination Detection -----
@@ -165,15 +183,21 @@ class AgentGuardConfig:
     @property
     def groundedness_block_on_high_confidence(self) -> bool:
         return _deep_get(
-            self._raw, "output_security", "hallucination_detection",
-            "block_on_high_confidence", default=False
+            self._raw,
+            "output_security",
+            "hallucination_detection",
+            "block_on_high_confidence",
+            default=False,
         )
 
     @property
     def groundedness_confidence_threshold(self) -> float:
         return _deep_get(
-            self._raw, "output_security", "hallucination_detection",
-            "confidence_threshold", default=3.0
+            self._raw,
+            "output_security",
+            "hallucination_detection",
+            "confidence_threshold",
+            default=3.0,
         )
 
     # ----- Pattern Detection: Custom Blocklists -----
@@ -203,7 +227,14 @@ class AgentGuardConfig:
         if not isinstance(tf, dict):
             return False
         # Check if any of the 5 guardrails are enabled
-        guardrails = ["file_system", "sql_query", "http_post", "http_get", "shell_commands", "approval_workflow"]
+        guardrails = [
+            "file_system",
+            "sql_query",
+            "http_post",
+            "http_get",
+            "shell_commands",
+            "approval_workflow",
+        ]
         for g in guardrails:
             cfg = tf.get(g)
             if isinstance(cfg, dict) and cfg.get("enabled", False):
@@ -230,8 +261,7 @@ class AgentGuardConfig:
     @property
     def tool_input_blocked_categories(self) -> dict:
         return _deep_get(
-            self._raw, "tool_firewall", "input_analysis",
-            "blocked_entity_categories", default={}
+            self._raw, "tool_firewall", "input_analysis", "blocked_entity_categories", default={}
         )
 
     # ----- Tool Firewall: MELON (C2) -----
@@ -254,8 +284,7 @@ class AgentGuardConfig:
     def melon_embedding_model(self) -> str:
         """Deprecated: unused by LLM judge, kept for backward compatibility."""
         return _deep_get(
-            self._raw, "tool_firewall", "melon",
-            "embedding_model", default="text-embedding-3-large"
+            self._raw, "tool_firewall", "melon", "embedding_model", default="text-embedding-3-large"
         )
 
     @property
@@ -298,11 +327,15 @@ class AgentGuardConfig:
 
     @property
     def approval_workflow_tools_requiring_review(self) -> list:
-        return _deep_get(self._raw, "tool_firewall", "approval_workflow", "tools_requiring_review", default=[])
+        return _deep_get(
+            self._raw, "tool_firewall", "approval_workflow", "tools_requiring_review", default=[]
+        )
 
     @property
     def approval_workflow_ai_supervisor_config(self) -> dict:
-        return _deep_get(self._raw, "tool_firewall", "approval_workflow", "ai_supervisor", default={})
+        return _deep_get(
+            self._raw, "tool_firewall", "approval_workflow", "ai_supervisor", default={}
+        )
 
     # ----- L4 RBAC -----
 
@@ -368,11 +401,15 @@ class AgentGuardConfig:
     def sandbox_policy(self):
         """Build a SandboxPolicy dataclass from the sandbox: config section."""
         from agentguard.sandbox.policies import (
-            FilesystemPolicy, NetworkPolicy, ResourceLimits,
-            SandboxPolicy, SyscallPolicy,
+            FilesystemPolicy,
+            NetworkPolicy,
+            ResourceLimits,
+            SandboxPolicy,
+            SyscallPolicy,
         )
+
         raw = self._raw.get("sandbox", {})
-        fs  = raw.get("filesystem", {})
+        fs = raw.get("filesystem", {})
         net = raw.get("network", {})
         sys = raw.get("syscalls", {})
         res = raw.get("resources", {})
@@ -383,10 +420,18 @@ class AgentGuardConfig:
             timeout_seconds=raw.get("timeout_seconds", 30),
             filesystem=FilesystemPolicy(
                 enabled=fs.get("enabled", True),
-                allowed_read=fs.get("allowed_read", [
-                    "/tmp", "/usr/lib", "/usr/local/lib",
-                    "/usr/share", "/lib", "/lib64", "/usr/lib64",
-                ]),
+                allowed_read=fs.get(
+                    "allowed_read",
+                    [
+                        "/tmp",
+                        "/usr/lib",
+                        "/usr/local/lib",
+                        "/usr/share",
+                        "/lib",
+                        "/lib64",
+                        "/usr/lib64",
+                    ],
+                ),
                 allowed_write=fs.get("allowed_write", ["/tmp"]),
             ),
             network=NetworkPolicy(
@@ -397,12 +442,27 @@ class AgentGuardConfig:
             ),
             syscalls=SyscallPolicy(
                 enabled=sys.get("enabled", True),
-                blocked_syscalls=sys.get("blocked_syscalls", [
-                    "ptrace", "mount", "setuid", "setgid", "chroot",
-                    "sethostname", "setns", "unshare", "perf_event_open", "bpf",
-                    "pivot_root", "kexec_load", "kexec_file_load", "reboot",
-                    "init_module", "delete_module",
-                ]),
+                blocked_syscalls=sys.get(
+                    "blocked_syscalls",
+                    [
+                        "ptrace",
+                        "mount",
+                        "setuid",
+                        "setgid",
+                        "chroot",
+                        "sethostname",
+                        "setns",
+                        "unshare",
+                        "perf_event_open",
+                        "bpf",
+                        "pivot_root",
+                        "kexec_load",
+                        "kexec_file_load",
+                        "reboot",
+                        "init_module",
+                        "delete_module",
+                    ],
+                ),
             ),
             resources=ResourceLimits(
                 enabled=res.get("enabled", True),

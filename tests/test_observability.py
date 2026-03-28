@@ -4,10 +4,6 @@ TDD: these tests are written BEFORE moving files to verify the
 observability/ subpackage works identically to the old flat layout.
 """
 
-import sqlite3
-
-import pytest
-
 from agentguard.observability.audit import AuditLog, hash_params
 from agentguard.observability.telemetry import init_telemetry, get_tracer, get_meter
 
@@ -51,8 +47,10 @@ class TestAuditLog:
     def test_l4_columns_recorded(self, tmp_path):
         log = AuditLog(":memory:")
         log.record(
-            "validate_tool_call", "l4_rbac",
-            is_safe=False, reason="denied",
+            "validate_tool_call",
+            "l4_rbac",
+            is_safe=False,
+            reason="denied",
             l4_rbac_decision="deny",
             l4_signals='["frequency_spike"]',
             l4_composite=0.85,
@@ -91,11 +89,13 @@ class TestAuditLog:
 
 def test_backward_compat_audit_log_import():
     from agentguard.audit_log import AuditLog as OldAuditLog
+
     assert OldAuditLog is AuditLog
 
 
 def test_backward_compat_telemetry_import():
     from agentguard.telemetry import init_telemetry as old_init
+
     assert old_init is init_telemetry
 
 

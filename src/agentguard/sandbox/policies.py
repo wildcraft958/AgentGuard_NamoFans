@@ -13,17 +13,20 @@ from typing import List, Optional
 @dataclass
 class FilesystemPolicy:
     """Controls which filesystem paths the sandboxed process may access."""
+
     enabled: bool = True
     # Paths the tool may read (and execute) from
-    allowed_read: List[str] = field(default_factory=lambda: [
-        "/tmp",
-        "/usr/lib",
-        "/usr/local/lib",
-        "/usr/share",
-        "/lib",
-        "/lib64",
-        "/usr/lib64",
-    ])
+    allowed_read: List[str] = field(
+        default_factory=lambda: [
+            "/tmp",
+            "/usr/lib",
+            "/usr/local/lib",
+            "/usr/share",
+            "/lib",
+            "/lib64",
+            "/usr/lib64",
+        ]
+    )
     # Paths the tool may also write to (superset of read rights)
     allowed_write: List[str] = field(default_factory=lambda: ["/tmp"])
 
@@ -31,6 +34,7 @@ class FilesystemPolicy:
 @dataclass
 class NetworkPolicy:
     """Controls which network connections the sandboxed process may open."""
+
     enabled: bool = True
     # "whitelist" = only allowed_hosts, "block_all" = no connections
     mode: str = "whitelist"
@@ -42,39 +46,44 @@ class NetworkPolicy:
 @dataclass
 class SyscallPolicy:
     """Controls which Linux syscalls are blocked inside the sandbox."""
+
     enabled: bool = True
-    blocked_syscalls: List[str] = field(default_factory=lambda: [
-        "ptrace",
-        "mount",
-        "setuid",
-        "setgid",
-        "chroot",
-        "sethostname",
-        "setns",
-        "unshare",
-        "perf_event_open",
-        "bpf",
-        "pivot_root",
-        "kexec_load",
-        "kexec_file_load",
-        "reboot",
-        "init_module",
-        "delete_module",
-    ])
+    blocked_syscalls: List[str] = field(
+        default_factory=lambda: [
+            "ptrace",
+            "mount",
+            "setuid",
+            "setgid",
+            "chroot",
+            "sethostname",
+            "setns",
+            "unshare",
+            "perf_event_open",
+            "bpf",
+            "pivot_root",
+            "kexec_load",
+            "kexec_file_load",
+            "reboot",
+            "init_module",
+            "delete_module",
+        ]
+    )
 
 
 @dataclass
 class ResourceLimits:
     """OS-level resource caps applied via setrlimit in the subprocess."""
+
     enabled: bool = True
-    max_memory_mb: Optional[int] = 512       # RLIMIT_AS
-    max_cpu_seconds: Optional[int] = 30      # RLIMIT_CPU
-    max_file_size_mb: Optional[int] = 100    # RLIMIT_FSIZE
+    max_memory_mb: Optional[int] = 512  # RLIMIT_AS
+    max_cpu_seconds: Optional[int] = 30  # RLIMIT_CPU
+    max_file_size_mb: Optional[int] = 100  # RLIMIT_FSIZE
 
 
 @dataclass
 class SandboxPolicy:
     """Top-level sandbox policy. Composes all sub-policies."""
+
     enabled: bool = False
     # "enforce" = raise on violation, "monitor" = log + passthrough on violation
     mode: str = "enforce"

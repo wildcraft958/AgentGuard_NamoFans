@@ -10,7 +10,13 @@ import time
 
 from agentguard._pipeline.notifier import Notifier
 from agentguard.exceptions import InputBlockedError, OutputBlockedError, ToolCallBlockedError
-from agentguard.models import GuardMode, InputValidationResult, OutputValidationResult, ToolCallValidationResult, ValidationResult
+from agentguard.models import (
+    GuardMode,
+    InputValidationResult,
+    OutputValidationResult,
+    ToolCallValidationResult,
+    ValidationResult,
+)
 
 logger = logging.getLogger("agentguard")
 
@@ -30,32 +36,46 @@ def handle_input_block(
     if mode == GuardMode.MONITOR:
         logger.warning(
             "MONITOR mode: would block (%s: %s) but allowing through (%.1fms)",
-            blocked_by, blocking_result.blocked_reason, elapsed_ms,
+            blocked_by,
+            blocking_result.blocked_reason,
+            elapsed_ms,
         )
         notifier.notify(
-            action="validate_input", layer="l1_input",
+            action="validate_input",
+            layer="l1_input",
             blocked_by=blocked_by,
             reason=f"MONITOR: would block via {blocked_by}",
-            is_safe=True, start_time=start_time, span=span,
+            is_safe=True,
+            start_time=start_time,
+            span=span,
             metadata={"blocked_by": blocked_by, "elapsed_ms": elapsed_ms},
         )
-        return InputValidationResult(is_safe=True, results=results, blocked_by=None, blocked_reason=None)
+        return InputValidationResult(
+            is_safe=True, results=results, blocked_by=None, blocked_reason=None
+        )
 
     # ENFORCE mode
     logger.warning(
         "ENFORCE mode: BLOCKING input (%s: %s) (%.1fms)",
-        blocked_by, blocking_result.blocked_reason, elapsed_ms,
+        blocked_by,
+        blocking_result.blocked_reason,
+        elapsed_ms,
     )
     notifier.notify(
-        action="validate_input", layer="l1_input",
+        action="validate_input",
+        layer="l1_input",
         blocked_by=blocked_by,
         reason=blocking_result.blocked_reason,
-        is_safe=False, start_time=start_time, span=span,
+        is_safe=False,
+        start_time=start_time,
+        span=span,
         metadata={"blocked_by": blocked_by, "elapsed_ms": elapsed_ms},
     )
     result = InputValidationResult(
-        is_safe=False, results=results,
-        blocked_by=blocked_by, blocked_reason=blocking_result.blocked_reason,
+        is_safe=False,
+        results=results,
+        blocked_by=blocked_by,
+        blocked_reason=blocking_result.blocked_reason,
     )
     raise InputBlockedError(
         reason=blocking_result.blocked_reason,
@@ -81,13 +101,18 @@ def handle_tool_block(
     if mode == GuardMode.MONITOR:
         logger.warning(
             "MONITOR mode: would block tool call (%s: %s) but allowing (%.1fms)",
-            blocked_by, blocking_result.blocked_reason, elapsed_ms,
+            blocked_by,
+            blocking_result.blocked_reason,
+            elapsed_ms,
         )
         notifier.notify(
-            action="validate_tool_call", layer=layer,
+            action="validate_tool_call",
+            layer=layer,
             blocked_by=blocked_by,
             reason=f"MONITOR: would block via {blocked_by}",
-            is_safe=True, start_time=start_time, span=span,
+            is_safe=True,
+            start_time=start_time,
+            span=span,
             metadata={"blocked_by": blocked_by, "tool_name": tool_name, "elapsed_ms": elapsed_ms},
             **l4_kwargs,
         )
@@ -96,19 +121,26 @@ def handle_tool_block(
     # ENFORCE mode
     logger.warning(
         "ENFORCE mode: BLOCKING tool call (%s: %s) (%.1fms)",
-        blocked_by, blocking_result.blocked_reason, elapsed_ms,
+        blocked_by,
+        blocking_result.blocked_reason,
+        elapsed_ms,
     )
     notifier.notify(
-        action="validate_tool_call", layer=layer,
+        action="validate_tool_call",
+        layer=layer,
         blocked_by=blocked_by,
         reason=blocking_result.blocked_reason,
-        is_safe=False, start_time=start_time, span=span,
+        is_safe=False,
+        start_time=start_time,
+        span=span,
         metadata={"blocked_by": blocked_by, "tool_name": tool_name, "elapsed_ms": elapsed_ms},
         **l4_kwargs,
     )
     result = ToolCallValidationResult(
-        is_safe=False, results=results,
-        blocked_by=blocked_by, blocked_reason=blocking_result.blocked_reason,
+        is_safe=False,
+        results=results,
+        blocked_by=blocked_by,
+        blocked_reason=blocking_result.blocked_reason,
         tool_name=tool_name,
     )
     raise ToolCallBlockedError(
@@ -133,13 +165,18 @@ def handle_output_block(
     if mode == GuardMode.MONITOR:
         logger.warning(
             "MONITOR mode: would block output (%s: %s) but allowing through (%.1fms)",
-            blocked_by, blocking_result.blocked_reason, elapsed_ms,
+            blocked_by,
+            blocking_result.blocked_reason,
+            elapsed_ms,
         )
         notifier.notify(
-            action="validate_output", layer="l2_output",
+            action="validate_output",
+            layer="l2_output",
             blocked_by=blocked_by,
             reason=f"MONITOR: would block via {blocked_by}",
-            is_safe=True, start_time=start_time, span=span,
+            is_safe=True,
+            start_time=start_time,
+            span=span,
             metadata={"blocked_by": blocked_by, "elapsed_ms": elapsed_ms},
         )
         return OutputValidationResult(is_safe=True, results=results, redacted_text=redacted_text)
@@ -147,18 +184,25 @@ def handle_output_block(
     # ENFORCE mode
     logger.warning(
         "ENFORCE mode: BLOCKING output (%s: %s) (%.1fms)",
-        blocked_by, blocking_result.blocked_reason, elapsed_ms,
+        blocked_by,
+        blocking_result.blocked_reason,
+        elapsed_ms,
     )
     notifier.notify(
-        action="validate_output", layer="l2_output",
+        action="validate_output",
+        layer="l2_output",
         blocked_by=blocked_by,
         reason=blocking_result.blocked_reason,
-        is_safe=False, start_time=start_time, span=span,
+        is_safe=False,
+        start_time=start_time,
+        span=span,
         metadata={"blocked_by": blocked_by, "elapsed_ms": elapsed_ms},
     )
     result = OutputValidationResult(
-        is_safe=False, results=results,
-        blocked_by=blocked_by, blocked_reason=blocking_result.blocked_reason,
+        is_safe=False,
+        results=results,
+        blocked_by=blocked_by,
+        blocked_reason=blocking_result.blocked_reason,
         redacted_text=redacted_text,
     )
     raise OutputBlockedError(

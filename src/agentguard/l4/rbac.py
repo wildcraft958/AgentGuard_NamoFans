@@ -6,6 +6,7 @@ Returns:   ALLOW | DENY | ELEVATE
 
 Design: default-deny. Unknown role → DENY. No exceptions.
 """
+
 from __future__ import annotations
 
 import re
@@ -126,29 +127,33 @@ _VERB_MAP: dict[str, str] = {
     "post_webhook": "network_external",
 }
 
-_CONFIDENTIAL_HINTS: frozenset[str] = frozenset({
-    "/etc/",
-    "passwords",
-    "credentials",
-    "private",
-    "secret",
-    ".env",
-    "api_key",
-    "token",
-    "ssh",
-    "pgp",
-    "id_rsa",
-})
-_INTERNAL_HINTS: frozenset[str] = frozenset({
-    "internal",
-    "admin",
-    "config",
-    "database",
-    "/db/",
-    "system",
-    "management",
-    ".conf",
-})
+_CONFIDENTIAL_HINTS: frozenset[str] = frozenset(
+    {
+        "/etc/",
+        "passwords",
+        "credentials",
+        "private",
+        "secret",
+        ".env",
+        "api_key",
+        "token",
+        "ssh",
+        "pgp",
+        "id_rsa",
+    }
+)
+_INTERNAL_HINTS: frozenset[str] = frozenset(
+    {
+        "internal",
+        "admin",
+        "config",
+        "database",
+        "/db/",
+        "system",
+        "management",
+        ".conf",
+    }
+)
 
 
 def infer_verb(tool_name: str) -> str:
@@ -158,13 +163,15 @@ def infer_verb(tool_name: str) -> str:
 
 def infer_sensitivity(tool_name: str, kwargs: dict) -> str:
     """Infer resource sensitivity from tool name + call arguments."""
-    combined = " ".join([
-        str(kwargs.get("path", "")),
-        str(kwargs.get("query", "")),
-        str(kwargs.get("table", "")),
-        str(kwargs.get("url", "")),
-        tool_name,
-    ]).lower()
+    combined = " ".join(
+        [
+            str(kwargs.get("path", "")),
+            str(kwargs.get("query", "")),
+            str(kwargs.get("table", "")),
+            str(kwargs.get("url", "")),
+            tool_name,
+        ]
+    ).lower()
 
     if any(h in combined for h in _CONFIDENTIAL_HINTS):
         return "confidential"

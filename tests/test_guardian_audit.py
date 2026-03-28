@@ -1,4 +1,5 @@
 """Tests that Guardian logs BOTH passing and blocked events to the audit log."""
+
 from agentguard.guardian import Guardian
 
 
@@ -42,9 +43,7 @@ def test_validate_input_pass_writes_safe_audit_record(tmp_path):
     result = g.validate_input("hello world")
     assert result.is_safe
 
-    rows = g._audit._conn.execute(
-        "SELECT action, layer, safe FROM audit_log"
-    ).fetchall()
+    rows = g._audit._conn.execute("SELECT action, layer, safe FROM audit_log").fetchall()
     assert len(rows) == 1
     assert rows[0][0] == "validate_input"
     assert rows[0][1] == "l1_input"
@@ -56,9 +55,7 @@ def test_validate_output_pass_writes_safe_audit_record(tmp_path):
     result = g.validate_output("Here is your answer.")
     assert result.is_safe
 
-    rows = g._audit._conn.execute(
-        "SELECT action, layer, safe FROM audit_log"
-    ).fetchall()
+    rows = g._audit._conn.execute("SELECT action, layer, safe FROM audit_log").fetchall()
     assert len(rows) == 1
     assert rows[0][0] == "validate_output"
     assert rows[0][1] == "l2_output"
@@ -70,9 +67,7 @@ def test_validate_tool_call_pass_writes_safe_audit_record(tmp_path):
     result = g.validate_tool_call("get_weather", {"city": "London"})
     assert result.is_safe
 
-    rows = g._audit._conn.execute(
-        "SELECT action, layer, safe FROM audit_log"
-    ).fetchall()
+    rows = g._audit._conn.execute("SELECT action, layer, safe FROM audit_log").fetchall()
     assert len(rows) == 1
     assert rows[0][0] == "validate_tool_call"
     assert rows[0][1] == "tool_firewall"

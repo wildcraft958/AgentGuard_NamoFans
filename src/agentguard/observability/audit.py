@@ -83,8 +83,7 @@ class AuditLog:
             self._conn.execute(self._CREATE_IDX_ACTION)
             # Migrate: add L4 columns to existing databases that pre-date this schema
             existing = {
-                row[1]
-                for row in self._conn.execute("PRAGMA table_info(audit_log)").fetchall()
+                row[1] for row in self._conn.execute("PRAGMA table_info(audit_log)").fetchall()
             }
             migrations = [
                 ("l4_rbac_decision", "TEXT DEFAULT ''"),
@@ -133,8 +132,18 @@ class AuditLog:
             "(ts, action, layer, safe, reason, metadata, "
             " l4_rbac_decision, l4_signals, l4_composite, l4_action) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (ts, action, layer, int(is_safe), reason, meta_json,
-             l4_rbac_decision, l4_signals, l4_composite, l4_action),
+            (
+                ts,
+                action,
+                layer,
+                int(is_safe),
+                reason,
+                meta_json,
+                l4_rbac_decision,
+                l4_signals,
+                l4_composite,
+                l4_action,
+            ),
         )
         self._conn.commit()
         return cursor.lastrowid
@@ -169,9 +178,7 @@ class AuditLog:
                 "SELECT COUNT(*) FROM audit_log WHERE safe = 0 AND action = ?", (action,)
             ).fetchone()
         else:
-            row = self._conn.execute(
-                "SELECT COUNT(*) FROM audit_log WHERE safe = 0"
-            ).fetchone()
+            row = self._conn.execute("SELECT COUNT(*) FROM audit_log WHERE safe = 0").fetchone()
         return row[0]
 
     def pass_rate(self, since_hours: int = 24) -> float:

@@ -37,6 +37,7 @@ logger = logging.getLogger("agentguard.sandbox.executor")
 
 # ── Subprocess worker ─────────────────────────────────────────────────────────
 
+
 def _sandbox_worker(
     fn: Callable,
     fn_args: dict,
@@ -102,6 +103,7 @@ def _sandbox_worker(
 
 # ── Executor ──────────────────────────────────────────────────────────────────
 
+
 class SandboxedToolExecutor:
     """
     Executes tool functions in a sandboxed subprocess.
@@ -139,7 +141,7 @@ class SandboxedToolExecutor:
             return self._run_direct(fn, fn_args)
 
         result_q = self._mp_ctx.Queue()
-        error_q  = self._mp_ctx.Queue()
+        error_q = self._mp_ctx.Queue()
 
         proc = self._mp_ctx.Process(
             target=_sandbox_worker,
@@ -152,7 +154,9 @@ class SandboxedToolExecutor:
         fn_name = getattr(fn, "__name__", "<tool>")
         logger.info(
             "Sandbox subprocess started (pid=%d tool=%s timeout=%ds)",
-            proc.pid, fn_name, self.policy.timeout_seconds,
+            proc.pid,
+            fn_name,
+            self.policy.timeout_seconds,
         )
 
         proc.join(timeout=self.policy.timeout_seconds)
@@ -163,6 +167,7 @@ class SandboxedToolExecutor:
             proc.kill()
             proc.join(timeout=3)
             from agentguard.exceptions import SandboxTimeoutError
+
             raise SandboxTimeoutError(
                 f"Tool '{fn_name}' timed out after {self.policy.timeout_seconds}s in sandbox",
                 details={"elapsed_ms": elapsed_ms, "pid": proc.pid},
@@ -175,11 +180,13 @@ class SandboxedToolExecutor:
             if self.policy.mode == "monitor":
                 logger.warning(
                     "Sandbox violation (monitor — not blocking): %s: %s",
-                    exc_type, exc_msg,
+                    exc_type,
+                    exc_msg,
                 )
                 return self._run_direct(fn, fn_args)
 
             from agentguard.exceptions import SandboxViolationError
+
             raise SandboxViolationError(
                 f"Tool '{fn_name}' raised {exc_type} inside sandbox: {exc_msg}",
                 details={
@@ -194,13 +201,15 @@ class SandboxedToolExecutor:
             result = result_q.get_nowait()
             logger.info(
                 "Sandbox execution completed (tool=%s %.1fms)",
-                fn_name, elapsed_ms,
+                fn_name,
+                elapsed_ms,
             )
             return result
 
         # Subprocess exited cleanly but produced no result — likely killed by
         # a resource limit signal (SIGXCPU from RLIMIT_CPU, or SIGKILL from OOM).
         from agentguard.exceptions import SandboxViolationError
+
         raise SandboxViolationError(
             f"Sandbox subprocess for '{fn_name}' exited (code={proc.exitcode}) "
             f"without result — probable resource limit violation",

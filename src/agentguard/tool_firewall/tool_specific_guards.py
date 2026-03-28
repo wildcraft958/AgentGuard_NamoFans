@@ -50,80 +50,175 @@ _PRIVATE_RANGES = [
 # SQL structural keywords — required beyond the initial DML/DDL keyword
 # to distinguish real SQL from English sentences starting with "SELECT", "UPDATE", etc.
 _SQL_STRUCTURE_KEYWORDS = {
-    "FROM", "TABLE", "INTO", "SET", "WHERE", "VALUES", "JOIN", "ON",
-    "USING", "INDEX", "DATABASE", "SCHEMA", "VIEW", "TRIGGER", "COLUMN",
+    "FROM",
+    "TABLE",
+    "INTO",
+    "SET",
+    "WHERE",
+    "VALUES",
+    "JOIN",
+    "ON",
+    "USING",
+    "INDEX",
+    "DATABASE",
+    "SCHEMA",
+    "VIEW",
+    "TRIGGER",
+    "COLUMN",
 }
 
 # Regex for filesystem path detection — rejects dates, fractions, plain text
 _PATH_PATTERN = re.compile(
     r"^(?:"
-    r"(?:/[^\s:*?\"<>|]+)"       # Unix absolute: /etc/passwd, /tmp/foo
-    r"|(?:~/[^\s:*?\"<>|]*)"     # Home-relative: ~/Documents/file
-    r"|(?:\./[^\s:*?\"<>|]*)"    # Current-dir relative: ./config.json
-    r"|(?:[A-Za-z]:[/\\])"       # Windows: C:\, D:/
+    r"(?:/[^\s:*?\"<>|]+)"  # Unix absolute: /etc/passwd, /tmp/foo
+    r"|(?:~/[^\s:*?\"<>|]*)"  # Home-relative: ~/Documents/file
+    r"|(?:\./[^\s:*?\"<>|]*)"  # Current-dir relative: ./config.json
+    r"|(?:[A-Za-z]:[/\\])"  # Windows: C:\, D:/
     r")"
 )
 
 # Shell command names known to be dangerous — grouped by risk category
 _SHELL_DANGEROUS_COMMANDS = {
     # Destructive
-    "rm", "rmdir", "shred", "dd", "mkfs", "fdisk", "parted",
+    "rm",
+    "rmdir",
+    "shred",
+    "dd",
+    "mkfs",
+    "fdisk",
+    "parted",
     # Privilege escalation
-    "sudo", "su", "doas", "pkexec", "chown", "chmod", "chgrp", "chattr",
+    "sudo",
+    "su",
+    "doas",
+    "pkexec",
+    "chown",
+    "chmod",
+    "chgrp",
+    "chattr",
     # Process manipulation
-    "kill", "killall", "pkill", "nohup", "disown",
+    "kill",
+    "killall",
+    "pkill",
+    "nohup",
+    "disown",
     # Package / install (supply chain)
-    "apt", "apt-get", "yum", "dnf", "pacman", "pip", "pip3", "npm", "gem",
-    "cargo", "go", "make", "cmake",
+    "apt",
+    "apt-get",
+    "yum",
+    "dnf",
+    "pacman",
+    "pip",
+    "pip3",
+    "npm",
+    "gem",
+    "cargo",
+    "go",
+    "make",
+    "cmake",
     # Network / exfil
-    "curl", "wget", "nc", "ncat", "netcat", "ssh", "scp", "rsync", "telnet",
-    "nmap", "dig", "host",
+    "curl",
+    "wget",
+    "nc",
+    "ncat",
+    "netcat",
+    "ssh",
+    "scp",
+    "rsync",
+    "telnet",
+    "nmap",
+    "dig",
+    "host",
     # Persistence / scheduling
-    "crontab", "at", "systemctl", "service", "launchctl",
+    "crontab",
+    "at",
+    "systemctl",
+    "service",
+    "launchctl",
     # Code execution
-    "python", "python3", "perl", "ruby", "node", "bash", "sh", "zsh",
-    "dash", "ksh", "csh", "eval", "exec", "source",
+    "python",
+    "python3",
+    "perl",
+    "ruby",
+    "node",
+    "bash",
+    "sh",
+    "zsh",
+    "dash",
+    "ksh",
+    "csh",
+    "eval",
+    "exec",
+    "source",
     # System control
-    "shutdown", "reboot", "halt", "poweroff", "init",
+    "shutdown",
+    "reboot",
+    "halt",
+    "poweroff",
+    "init",
     # System info / recon
-    "env", "printenv", "whoami", "id", "uname", "hostname", "ifconfig",
-    "ip", "cat", "head", "tail", "less", "more", "find", "locate",
-    "grep", "awk", "sed", "xargs",
+    "env",
+    "printenv",
+    "whoami",
+    "id",
+    "uname",
+    "hostname",
+    "ifconfig",
+    "ip",
+    "cat",
+    "head",
+    "tail",
+    "less",
+    "more",
+    "find",
+    "locate",
+    "grep",
+    "awk",
+    "sed",
+    "xargs",
     # File manipulation
-    "cp", "mv", "ln", "tar", "zip", "unzip", "gzip", "gunzip",
-    "mount", "umount",
+    "cp",
+    "mv",
+    "ln",
+    "tar",
+    "zip",
+    "unzip",
+    "gzip",
+    "gunzip",
+    "mount",
+    "umount",
 }
 
 # Shell structural indicators — things that appear in shell commands but not English
 _SHELL_STRUCTURE_RE = re.compile(
     r"(?:"
-    r"\s-[a-zA-Z0-9]"          # Single-char flag: -r, -f, -9
-    r"|\s--[a-z][-a-z]+"       # Long flag: --force, --recursive
-    r"|\|"                      # Pipe
-    r"|&&"                      # AND chain
-    r"|;\s*\S"                  # Semicolon followed by another command
-    r"|>>?"                     # Redirect > or >>
-    r"|`[^`]+`"                 # Backtick subshell
-    r"|\$\([^)]+\)"            # $(subshell)
-    r"|\$\{[^}]+\}"            # ${variable}
-    r"|2>&1"                    # stderr redirect
-    r"|/dev/null"               # /dev/null redirect
-    r"|/dev/[sh]d[a-z]"        # Raw device access
+    r"\s-[a-zA-Z0-9]"  # Single-char flag: -r, -f, -9
+    r"|\s--[a-z][-a-z]+"  # Long flag: --force, --recursive
+    r"|\|"  # Pipe
+    r"|&&"  # AND chain
+    r"|;\s*\S"  # Semicolon followed by another command
+    r"|>>?"  # Redirect > or >>
+    r"|`[^`]+`"  # Backtick subshell
+    r"|\$\([^)]+\)"  # $(subshell)
+    r"|\$\{[^}]+\}"  # ${variable}
+    r"|2>&1"  # stderr redirect
+    r"|/dev/null"  # /dev/null redirect
+    r"|/dev/[sh]d[a-z]"  # Raw device access
     r")"
 )
 
 # Dangerous command patterns — always blocked regardless of Level 2
 _SHELL_DANGEROUS_PATTERNS = [
-    re.compile(r"\bcurl\s.*\|\s*(?:ba)?sh\b", re.IGNORECASE),      # curl | bash
-    re.compile(r"\bwget\s.*\|\s*(?:ba)?sh\b", re.IGNORECASE),      # wget | bash
-    re.compile(r"\bdd\s+if=", re.IGNORECASE),                       # dd if=
-    re.compile(r"\brm\s+-[a-z]*r[a-z]*f", re.IGNORECASE),          # rm -rf variants
-    re.compile(r"\brm\s+-[a-z]*f[a-z]*r", re.IGNORECASE),          # rm -fr variants
-    re.compile(r"\bchmod\s+[0-7]{3,4}\s", re.IGNORECASE),          # chmod 777
-    re.compile(r":\(\)\{\s*:\|:\s*&\s*\}", re.IGNORECASE),         # fork bomb
-    re.compile(r">\s*/dev/[sh]d[a-z]", re.IGNORECASE),             # > /dev/sda
-    re.compile(r"\bsudo\s+\S", re.IGNORECASE),                     # sudo followed by command
-    re.compile(r"\bsu\s+-", re.IGNORECASE),                        # su with flags
+    re.compile(r"\bcurl\s.*\|\s*(?:ba)?sh\b", re.IGNORECASE),  # curl | bash
+    re.compile(r"\bwget\s.*\|\s*(?:ba)?sh\b", re.IGNORECASE),  # wget | bash
+    re.compile(r"\bdd\s+if=", re.IGNORECASE),  # dd if=
+    re.compile(r"\brm\s+-[a-z]*r[a-z]*f", re.IGNORECASE),  # rm -rf variants
+    re.compile(r"\brm\s+-[a-z]*f[a-z]*r", re.IGNORECASE),  # rm -fr variants
+    re.compile(r"\bchmod\s+[0-7]{3,4}\s", re.IGNORECASE),  # chmod 777
+    re.compile(r":\(\)\{\s*:\|:\s*&\s*\}", re.IGNORECASE),  # fork bomb
+    re.compile(r">\s*/dev/[sh]d[a-z]", re.IGNORECASE),  # > /dev/sda
+    re.compile(r"\bsudo\s+\S", re.IGNORECASE),  # sudo followed by command
+    re.compile(r"\bsu\s+-", re.IGNORECASE),  # su with flags
 ]
 
 
@@ -322,7 +417,7 @@ class ToolSpecificGuards:
 
         # Level 1: Extract potential command names from the text
         # Split on shell operators and backticks to find command positions
-        segments = re.split(r'[|;&`]|\$\(', text)
+        segments = re.split(r"[|;&`]|\$\(", text)
         found_command = False
         for segment in segments:
             words = segment.strip().split()
@@ -508,13 +603,13 @@ class ToolSpecificGuards:
 
         # Block command chaining if configured
         if cfg.get("block_command_chaining", True):
-            if re.search(r'\|(?!\|)|&&|;\s*\S|\$\([^)]*\)|`[^`]*`', text):
+            if re.search(r"\|(?!\|)|&&|;\s*\S|\$\([^)]*\)|`[^`]*`", text):
                 reason = f"Shell command chaining detected: '{text[:80]}'"
                 logger.warning("Guardrail BLOCKED (shell_commands): %s", reason)
                 return ValidationResult(is_safe=False, layer=LAYER, blocked_reason=reason)
 
         # Extract command names from segments
-        segments = re.split(r'[|;&]|\$\(', text)
+        segments = re.split(r"[|;&]|\$\(", text)
         for segment in segments:
             words = segment.strip().split()
             if not words:
@@ -567,7 +662,9 @@ class ToolSpecificGuards:
 
         return None
 
-    def _check_rate_limit(self, key: str, limit: int, guardrail_name: str) -> ValidationResult | None:
+    def _check_rate_limit(
+        self, key: str, limit: int, guardrail_name: str
+    ) -> ValidationResult | None:
         """Sliding-window rate limit. Returns None if within limit."""
         now = time.time()
         window_start = now - 60.0
@@ -579,7 +676,9 @@ class ToolSpecificGuards:
         self._rate_counters[key] = [t for t in self._rate_counters[key] if t > window_start]
 
         if len(self._rate_counters[key]) >= limit:
-            reason = f"Rate limit exceeded: {len(self._rate_counters[key])}/{limit} per minute for {key}"
+            reason = (
+                f"Rate limit exceeded: {len(self._rate_counters[key])}/{limit} per minute for {key}"
+            )
             logger.warning("Guardrail BLOCKED (%s): %s", guardrail_name, reason)
             return ValidationResult(is_safe=False, layer=LAYER, blocked_reason=reason)
 

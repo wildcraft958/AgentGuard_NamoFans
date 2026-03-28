@@ -44,9 +44,7 @@ class BlocklistManager:
                 "either as arguments or environment variables."
             )
 
-        self.client = BlocklistClient(
-            self.endpoint, AzureKeyCredential(self.key)
-        )
+        self.client = BlocklistClient(self.endpoint, AzureKeyCredential(self.key))
         self._synced_names: list[str] = []
 
     def sync_blocklists(self, blocklists_config: list) -> list[str]:
@@ -77,13 +75,9 @@ class BlocklistManager:
                 if terms:
                     self._add_terms(name, terms)
                 synced.append(name)
-                logger.info(
-                    "Blocklist '%s' synced (%d terms)", name, len(terms)
-                )
+                logger.info("Blocklist '%s' synced (%d terms)", name, len(terms))
             except HttpResponseError as e:
-                logger.error(
-                    "Failed to sync blocklist '%s': %s", name, e.message
-                )
+                logger.error("Failed to sync blocklist '%s': %s", name, e.message)
 
         self._synced_names = synced
         return synced

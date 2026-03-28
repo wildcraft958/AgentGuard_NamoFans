@@ -19,36 +19,36 @@ import logging
 logger = logging.getLogger("agentguard.sandbox.seccomp")
 
 # ── libseccomp action constants ───────────────────────────────────────────────
-_SCMP_ACT_ALLOW       = 0x7FFF0000
+_SCMP_ACT_ALLOW = 0x7FFF0000
 _SCMP_ACT_ERRNO_EPERM = 0x00050001  # SECCOMP_RET_ERRNO | EPERM(1)
 
 # ── Syscall numbers (x86_64 Linux) ────────────────────────────────────────────
 # Only lists syscalls we may want to block. Anything not here is allowed.
 _SYSCALL_NR: dict[str, int] = {
-    "ptrace":           101,
-    "mount":            165,
-    "setuid":           105,
-    "setgid":           106,
-    "chroot":           161,
-    "sethostname":      170,
-    "setns":            308,
-    "unshare":          272,
-    "perf_event_open":  298,
-    "bpf":              321,
-    "pivot_root":       155,
-    "kexec_load":       246,
-    "kexec_file_load":  320,
-    "reboot":           169,
-    "syslog":           103,
-    "init_module":      175,
-    "delete_module":    176,
-    "create_module":    174,
-    "keyctl":           250,
-    "add_key":          248,
-    "request_key":      249,
-    "iopl":             172,
-    "ioperm":           173,
-    "lookup_dcookie":   212,
+    "ptrace": 101,
+    "mount": 165,
+    "setuid": 105,
+    "setgid": 106,
+    "chroot": 161,
+    "sethostname": 170,
+    "setns": 308,
+    "unshare": 272,
+    "perf_event_open": 298,
+    "bpf": 321,
+    "pivot_root": 155,
+    "kexec_load": 246,
+    "kexec_file_load": 320,
+    "reboot": 169,
+    "syslog": 103,
+    "init_module": 175,
+    "delete_module": 176,
+    "create_module": 174,
+    "keyctl": 250,
+    "add_key": 248,
+    "request_key": 249,
+    "iopl": 172,
+    "ioperm": 173,
+    "lookup_dcookie": 212,
 }
 
 # ── libseccomp loader ─────────────────────────────────────────────────────────
@@ -64,26 +64,27 @@ def _get_libseccomp():
 
     path = ctypes.util.find_library("seccomp")
     if not path:
-        logger.info(
-            "libseccomp not found — install libseccomp2 for syscall filtering"
-        )
+        logger.info("libseccomp not found — install libseccomp2 for syscall filtering")
         return None
 
     try:
         lib = ctypes.CDLL(path, use_errno=True)
 
-        lib.seccomp_init.restype  = ctypes.c_void_p
+        lib.seccomp_init.restype = ctypes.c_void_p
         lib.seccomp_init.argtypes = [ctypes.c_uint32]
 
-        lib.seccomp_rule_add.restype  = ctypes.c_int
+        lib.seccomp_rule_add.restype = ctypes.c_int
         lib.seccomp_rule_add.argtypes = [
-            ctypes.c_void_p, ctypes.c_uint32, ctypes.c_int, ctypes.c_uint
+            ctypes.c_void_p,
+            ctypes.c_uint32,
+            ctypes.c_int,
+            ctypes.c_uint,
         ]
 
-        lib.seccomp_load.restype  = ctypes.c_int
+        lib.seccomp_load.restype = ctypes.c_int
         lib.seccomp_load.argtypes = [ctypes.c_void_p]
 
-        lib.seccomp_release.restype  = None
+        lib.seccomp_release.restype = None
         lib.seccomp_release.argtypes = [ctypes.c_void_p]
 
         _lib = lib
@@ -95,6 +96,7 @@ def _get_libseccomp():
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
+
 
 def apply_seccomp(syscall_policy) -> bool:
     """
@@ -129,9 +131,7 @@ def apply_seccomp(syscall_policy) -> bool:
                 continue
             ret = lib.seccomp_rule_add(ctx, _SCMP_ACT_ERRNO_EPERM, nr, 0)
             if ret != 0:
-                logger.warning(
-                    "Seccomp: seccomp_rule_add failed for '%s' (ret=%d)", name, ret
-                )
+                logger.warning("Seccomp: seccomp_rule_add failed for '%s' (ret=%d)", name, ret)
             else:
                 blocked.append(name)
 

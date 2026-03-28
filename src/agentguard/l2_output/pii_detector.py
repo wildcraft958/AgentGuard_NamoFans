@@ -161,7 +161,8 @@ class PIIDetector:
             if doc.is_error:
                 logger.error("PII detection error (async): %s", doc.error.message)
                 return ValidationResult(
-                    is_safe=False, layer="pii_detector",
+                    is_safe=False,
+                    layer="pii_detector",
                     blocked_reason=(
                         f"PII detection API error – blocking as fail-safe: {doc.error.message}"
                     ),
@@ -170,7 +171,8 @@ class PIIDetector:
         except Exception as e:
             logger.error("PII detection failed (async): %s", e)
             return ValidationResult(
-                is_safe=False, layer="pii_detector",
+                is_safe=False,
+                layer="pii_detector",
                 blocked_reason=f"PII detection API error – blocking as fail-safe: {e}",
                 details={"error": str(e)},
             )
@@ -197,8 +199,10 @@ class PIIDetector:
             blocked_reason = f"PII detected in output: {', '.join(categories_found)}"
             logger.warning("PII Detector BLOCKED (async): %s", blocked_reason)
             return ValidationResult(
-                is_safe=False, layer="pii_detector",
-                blocked_reason=blocked_reason, details=details,
+                is_safe=False,
+                layer="pii_detector",
+                blocked_reason=blocked_reason,
+                details=details,
             )
 
         return ValidationResult(is_safe=True, layer="pii_detector", details=details)

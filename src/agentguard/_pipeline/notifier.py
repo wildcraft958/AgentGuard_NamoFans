@@ -24,7 +24,9 @@ class Notifier:
     observability writes to it, eliminating scattered dual-write patterns.
     """
 
-    def __init__(self, tracer: Tracer | None, meter: Meter | None, audit: AuditLog | None, mode: str):
+    def __init__(
+        self, tracer: Tracer | None, meter: Meter | None, audit: AuditLog | None, mode: str
+    ):
         self._tracer = tracer
         self._meter = meter
         self._audit = audit
@@ -60,9 +62,7 @@ class Notifier:
         except Exception:
             pass  # Never let telemetry crash the guard
 
-    def record_metrics(
-        self, layer: str, check: str, result: str, start_time: float
-    ) -> None:
+    def record_metrics(self, layer: str, check: str, result: str, start_time: float) -> None:
         """Increment validation counter and record duration histogram."""
         if self._meter is None:
             return
@@ -112,7 +112,9 @@ class Notifier:
         self.record_metrics(layer, blocked_by, "pass" if is_safe else "block", start_time)
         if self._audit:
             self._audit.record(
-                action, layer, is_safe=is_safe,
+                action,
+                layer,
+                is_safe=is_safe,
                 reason=reason,
                 metadata=metadata,
                 l4_rbac_decision=l4_rbac_decision,

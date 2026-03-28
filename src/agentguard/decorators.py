@@ -30,9 +30,6 @@ from agentguard.parallel import ParallelContext, get_parallel_context, set_paral
 
 logger = logging.getLogger("agentguard.decorators")
 
-
-import threading
-
 # Persistent background event loop for sync→async bridge.
 # asyncio.run() creates+destroys a loop each call, which kills async HTTP clients
 # bound to the previous loop. A persistent loop keeps clients alive across calls.
@@ -162,10 +159,14 @@ def guard_agent(
         def run(message: str) -> dict:
             return {"response": llm.complete(message)}
     """
+
     def decorator(func):
-        guarded = guard(config=config, param=param, docs_param=docs_param, output_field=output_field)(func)
+        guarded = guard(
+            config=config, param=param, docs_param=docs_param, output_field=output_field
+        )(func)
         _AGENT_REGISTRY[agent_name] = (guarded, config, param, output_field)
         return guarded
+
     return decorator
 
 
@@ -228,6 +229,7 @@ def guard(
         def chat(message: str):
             return {"response": llm.complete(message)}
     """
+
     def decorator(func):
         is_async = inspect.iscoroutinefunction(func)
 
@@ -242,8 +244,14 @@ def guard(
 
             if user_text is not None and guardian.config.parallel_execution_enabled:
                 result = await _parallel_guard(
-                    guardian, func, args, kwargs,
-                    user_text, documents, images, output_field,
+                    guardian,
+                    func,
+                    args,
+                    kwargs,
+                    user_text,
+                    documents,
+                    images,
+                    output_field,
                 )
                 return result
 
@@ -307,10 +315,16 @@ def guard(
             return result
 
         return async_wrapper if is_async else sync_wrapper
+
     return decorator
 
 
-def guard_input(config: str = _DEFAULT_CONFIG, param: str = None, docs_param: str = None, image_param: str = None):
+def guard_input(
+    config: str = _DEFAULT_CONFIG,
+    param: str = None,
+    docs_param: str = None,
+    image_param: str = None,
+):
     """
     Backward-compatible L1-only decorator. Alias for @guard() without output_field.
 
@@ -323,7 +337,13 @@ def guard_input(config: str = _DEFAULT_CONFIG, param: str = None, docs_param: st
     Raises:
         InputBlockedError: If input is blocked in enforce mode.
     """
-    return guard(config=config, param=param, docs_param=docs_param, image_param=image_param, output_field=None)
+    return guard(
+        config=config,
+        param=param,
+        docs_param=docs_param,
+        image_param=image_param,
+        output_field=None,
+    )
 
 
 def _parallel_guard_tool(
@@ -414,7 +434,9 @@ def _parallel_guard_tool(
 
     # C2: MELON post-execution check (sequential, needs tool output)
     out = guardian.validate_tool_output(
-        fn_name, fn_args, str(result),
+        fn_name,
+        fn_args,
+        str(result),
         messages=messages,
         tool_schemas=tool_schemas,
         context=context,
@@ -471,8 +493,14 @@ def guard_tool(
 
     if guardian.config.parallel_execution_enabled:
         return _parallel_guard_tool(
-            guardian, fn_name, fn_args, fn, ctx,
-            messages=messages, tool_schemas=tool_schemas, context=context,
+            guardian,
+            fn_name,
+            fn_args,
+            fn,
+            ctx,
+            messages=messages,
+            tool_schemas=tool_schemas,
+            context=context,
             rollback_fn=rollback_fn,
         )
 
@@ -489,7 +517,9 @@ def guard_tool(
         result = fn(**fn_args)
 
     out = guardian.validate_tool_output(
-        fn_name, fn_args, str(result),
+        fn_name,
+        fn_args,
+        str(result),
         messages=messages,
         tool_schemas=tool_schemas,
         context=context,
@@ -547,13 +577,14 @@ class GuardedToolRegistry:
                 par_ctx.gate.wait(timeout=60)
                 if par_ctx.cancelled:
                     from agentguard.exceptions import ToolCallBlockedError
-                    raise ToolCallBlockedError(
-                        f"L1 blocked request: {par_ctx.block_reason}"
-                    )
+
+                    raise ToolCallBlockedError(f"L1 blocked request: {par_ctx.block_reason}")
                 par_ctx.executed_tools.append(fn_name)
 
             return guard_tool(
-                fn_name, kwargs, fn,
+                fn_name,
+                kwargs,
+                fn,
                 messages=messages,
                 tool_schemas=tool_schemas,
                 config=config,
@@ -569,6 +600,7 @@ class GuardedToolRegistry:
 # ---------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------
+
 
 def _resolve_text(func, args, kwargs, param_name: str = None) -> str:
     """Resolve the user text from function arguments."""

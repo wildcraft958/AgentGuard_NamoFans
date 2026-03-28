@@ -52,7 +52,8 @@ class ApprovalWorkflow:
         else:
             logger.warning("Unknown approval_workflow mode '%s', blocking as fail-safe", mode)
             return ValidationResult(
-                is_safe=False, layer=LAYER,
+                is_safe=False,
+                layer=LAYER,
                 blocked_reason=f"Unknown approval_workflow mode: {mode}",
             )
 
@@ -66,11 +67,11 @@ class ApprovalWorkflow:
         if len(args_str) > 500:
             args_str = args_str[:500] + "\n  ... (truncated)"
 
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print("  [HITL REVIEW REQUIRED]")
         print(f"  Tool:      {fn_name}")
         print(f"  Arguments: {args_str}")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
 
         try:
             response = input("  Allow execution? (y/n): ").strip().lower()
@@ -80,14 +81,17 @@ class ApprovalWorkflow:
         if response in ("y", "yes"):
             logger.info("HITL APPROVED: %s", fn_name)
             return ValidationResult(
-                is_safe=True, layer=LAYER,
+                is_safe=True,
+                layer=LAYER,
                 details={"mode": "human", "decision": "approved"},
             )
         else:
             reason = f"Human reviewer rejected tool call: {fn_name}"
             logger.warning("HITL REJECTED: %s", fn_name)
             return ValidationResult(
-                is_safe=False, layer=LAYER, blocked_reason=reason,
+                is_safe=False,
+                layer=LAYER,
+                blocked_reason=reason,
                 details={"mode": "human", "decision": "rejected"},
             )
 
@@ -145,7 +149,7 @@ class ApprovalWorkflow:
 
         master_prompt = (
             f"CONTEXT:\n"
-            f"The user asked the agent to do the following: \"{user_prompt}\"\n\n"
+            f'The user asked the agent to do the following: "{user_prompt}"\n\n'
             f"ACTION:\n"
             f"To fulfill this request, the agent is attempting to execute the following tool:\n"
             f"Tool Name: {fn_name}\n"
@@ -153,7 +157,7 @@ class ApprovalWorkflow:
             f"TASK:\n"
             f"Does this tool execution logically align with the user's request, "
             f"AND is it safe to execute?\n"
-            f"Reply with exactly one word: \"APPROVE\" or \"REJECT\", "
+            f'Reply with exactly one word: "APPROVE" or "REJECT", '
             f"followed by a short reason."
         )
 
@@ -174,7 +178,8 @@ class ApprovalWorkflow:
 
             if "APPROVE" in reply.upper():
                 return ValidationResult(
-                    is_safe=True, layer=LAYER,
+                    is_safe=True,
+                    layer=LAYER,
                     details={"mode": "ai", "decision": "approved", "reason": reply},
                 )
             else:
@@ -185,7 +190,9 @@ class ApprovalWorkflow:
                     reason_text = parts[1].strip() if len(parts) > 1 else reply
                 reason = f"AI supervisor rejected tool call '{fn_name}': {reason_text}"
                 return ValidationResult(
-                    is_safe=False, layer=LAYER, blocked_reason=reason,
+                    is_safe=False,
+                    layer=LAYER,
+                    blocked_reason=reason,
                     details={"mode": "ai", "decision": "rejected", "reason": reply},
                 )
 
@@ -193,7 +200,9 @@ class ApprovalWorkflow:
             logger.error("AITL supervisor error for '%s': %s", fn_name, e)
             reason = f"AI supervisor error (fail-safe block): {e}"
             return ValidationResult(
-                is_safe=False, layer=LAYER, blocked_reason=reason,
+                is_safe=False,
+                layer=LAYER,
+                blocked_reason=reason,
                 details={"mode": "ai", "decision": "error", "error": str(e)},
             )
 
@@ -221,9 +230,7 @@ class ApprovalWorkflow:
             self._async_ai_client = AsyncOpenAI(**kwargs)
         return self._async_ai_client
 
-    async def acheck(
-        self, fn_name: str, fn_args: dict, context: dict = None
-    ) -> ValidationResult:
+    async def acheck(self, fn_name: str, fn_args: dict, context: dict = None) -> ValidationResult:
         """Async version of check(). AITL uses AsyncOpenAI, HITL uses to_thread."""
         review_list = self.config.approval_workflow_tools_requiring_review
         if fn_name not in review_list:
@@ -238,7 +245,8 @@ class ApprovalWorkflow:
         else:
             logger.warning("Unknown approval_workflow mode '%s', blocking as fail-safe", mode)
             return ValidationResult(
-                is_safe=False, layer=LAYER,
+                is_safe=False,
+                layer=LAYER,
                 blocked_reason=f"Unknown approval_workflow mode: {mode}",
             )
 
@@ -261,7 +269,7 @@ class ApprovalWorkflow:
 
         master_prompt = (
             f"CONTEXT:\n"
-            f"The user asked the agent to do the following: \"{user_prompt}\"\n\n"
+            f'The user asked the agent to do the following: "{user_prompt}"\n\n'
             f"ACTION:\n"
             f"To fulfill this request, the agent is attempting to execute the following tool:\n"
             f"Tool Name: {fn_name}\n"
@@ -269,7 +277,7 @@ class ApprovalWorkflow:
             f"TASK:\n"
             f"Does this tool execution logically align with the user's request, "
             f"AND is it safe to execute?\n"
-            f"Reply with exactly one word: \"APPROVE\" or \"REJECT\", "
+            f'Reply with exactly one word: "APPROVE" or "REJECT", '
             f"followed by a short reason."
         )
 
@@ -290,7 +298,8 @@ class ApprovalWorkflow:
 
             if "APPROVE" in reply.upper():
                 return ValidationResult(
-                    is_safe=True, layer=LAYER,
+                    is_safe=True,
+                    layer=LAYER,
                     details={"mode": "ai", "decision": "approved", "reason": reply},
                 )
             else:
@@ -300,7 +309,9 @@ class ApprovalWorkflow:
                     reason_text = parts[1].strip() if len(parts) > 1 else reply
                 reason = f"AI supervisor rejected tool call '{fn_name}': {reason_text}"
                 return ValidationResult(
-                    is_safe=False, layer=LAYER, blocked_reason=reason,
+                    is_safe=False,
+                    layer=LAYER,
+                    blocked_reason=reason,
                     details={"mode": "ai", "decision": "rejected", "reason": reply},
                 )
 
@@ -308,7 +319,9 @@ class ApprovalWorkflow:
             logger.error("AITL supervisor error (async) for '%s': %s", fn_name, e)
             reason = f"AI supervisor error (fail-safe block): {e}"
             return ValidationResult(
-                is_safe=False, layer=LAYER, blocked_reason=reason,
+                is_safe=False,
+                layer=LAYER,
+                blocked_reason=reason,
                 details={"mode": "ai", "decision": "error", "error": str(e)},
             )
 

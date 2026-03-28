@@ -22,8 +22,11 @@ from dotenv import load_dotenv
 from azure.ai.contentsafety import ContentSafetyClient
 from azure.ai.contentsafety.aio import ContentSafetyClient as AsyncContentSafetyClient
 from azure.ai.contentsafety.models import (
-    AnalyzeTextOptions, TextCategory,
-    AnalyzeImageOptions, ImageData, ImageCategory,
+    AnalyzeTextOptions,
+    TextCategory,
+    AnalyzeImageOptions,
+    ImageData,
+    ImageCategory,
 )
 from azure.core.credentials import AzureKeyCredential
 from azure.core.exceptions import HttpResponseError
@@ -61,9 +64,7 @@ class ContentFilters:
             )
 
         # Single client for both text and image analysis
-        self.client = ContentSafetyClient(
-            self.endpoint, AzureKeyCredential(self.key)
-        )
+        self.client = ContentSafetyClient(self.endpoint, AzureKeyCredential(self.key))
 
     # -----------------------------------------------------------------
     # Text Moderation
@@ -120,8 +121,10 @@ class ContentFilters:
 
         logger.info(
             "Content Filters (text) severities: Hate=%d, SelfHarm=%d, Sexual=%d, Violence=%d",
-            severities["hate"], severities["self_harm"],
-            severities["sexual"], severities["violence"],
+            severities["hate"],
+            severities["self_harm"],
+            severities["sexual"],
+            severities["violence"],
         )
 
         details = {"severities": severities}
@@ -138,8 +141,10 @@ class ContentFilters:
             blocked_reason = f"Blocklist match detected: {term_list}"
             logger.warning("Content Filters BLOCKED (blocklist): %s", blocked_reason)
             return ValidationResult(
-                is_safe=False, layer="content_filters",
-                blocked_reason=blocked_reason, details=details,
+                is_safe=False,
+                layer="content_filters",
+                blocked_reason=blocked_reason,
+                details=details,
             )
 
         # Check severity violations
@@ -157,8 +162,10 @@ class ContentFilters:
             blocked_reason = "Harmful content detected: " + ", ".join(violations)
             logger.warning("Content Filters BLOCKED: %s", blocked_reason)
             return ValidationResult(
-                is_safe=False, layer="content_filters",
-                blocked_reason=blocked_reason, details=details,
+                is_safe=False,
+                layer="content_filters",
+                blocked_reason=blocked_reason,
+                details=details,
             )
 
         logger.info("Content Filters: text is safe")
@@ -213,8 +220,10 @@ class ContentFilters:
 
         logger.info(
             "Content Filters (image) severities: Hate=%d, SelfHarm=%d, Sexual=%d, Violence=%d",
-            severities["hate"], severities["self_harm"],
-            severities["sexual"], severities["violence"],
+            severities["hate"],
+            severities["self_harm"],
+            severities["sexual"],
+            severities["violence"],
         )
 
         details = {"severities": severities}
@@ -234,8 +243,10 @@ class ContentFilters:
             blocked_reason = "Harmful image content detected: " + ", ".join(violations)
             logger.warning("Content Filters BLOCKED: %s", blocked_reason)
             return ValidationResult(
-                is_safe=False, layer="content_filters",
-                blocked_reason=blocked_reason, details=details,
+                is_safe=False,
+                layer="content_filters",
+                blocked_reason=blocked_reason,
+                details=details,
             )
 
         logger.info("Content Filters: image is safe")
@@ -257,10 +268,10 @@ class ContentFilters:
     @staticmethod
     def _extract_text_severities(response) -> dict:
         """Extract severity dict from an analyze_text response."""
+
         def _get(cat):
-            return next(
-                (i.severity for i in response.categories_analysis if i.category == cat), 0
-            )
+            return next((i.severity for i in response.categories_analysis if i.category == cat), 0)
+
         return {
             "hate": _get(TextCategory.HATE),
             "self_harm": _get(TextCategory.SELF_HARM),
@@ -271,10 +282,10 @@ class ContentFilters:
     @staticmethod
     def _extract_image_severities(response) -> dict:
         """Extract severity dict from an analyze_image response."""
+
         def _get(cat):
-            return next(
-                (i.severity for i in response.categories_analysis if i.category == cat), 0
-            )
+            return next((i.severity for i in response.categories_analysis if i.category == cat), 0)
+
         return {
             "hate": _get(ImageCategory.HATE),
             "self_harm": _get(ImageCategory.SELF_HARM),
@@ -320,7 +331,8 @@ class ContentFilters:
             if e.error:
                 error_detail = f"Code: {e.error.code}, Message: {e.error.message}"
             return ValidationResult(
-                is_safe=False, layer="content_filters",
+                is_safe=False,
+                layer="content_filters",
                 blocked_reason=f"Content Safety API error – blocking as fail-safe. {error_detail}",
                 details={"error": str(e)},
             )
@@ -340,8 +352,10 @@ class ContentFilters:
             blocked_reason = f"Blocklist match detected: {term_list}"
             logger.warning("Content Filters BLOCKED (async, blocklist): %s", blocked_reason)
             return ValidationResult(
-                is_safe=False, layer="content_filters",
-                blocked_reason=blocked_reason, details=details,
+                is_safe=False,
+                layer="content_filters",
+                blocked_reason=blocked_reason,
+                details=details,
             )
 
         # Check severity violations
@@ -359,8 +373,10 @@ class ContentFilters:
             blocked_reason = "Harmful content detected: " + ", ".join(violations)
             logger.warning("Content Filters BLOCKED (async): %s", blocked_reason)
             return ValidationResult(
-                is_safe=False, layer="content_filters",
-                blocked_reason=blocked_reason, details=details,
+                is_safe=False,
+                layer="content_filters",
+                blocked_reason=blocked_reason,
+                details=details,
             )
 
         logger.info("Content Filters (async): text is safe")
@@ -388,7 +404,8 @@ class ContentFilters:
             if e.error:
                 error_detail = f"Code: {e.error.code}, Message: {e.error.message}"
             return ValidationResult(
-                is_safe=False, layer="content_filters",
+                is_safe=False,
+                layer="content_filters",
                 blocked_reason=f"Content Safety API error – blocking as fail-safe. {error_detail}",
                 details={"error": str(e)},
             )
@@ -410,8 +427,10 @@ class ContentFilters:
             blocked_reason = "Harmful image content detected: " + ", ".join(violations)
             logger.warning("Content Filters BLOCKED (async): %s", blocked_reason)
             return ValidationResult(
-                is_safe=False, layer="content_filters",
-                blocked_reason=blocked_reason, details=details,
+                is_safe=False,
+                layer="content_filters",
+                blocked_reason=blocked_reason,
+                details=details,
             )
 
         logger.info("Content Filters (async): image is safe")

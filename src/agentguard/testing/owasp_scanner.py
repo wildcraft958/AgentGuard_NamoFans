@@ -30,8 +30,10 @@ _BAR_WIDTH = 30
 # Internal helpers
 # ---------------------------------------------------------------------------
 
+
 def _check_openai_key() -> None:
     import os
+
     if not os.environ.get("OPENAI_API_KEY"):
         raise EnvironmentError(
             "OPENAI_API_KEY environment variable is not set. "
@@ -123,9 +125,9 @@ def _print_framework_results(framework_name: str, risk_assessment) -> None:
 
 def _print_header(target: str) -> None:
     label_map = {
-        "llms":    "OWASP Top 10 for LLMs 2025",
+        "llms": "OWASP Top 10 for LLMs 2025",
         "agentic": "OWASP Top 10 for Agentic Applications 2026",
-        "both":    "OWASP Top 10 for LLMs 2025 + Agentic Applications 2026",
+        "both": "OWASP Top 10 for LLMs 2025 + Agentic Applications 2026",
     }
     label = label_map.get(target, target)
     print()
@@ -138,6 +140,7 @@ def _print_header(target: str) -> None:
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 class OWASPScanResult:
     """
@@ -246,14 +249,10 @@ def scan_agent(
         print(f"Overall pass rate: {results.overall_pass_rate:.0%}")
     """
     if not callable(agent):
-        raise TypeError(
-            f"scan_agent() expects a callable agent, got {type(agent).__name__}."
-        )
+        raise TypeError(f"scan_agent() expects a callable agent, got {type(agent).__name__}.")
 
     if target not in ("llms", "agentic", "both"):
-        raise ValueError(
-            f"Invalid target '{target}'. Must be one of: 'llms', 'agentic', 'both'."
-        )
+        raise ValueError(f"Invalid target '{target}'. Must be one of: 'llms', 'agentic', 'both'.")
 
     _check_openai_key()
 
@@ -272,8 +271,11 @@ def scan_agent(
     # OWASP Top 10 for LLMs 2025
     # -----------------------------------------------------------------------
     if target in ("llms", "both"):
-        print("  [1/2]  Running OWASP Top 10 for LLMs 2025 …" if target == "both"
-              else "  Running OWASP Top 10 for LLMs 2025 …")
+        print(
+            "  [1/2]  Running OWASP Top 10 for LLMs 2025 …"
+            if target == "both"
+            else "  Running OWASP Top 10 for LLMs 2025 …"
+        )
         try:
             teamer = RedTeamer(simulator_model=simulator_model, evaluation_model=evaluation_model)
             llm_assessment = teamer.red_team(
@@ -296,8 +298,11 @@ def scan_agent(
     # OWASP Top 10 for Agentic Applications 2026
     # -----------------------------------------------------------------------
     if target in ("agentic", "both"):
-        print("\n  [2/2]  Running OWASP Top 10 for Agentic Applications 2026 …" if target == "both"
-              else "  Running OWASP Top 10 for Agentic Applications 2026 …")
+        print(
+            "\n  [2/2]  Running OWASP Top 10 for Agentic Applications 2026 …"
+            if target == "both"
+            else "  Running OWASP Top 10 for Agentic Applications 2026 …"
+        )
         try:
             teamer = RedTeamer(simulator_model=simulator_model, evaluation_model=evaluation_model)
             agentic_assessment = teamer.red_team(

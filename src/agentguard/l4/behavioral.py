@@ -7,6 +7,7 @@ AgentGuard L4b — Multi-signal behavioral anomaly detector (agentguard.l4.behav
   WARN:    composite 0.1–0.4
   ALLOW:   composite < 0.1
 """
+
 from __future__ import annotations
 
 import math
@@ -62,24 +63,28 @@ SEVERITY_WEIGHTS: dict[str, float] = {
 }
 
 # Tool classification sets
-_READ_TOOLS: frozenset[str] = frozenset({
-    "read_file",
-    "fetch_pdf",
-    "query_db",
-    "search_web",
-    "list_files",
-    "get_record",
-    "read_memory",
-    "retrieve",
-})
-_NET_TOOLS: frozenset[str] = frozenset({
-    "http_request",
-    "send_email",
-    "api_call",
-    "post_webhook",
-    "fetch_url",
-    "shell_exec",
-})
+_READ_TOOLS: frozenset[str] = frozenset(
+    {
+        "read_file",
+        "fetch_pdf",
+        "query_db",
+        "search_web",
+        "list_files",
+        "get_record",
+        "read_memory",
+        "retrieve",
+    }
+)
+_NET_TOOLS: frozenset[str] = frozenset(
+    {
+        "http_request",
+        "send_email",
+        "api_call",
+        "post_webhook",
+        "fetch_url",
+        "shell_exec",
+    }
+)
 
 
 # ── Main detector ─────────────────────────────────────────────────────────────
@@ -132,11 +137,14 @@ class BehavioralAnomalyDetector:
         denom = max(profile.baseline_std, 0.1)
         z = (total_calls - profile.baseline_avg) / denom
         if z > threshold:
-            signals.append(AnomalySignal(
-                "call_frequency_spike", "high",
-                f"z={z:.2f} total={total_calls} "
-                f"baseline={profile.baseline_avg:.1f}±{profile.baseline_std:.1f}",
-            ))
+            signals.append(
+                AnomalySignal(
+                    "call_frequency_spike",
+                    "high",
+                    f"z={z:.2f} total={total_calls} "
+                    f"baseline={profile.baseline_avg:.1f}±{profile.baseline_std:.1f}",
+                )
+            )
 
         # ── Signal 2: Sequence divergence (Levenshtein) ───────────────────────
         # Catches: injection attacks inserting unexpected tools into a known flow.
@@ -146,10 +154,13 @@ class BehavioralAnomalyDetector:
         if expected_seq:
             div = _normalized_levenshtein(profile.tool_sequence, expected_seq)
             if div > seq_threshold:
-                signals.append(AnomalySignal(
-                    "sequence_anomaly", "medium",
-                    f"divergence={div:.2f} actual={profile.tool_sequence[:5]}",
-                ))
+                signals.append(
+                    AnomalySignal(
+                        "sequence_anomaly",
+                        "medium",
+                        f"divergence={div:.2f} actual={profile.tool_sequence[:5]}",
+                    )
+                )
 
         # ── Signal 3: Read → External Network exfiltration chain ─────────────
         # THE DEMO ATTACK: fetch_pdf → http_request to attacker.com
@@ -168,20 +179,26 @@ class BehavioralAnomalyDetector:
                     (t for t in reversed(seq[:-1]) if t in _READ_TOOLS),
                     "unknown",
                 )
-                signals.append(AnomalySignal(
-                    "read_exfil_chain", "critical",
-                    f"chain={prior_read}→{tool_name}",
-                ))
+                signals.append(
+                    AnomalySignal(
+                        "read_exfil_chain",
+                        "critical",
+                        f"chain={prior_read}→{tool_name}",
+                    )
+                )
 
         # ── Signal 4: New external domain not in approved list ────────────────
         # Catches: injection-driven exfiltration to attacker-controlled endpoints.
         current_domain = meta.get("domain", "")
         approved = set(role_policy.get("approved_domains", []))
         if current_domain and current_domain not in approved:
-            signals.append(AnomalySignal(
-                "new_external_domain", "high",
-                f"unapproved={current_domain} approved={approved or 'none'}",
-            ))
+            signals.append(
+                AnomalySignal(
+                    "new_external_domain",
+                    "high",
+                    f"unapproved={current_domain} approved={approved or 'none'}",
+                )
+            )
 
         # ── Signal 5: Shannon entropy spike on resources accessed ─────────────
         # Catches: reconnaissance / data-gathering behavior across many resources.
@@ -192,10 +209,13 @@ class BehavioralAnomalyDetector:
             h = _shannon_entropy(profile.resources_accessed)
             entropy_threshold = 2.5 * entropy_mult
             if h > entropy_threshold:
-                signals.append(AnomalySignal(
-                    "resource_entropy_spike", "medium",
-                    f"entropy={h:.2f} threshold={entropy_threshold:.2f}",
-                ))
+                signals.append(
+                    AnomalySignal(
+                        "resource_entropy_spike",
+                        "medium",
+                        f"entropy={h:.2f} threshold={entropy_threshold:.2f}",
+                    )
+                )
 
         # ── Composite score + action decision ─────────────────────────────────
         composite = min(1.0, sum(SEVERITY_WEIGHTS[s.severity] for s in signals))
@@ -240,8 +260,6 @@ def _normalized_levenshtein(a: list[str], b: list[str]) -> float:
         prev, dp[0] = dp[:], i
         for j in range(1, n + 1):
             dp[j] = (
-                prev[j - 1]
-                if a[i - 1] == b[j - 1]
-                else 1 + min(prev[j], dp[j - 1], prev[j - 1])
+                prev[j - 1] if a[i - 1] == b[j - 1] else 1 + min(prev[j], dp[j - 1], prev[j - 1])
             )
     return dp[n] / max(m, n)

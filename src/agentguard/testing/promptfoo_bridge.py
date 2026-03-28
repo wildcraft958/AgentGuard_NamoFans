@@ -65,6 +65,7 @@ def _resolve_agent_name(options: dict) -> str | None:
     if config_path and os.path.exists(config_path):
         try:
             import yaml
+
             with open(config_path, "r") as f:
                 raw = yaml.safe_load(f) or {}
             name = raw.get("agent_name")

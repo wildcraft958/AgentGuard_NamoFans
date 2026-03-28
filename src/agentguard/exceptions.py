@@ -5,6 +5,7 @@ AgentGuard custom exception hierarchy.
 
 class AgentGuardError(Exception):
     """Base exception for all AgentGuard errors."""
+
     pass
 
 
@@ -37,6 +38,7 @@ class ToolCallBlockedError(AgentGuardError):
 
 class ConfigurationError(AgentGuardError):
     """Raised for invalid or missing configuration."""
+
     pass
 
 

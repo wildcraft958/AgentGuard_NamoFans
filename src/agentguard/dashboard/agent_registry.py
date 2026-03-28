@@ -356,7 +356,13 @@ AGENT_REGISTRY: list[dict] = [
 ]
 
 # Internal field names to strip before sending to the browser
-_INTERNAL_FIELDS = {"guarded_module", "guarded_fn", "unguarded_module", "unguarded_class", "unguarded_fn"}
+_INTERNAL_FIELDS = {
+    "guarded_module",
+    "guarded_fn",
+    "unguarded_module",
+    "unguarded_class",
+    "unguarded_fn",
+}
 
 
 def get_agent(agent_id: str) -> dict | None:

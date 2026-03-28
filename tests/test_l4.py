@@ -5,7 +5,6 @@ TDD: written BEFORE moving l4_rbac.py and l4_behavioral.py into l4/ subpackage.
 
 from unittest.mock import MagicMock
 
-import pytest
 
 from agentguard.l4.rbac import (
     AccessContext,
@@ -16,8 +15,6 @@ from agentguard.l4.rbac import (
     infer_verb,
 )
 from agentguard.l4.behavioral import (
-    AnomalyResult,
-    AnomalySignal,
     BehavioralAnomalyDetector,
     TaskProfile,
 )
@@ -55,45 +52,60 @@ class TestL4RBAC:
     def test_unknown_role_denied(self):
         engine = L4RBACEngine(_make_config(BASIC_POLICY))
         ctx = AccessContext(
-            agent_role="unknown_role", tool_name="read_file",
-            task_id="t1", action_verb="read",
-            resource_sensitivity="public", risk_score=0.0,
+            agent_role="unknown_role",
+            tool_name="read_file",
+            task_id="t1",
+            action_verb="read",
+            resource_sensitivity="public",
+            risk_score=0.0,
         )
         assert engine.evaluate(ctx) == RBACDecision.DENY
 
     def test_allowed_read_public(self):
         engine = L4RBACEngine(_make_config(BASIC_POLICY))
         ctx = AccessContext(
-            agent_role="default_agent", tool_name="read_file",
-            task_id="t1", action_verb="read",
-            resource_sensitivity="public", risk_score=0.0,
+            agent_role="default_agent",
+            tool_name="read_file",
+            task_id="t1",
+            action_verb="read",
+            resource_sensitivity="public",
+            risk_score=0.0,
         )
         assert engine.evaluate(ctx) == RBACDecision.ALLOW
 
     def test_denied_verb(self):
         engine = L4RBACEngine(_make_config(BASIC_POLICY))
         ctx = AccessContext(
-            agent_role="default_agent", tool_name="delete_file",
-            task_id="t1", action_verb="delete",
-            resource_sensitivity="public", risk_score=0.0,
+            agent_role="default_agent",
+            tool_name="delete_file",
+            task_id="t1",
+            action_verb="delete",
+            resource_sensitivity="public",
+            risk_score=0.0,
         )
         assert engine.evaluate(ctx) == RBACDecision.DENY
 
     def test_confidential_no_access(self):
         engine = L4RBACEngine(_make_config(BASIC_POLICY))
         ctx = AccessContext(
-            agent_role="default_agent", tool_name="read_file",
-            task_id="t1", action_verb="read",
-            resource_sensitivity="confidential", risk_score=0.0,
+            agent_role="default_agent",
+            tool_name="read_file",
+            task_id="t1",
+            action_verb="read",
+            resource_sensitivity="confidential",
+            risk_score=0.0,
         )
         assert engine.evaluate(ctx) == RBACDecision.DENY
 
     def test_high_risk_elevates(self):
         engine = L4RBACEngine(_make_config(BASIC_POLICY))
         ctx = AccessContext(
-            agent_role="default_agent", tool_name="read_file",
-            task_id="t1", action_verb="read",
-            resource_sensitivity="public", risk_score=0.8,
+            agent_role="default_agent",
+            tool_name="read_file",
+            task_id="t1",
+            action_verb="read",
+            resource_sensitivity="public",
+            risk_score=0.8,
         )
         assert engine.evaluate(ctx) == RBACDecision.ELEVATE
 
@@ -197,9 +209,11 @@ class TestBehavioralAnomalyDetector:
 
 def test_backward_compat_l4_rbac_import():
     from agentguard.l4_rbac import L4RBACEngine as OldEngine
+
     assert OldEngine is L4RBACEngine
 
 
 def test_backward_compat_l4_behavioral_import():
     from agentguard.l4_behavioral import BehavioralAnomalyDetector as OldDetector
+
     assert OldDetector is BehavioralAnomalyDetector

@@ -206,17 +206,18 @@ class ToolInputAnalyzer:
             if doc.is_error:
                 logger.error("Entity recognition error (async): %s", doc.error.message)
                 return ValidationResult(
-                    is_safe=False, layer=LAYER,
+                    is_safe=False,
+                    layer=LAYER,
                     blocked_reason=(
-                        f"Entity recognition API error – blocking as fail-safe: "
-                        f"{doc.error.message}"
+                        f"Entity recognition API error – blocking as fail-safe: {doc.error.message}"
                     ),
                     details={"error": doc.error.message},
                 )
         except Exception as e:
             logger.error("Entity recognition failed (async): %s", e)
             return ValidationResult(
-                is_safe=False, layer=LAYER,
+                is_safe=False,
+                layer=LAYER,
                 blocked_reason=f"Entity recognition API error – blocking as fail-safe: {e}",
                 details={"error": str(e)},
             )
@@ -250,7 +251,10 @@ class ToolInputAnalyzer:
             )
             logger.warning("Tool Input Analyzer BLOCKED (async): %s", reason)
             return ValidationResult(
-                is_safe=False, layer=LAYER, blocked_reason=reason, details=details,
+                is_safe=False,
+                layer=LAYER,
+                blocked_reason=reason,
+                details=details,
             )
 
         return ValidationResult(is_safe=True, layer=LAYER, details=details)
