@@ -149,7 +149,7 @@ behavioral_monitoring:
 # Replaces static ABAC with hot-reloadable YAML policies (L4a)
 # and online behavioral anomaly detection (L4b).
 l4_adaptive:
-  enabled: false
+  enabled: true
   policies_file: null           # path to l4_policies.yaml (null = use bundled default)
   ioa_patterns_file: null       # path to ioa_patterns.yaml (null = use bundled default)
   elevate_threshold: 0.70       # risk_score >= this -> ELEVATE
