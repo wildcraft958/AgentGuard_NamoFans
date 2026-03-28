@@ -52,16 +52,27 @@ def apply_network_guard(network_policy) -> None:
 # ── Patch implementations ─────────────────────────────────────────────────────
 
 def _install_block_all() -> None:
-    """Replace socket.connect with a function that always raises."""
-    _original = _socket_module.socket.connect
-
-    def _blocked(self, address):
+    """Replace socket.connect, bind, and listen with functions that always raise."""
+    def _blocked_connect(self, address):
         raise ConnectionRefusedError(
             f"[AgentGuard Sandbox] Outbound connection blocked (mode=block_all). "
             f"Attempted: {address}"
         )
 
-    _socket_module.socket.connect = _blocked
+    def _blocked_bind(self, address):
+        raise ConnectionRefusedError(
+            f"[AgentGuard Sandbox] Socket bind blocked (mode=block_all). "
+            f"Attempted: {address}"
+        )
+
+    def _blocked_listen(self, backlog=0):
+        raise ConnectionRefusedError(
+            "[AgentGuard Sandbox] Socket listen blocked (mode=block_all)."
+        )
+
+    _socket_module.socket.connect = _blocked_connect
+    _socket_module.socket.bind = _blocked_bind
+    _socket_module.socket.listen = _blocked_listen
 
 
 def _install_whitelist(allowed_hosts: List[str], allowed_ports: List[int]) -> None:

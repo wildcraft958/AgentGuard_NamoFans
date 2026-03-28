@@ -29,6 +29,8 @@ root privileges are required.
 import asyncio
 import logging
 import multiprocessing
+import os
+import signal
 import time
 from typing import Any, Callable
 
@@ -51,6 +53,10 @@ def _sandbox_worker(
     Communicates outcome back to the parent via Queues.
     """
     try:
+        # ── Create own process group so timeout can kill all children ──
+        # Without this, forked children become orphans adopted by init.
+        os.setpgrp()
+
         # ── Pre-import all sandbox modules BEFORE Landlock restricts filesystem ──
         # Landlock is applied below and will block access to the project source
         # tree AND /etc/ld.so.cache (needed by ctypes.util.find_library).
@@ -160,7 +166,11 @@ class SandboxedToolExecutor:
 
         # ── Timeout ───────────────────────────────────────────────────────────
         if proc.is_alive():
-            proc.kill()
+            # Kill entire process group (catches zombie children from fork bombs)
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                proc.kill()  # Fallback: kill just the parent
             proc.join(timeout=3)
             from agentguard.exceptions import SandboxTimeoutError
             raise SandboxTimeoutError(

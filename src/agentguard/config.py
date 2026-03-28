@@ -372,9 +372,9 @@ class AgentGuardConfig:
             SandboxPolicy, SyscallPolicy,
         )
         raw = self._raw.get("sandbox", {})
-        fs  = raw.get("filesystem", {})
+        fs = raw.get("filesystem", {})
         net = raw.get("network", {})
-        sys = raw.get("syscalls", {})
+        sys_cfg = raw.get("syscalls", {})
         res = raw.get("resources", {})
 
         return SandboxPolicy(
@@ -396,8 +396,8 @@ class AgentGuardConfig:
                 allowed_ports=net.get("allowed_ports", [443, 80]),
             ),
             syscalls=SyscallPolicy(
-                enabled=sys.get("enabled", True),
-                blocked_syscalls=sys.get("blocked_syscalls", [
+                enabled=sys_cfg.get("enabled", True),
+                blocked_syscalls=sys_cfg.get("blocked_syscalls", [
                     "ptrace", "mount", "setuid", "setgid", "chroot",
                     "sethostname", "setns", "unshare", "perf_event_open", "bpf",
                     "pivot_root", "kexec_load", "kexec_file_load", "reboot",
@@ -409,6 +409,8 @@ class AgentGuardConfig:
                 max_memory_mb=res.get("max_memory_mb", 512),
                 max_cpu_seconds=res.get("max_cpu_seconds", 30),
                 max_file_size_mb=res.get("max_file_size_mb", 100),
+                max_processes=res.get("max_processes", None),
+                max_open_files=res.get("max_open_files", 64),
             ),
         )
 
