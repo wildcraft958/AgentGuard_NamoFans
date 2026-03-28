@@ -140,7 +140,7 @@ AgentGuard is an **in-process security middleware** that intercepts every input,
 
 Unlike static rule-based systems, L4b uses **online machine learning** (River HalfSpaceTrees) that learns per-role behavioral baselines from the first tool call. It detects:
 - **Sensitivity escalation** (CPF S7): progressive access to increasingly sensitive resources over a session
-- **IOA pattern matching**: known attack sequences (credential harvesting, recon+exfil, privilege escalation) detected via session graph analysis
+- **IOA subsequence matching**: known attack sequences (credential harvesting, recon+exfil, privilege escalation) detected via session graph analysis — resilient to interleaved junk calls
 - **Cold-start resilience**: shared global model delegates to per-role models after 50 calls
 
 ### 2. Context-Isolated Monitor (CPF S11.2)
@@ -236,7 +236,7 @@ pip install agentguard[all]               # everything
 | AI Technique | Component | Why It's the Right Choice |
 |---|---|---|
 | **Online ML (HalfSpaceTrees)** | L4b Baseline | Learns from every tool call. No training data needed. Solves cold-start problem that broke the old Z-score approach. |
-| **Graph anomaly detection** | L4b Session Graph | Models agent sessions as directed graphs. Detects multi-step attack chains (credential harvesting, recon+exfil) that point-in-time checks miss entirely. |
+| **Graph anomaly + subsequence IOA** | L4b Session Graph | Models agent sessions as directed graphs. Detects multi-step attack chains via ordered subsequence matching — resilient to evasion by interleaved junk calls. |
 | **Pearson correlation** | L4b Drift Monitor | Implements CPF S7 (autoregressive drift formalism). Detects slow-burn privilege escalation across a session — mathematically proven detectable via trajectory analysis. |
 | **LLM-as-judge** | C2 MELON, C4 AITL | Semantic injection detection where rules fail. Open-source safety LLMs (Llama Guard 3, Granite Guardian) for data privacy. |
 | **Embedding similarity** | C2 MELON pre-filter | Cosine similarity pre-filter resolves ~80% of cases without LLM call. Only ambiguous cases go to the judge. |

@@ -475,6 +475,7 @@ L4b runs asynchronously in an isolated executor. It receives only a **TelemetryS
 |---|---|
 | **What** | Models the session as a NetworkX directed graph. Scores node rarity, edge frequency, and path-level IOA matches |
 | **IOA patterns** | Credential Harvesting (`file_read, file_read, http_post`), Recon+Exfil (`sql_query, http_post`), Privilege Escalation (`shell_exec, file_write, http_post`), and more |
+| **Matching** | **Ordered subsequence** (not exact suffix) -- resilient to interleaved junk calls. An attacker inserting noise between attack steps does not break detection. Window: last 8 calls. |
 | **Scoring** | `0.2 * node + 0.3 * edge + 0.5 * path` |
 
 **Sub-scorer 3: Compliance Drift Monitor**

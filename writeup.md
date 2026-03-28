@@ -96,6 +96,40 @@ for tool, sens in [("http_get",0), ("sql_query",1), ("file_write",2), ("shell_ex
 print(f"Drift score: {score}")  # -> >0.8 (escalation detected)
 ```
 
+---
+
+## 2026-03-29 — L4 Security Audit: 3 Bug Fixes
+
+**What changed:**
+
+1. **IOA subsequence matching (Critical fix):** Changed `_score_ioa_path` from exact suffix match to ordered subsequence match. The old code checked `recent[-len(seq):] == seq` — an attacker inserting one junk call between attack steps (e.g., `file_read, http_get, file_read, http_post`) broke the pattern for `[file_read, file_read, http_post]`. New code uses `_is_subsequence()` which matches the pattern as an ordered subsequence anywhere in the last 8 calls, regardless of interleaved noise. Window expanded from 5 to 8 for consistency with drift monitor.
+
+2. **Policy ordering (Critical fix):** Bundled `l4_policies.yaml` had permissive rules (`readonly_public`, min_sensitivity=0) before restrictive rules (`critical_deny`, min_sensitivity=3). Since PBAC is first-match-wins, a reader could access sensitivity=3 resources. Fixed by moving critical deny/elevate rules first and adding `resource_sensitivity lte 1` conditions to permissive rules.
+
+3. **Unknown tool default sensitivity (Medium fix):** `ComplianceDriftMonitor` defaulted unknown tools to sensitivity=1 (internal). Changed to sensitivity=2 (confidential) as a conservative assumption — unknown tools should be treated as potentially sensitive until proven otherwise.
+
+4. **Tool ID hash collision (Low fix):** `AdaptiveBehavioralBaseline.featurize()` used `md5 mod 1000` for tool_id features. Changed to `sha256 mod 10000` — reduces collision probability from ~1/1000 to ~1/10000 and uses a non-deprecated hash function.
+
+**Why this approach:** Security audit found that the IOA pattern matching and policy ordering had evasion vectors that an informed attacker could exploit. All fixes follow the principle of conservative defaults and defense-in-depth.
+
+**Problem solved:** Interleaved attack sequences now detected. Policy evaluation cannot bypass critical resource restrictions. Unknown tools treated with appropriate suspicion.
+
+**Tradeoffs:** Subsequence matching is slightly more permissive than exact match (could trigger on coincidental subsequences across unrelated calls), but the 8-call window limits false positives. The higher default sensitivity for unknown tools may cause false elevations for custom-named benign tools, but this is preferable to missing attacks.
+
+**Example:**
+```python
+# Before (evadable):
+history = ["file_read", "http_get", "file_read", "http_post"]
+# last 3 = ["http_get", "file_read", "http_post"] != ["file_read", "file_read", "http_post"]
+# -> NO match (attacker evades)
+
+# After (resilient):
+# _is_subsequence(["file_read", "file_read", "http_post"], history) -> True
+# -> MATCH (attack detected despite junk call)
+```
+
+---
+
 # AgentGuard — Developer Writeup
 
 ![AgentGuard Logo](assets/logo.png)

@@ -69,7 +69,7 @@ class AdaptiveBehavioralBaseline:
             hour = timestamp.hour if hasattr(timestamp, "hour") else 0
 
         return {
-            "tool_id": int(hashlib.md5(tool_name.encode()).hexdigest(), 16) % 1000,
+            "tool_id": int(hashlib.sha256(tool_name.encode()).hexdigest(), 16) % 10000,
             "arg_len": len(args_str),
             "arg_entropy": self._shannon_entropy(args_str),
             "data_volume_kb": tool_call.get("data_volume_kb", 0),
