@@ -1,3 +1,57 @@
+## 2026-03-28 — PyPI-Ready Codebase Restructuring
+
+**What changed:**
+Complete structural refactor for PyPI publishability. The flat module layout was reorganized into proper subpackages following Python packaging best practices:
+
+- `audit_log.py` + `telemetry.py` → `observability/` subpackage
+- `l4_rbac.py` + `l4_behavioral.py` → `l4/` subpackage (matching l1_input/, l2_output/ convention)
+- `owasp_scanner.py` + `promptfoo_bridge.py` → `testing/` subpackage
+- 1429-line `guardian.py` decomposed: extracted `_pipeline/notifier.py`, `_pipeline/handlers.py`, `_pipeline/wave_runner.py`
+- `pyproject.toml`: version synced to 0.3.0, added PyPI metadata (license, classifiers, urls), split 28 hard dependencies into core (10) + optional extras (dashboard, testing, autogen, reports)
+- Added PEP 561 `py.typed` marker
+
+**Why this approach:**
+The hackathon codebase worked but wasn't structured for external consumption. A PyPI package needs: minimal core deps (users shouldn't install FastAPI just to validate prompts), proper subpackage organization (flat files don't scale), single version source-of-truth, and typed package support.
+
+**Problem solved:**
+- Dependency bloat: `pip install agentguard` now pulls 10 deps instead of 28; users opt into extras
+- God class: guardian.py was untestable at 1429 lines; now 1079 with reusable pipeline modules
+- Inconsistent structure: l4 files were flat while l1/l2/tool_firewall were subpackages
+- Missing PyPI metadata: no license, classifiers, urls, or version sync
+
+**Tradeoffs:**
+- Backward-compat shims add ~6 small re-export files; accepted as temporary cost for zero-breakage migration
+- Guardian still has validation logic inline rather than fully delegated to per-layer validator classes; chose pragmatic 25% reduction over a riskier 80% rewrite
+- Config.py was not simplified to pydantic (would change the YAML loading contract); deferred to a future PR
+
+**Example:**
+```
+# Before: 21 tests, flat layout
+src/agentguard/audit_log.py
+src/agentguard/telemetry.py
+src/agentguard/l4_rbac.py
+src/agentguard/l4_behavioral.py
+src/agentguard/owasp_scanner.py
+src/agentguard/guardian.py  (1429 lines)
+
+# After: 87 tests, proper subpackages
+src/agentguard/observability/audit.py
+src/agentguard/observability/telemetry.py
+src/agentguard/l4/rbac.py
+src/agentguard/l4/behavioral.py
+src/agentguard/testing/owasp_scanner.py
+src/agentguard/_pipeline/notifier.py
+src/agentguard/_pipeline/handlers.py
+src/agentguard/_pipeline/wave_runner.py
+src/agentguard/guardian.py  (1079 lines)
+
+# All old import paths still work:
+from agentguard.audit_log import AuditLog  # ← backward compat shim
+from agentguard.observability.audit import AuditLog  # ← canonical new path
+```
+
+---
+
 # AgentGuard — Developer Writeup
 
 ![AgentGuard Logo](assets/logo.png)
