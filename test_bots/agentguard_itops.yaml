@@ -228,4 +228,4 @@ observability:
   export_to:
     - otel
   otel_endpoint: "http://localhost:4317"
-  service_name: "agentguard-itops"
+  service_name: "agentguard"
