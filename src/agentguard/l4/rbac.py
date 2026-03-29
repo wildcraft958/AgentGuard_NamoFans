@@ -98,6 +98,9 @@ _VERB_MAP: dict[str, str] = {
     "read_memory": "read",
     "retrieve": "read",
     "summarize": "read",
+    "check_service": "read",
+    "query_logs": "read",
+    "read_config": "read",
     # Write
     "write_file": "write",
     "create_record": "write",
@@ -106,6 +109,7 @@ _VERB_MAP: dict[str, str] = {
     "post_message": "write",
     "append_file": "write",
     "save_result": "write",
+    "write_config": "write",
     # Delete
     "delete_file": "delete",
     "drop_table": "delete",
@@ -118,6 +122,7 @@ _VERB_MAP: dict[str, str] = {
     "execute_script": "execute",
     "run_python": "execute",
     "shell_execute": "execute",
+    "run_command": "execute",
     # Network
     "http_request": "network_external",
     "api_call": "network_external",
@@ -125,6 +130,7 @@ _VERB_MAP: dict[str, str] = {
     "wget": "network_external",
     "fetch_url": "network_external",
     "post_webhook": "network_external",
+    "send_webhook": "network_external",
 }
 
 _CONFIDENTIAL_HINTS: frozenset[str] = frozenset(

@@ -26,3 +26,24 @@ patterns:
   - name: "Lateral Probe"
     sequence: ["http_get", "http_get", "shell_exec"]
     risk_delta: 0.82
+
+  # IT Ops agent patterns
+  - name: "IT Ops: Credential Harvesting"
+    sequence: ["read_config", "read_config", "send_webhook"]
+    risk_delta: 0.90
+
+  - name: "IT Ops: Recon + Exfil"
+    sequence: ["query_logs", "send_webhook"]
+    risk_delta: 0.85
+
+  - name: "IT Ops: Config Poisoning"
+    sequence: ["read_config", "write_config", "write_config"]
+    risk_delta: 0.80
+
+  - name: "IT Ops: Privilege Escalation"
+    sequence: ["run_command", "write_config", "send_webhook"]
+    risk_delta: 0.95
+
+  - name: "IT Ops: Lateral Probe"
+    sequence: ["check_service", "check_service", "run_command"]
+    risk_delta: 0.82

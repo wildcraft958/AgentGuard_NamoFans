@@ -33,9 +33,9 @@ def test_agents_list_returns_four_agents():
     assert resp.status_code == 200
     data = resp.json()
     assert isinstance(data, list)
-    assert len(data) == 4
+    assert len(data) == 5
     ids = {a["id"] for a in data}
-    assert ids == {"financial", "hr", "medical", "vulnerable"}
+    assert ids == {"financial", "hr", "medical", "vulnerable", "it_ops"}
 
 
 def test_agents_list_test_case_shape():

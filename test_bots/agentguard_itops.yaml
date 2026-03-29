@@ -1,0 +1,231 @@
+########################################
+# AgentGuard Configuration — IT Ops Agent
+# Standalone config with L4 Adaptive enabled
+########################################
+
+version: 1
+
+agent_name: "ITOpsBot"
+
+########################################
+# AUDIT LOG
+########################################
+audit:
+  enabled: true
+  db_path: ~/.agentguard/audit.db
+
+########################################
+# GLOBAL SETTINGS
+########################################
+global:
+  mode: enforce
+  log_level: detailed
+  fail_safe: block
+  max_validation_latency_ms: 500
+
+########################################
+# L1 -- INPUT SECURITY
+########################################
+input_security:
+
+  prompt_shields:
+    enabled: true
+    sensitivity: medium
+    block_on_detected_injection: true
+
+  spotlighting:
+    enabled: false
+
+  content_filters:
+    block_toxicity: true
+    block_violence: true
+    block_self_harm: true
+
+  image_filters:
+    enabled: false
+
+########################################
+# L2 -- OUTPUT SECURITY
+########################################
+output_security:
+
+  toxicity_detection:
+    enabled: true
+    block_on_detected_toxicity: true
+
+  pii_detection:
+    enabled: true
+    block_on_pii_exfiltration: true
+    allowed_categories:
+      - Organization
+      - Person
+      - PersonType
+      - DateTime
+      - URL
+      - Quantity
+      - IPAddress
+      - Address
+
+  hallucination_detection:
+    enabled: false
+
+########################################
+# L3 -- BLOCKLIST PATTERN MATCHING
+########################################
+pattern_detection:
+  enabled: true
+  block_on_match: true
+  halt_on_blocklist_hit: true
+
+  blocklists:
+    - name: agentguard-default
+      description: "Default AgentGuard security blocklist"
+      terms:
+        - "SYSTEM OVERRIDE"
+        - "curl "
+        - "wget "
+        - "metadata.google.internal"
+        - "169.254.169.254"
+        - "BEGIN PRIVATE KEY"
+
+########################################
+# TOOL FIREWALL
+########################################
+tool_firewall:
+  default_policy: allow
+
+  file_system:
+    enabled: true
+    allowed_paths:
+      - /tmp/
+      - /app/safe_data/
+    deny_extensions:
+      - .env
+      - .pem
+      - .key
+
+  sql_query:
+    enabled: true
+    allowed_statements:
+      - SELECT
+    denied_statements:
+      - DROP
+      - DELETE
+      - UPDATE
+
+  http_post:
+    enabled: true
+    mode: allowlist
+    allowed_domains:
+      - hooks.slack.com
+      - api.pagerduty.com
+    require_https: true
+    block_private_ips: true
+    max_payload_kb: 512
+    rate_limit_per_minute: 20
+
+  http_get:
+    enabled: true
+    mode: allowlist
+    allowed_domains:
+      - status.internal
+      - monitoring.internal
+    block_metadata_services: true
+
+  shell_commands:
+    enabled: true
+    mode: denylist
+    denied_commands:
+      - rm
+      - chmod
+      - chown
+      - kill
+      - sudo
+      - su
+      - dd
+      - mkfs
+      - curl
+      - wget
+      - nc
+      - python
+      - python3
+      - bash
+      - sh
+      - eval
+      - exec
+    denied_patterns:
+      - 'curl\s.*\|\s*(?:ba)?sh'
+      - 'wget\s.*\|\s*(?:ba)?sh'
+      - 'dd\s+if='
+    block_command_chaining: true
+
+  input_analysis:
+    enabled: true
+    blocked_entity_categories:
+      read_config: [IPAddress, URL]
+
+  melon:
+    enabled: true
+    judge_model: null
+    raise_on_injection: true
+
+  approval_workflow:
+    enabled: false
+
+########################################
+# RBAC
+########################################
+rbac:
+  roles:
+    viewer:
+      allowed_tools:
+        - check_service
+        - query_logs
+    operator:
+      allowed_tools:
+        - check_service
+        - query_logs
+        - read_config
+        - write_config
+        - send_webhook
+    admin:
+      allowed_tools: "*"
+
+########################################
+# L4 BEHAVIORAL MONITORING (legacy)
+########################################
+behavioral_monitoring:
+  enabled: true
+  detect_tool_chaining_spikes: true
+  max_tool_calls_per_task: 10
+  detect_unusual_domain_access: true
+  detect_new_tool_usage: true
+  detect_data_exfiltration_patterns: true
+
+########################################
+# L4 ADAPTIVE -- PBAC + Behavioral Engine
+# This is the key differentiator for this agent
+########################################
+l4_adaptive:
+  enabled: true
+  policies_file: null
+  ioa_patterns_file: null
+  elevate_threshold: 0.70
+  deny_threshold: 0.90
+  cold_start_threshold: 50
+  drift_window: 8
+  weights:
+    baseline: 0.35
+    graph: 0.40
+    drift: 0.25
+
+########################################
+# OBSERVABILITY
+########################################
+observability:
+  log_all_decisions: true
+  store_full_context: true
+  export_to:
+    - otel
+  otel_endpoint: "http://localhost:4317"
+  service_name: "agentguard-itops"
