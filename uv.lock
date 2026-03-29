@@ -13,6 +13,7 @@ name = "agentguard"
 version = "0.3.0"
 source = { editable = "." }
 dependencies = [
+    { name = "aiohttp" },
     { name = "azure-ai-contentsafety" },
     { name = "azure-ai-textanalytics" },
     { name = "azure-identity" },
@@ -71,6 +72,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "agentguard", extras = ["dashboard", "testing", "autogen", "reports"], marker = "extra == 'all'" },
+    { name = "aiohttp", specifier = ">=3.9.0" },
     { name = "autogen-agentchat", marker = "extra == 'autogen'", specifier = ">=0.4.0" },
     { name = "autogen-ext", extras = ["azure"], marker = "extra == 'autogen'", specifier = ">=0.4.0" },
     { name = "azure-ai-contentsafety", specifier = ">=1.0.0" },

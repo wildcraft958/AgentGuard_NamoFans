@@ -32,6 +32,7 @@ dependencies = [
     "networkx>=3.6.1",
     "river>=0.23.0",
     "openai>=1.0.0",
+    "aiohttp>=3.9.0",
 ]
 
 [project.urls]
