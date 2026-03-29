@@ -14,7 +14,7 @@ COPY src/ src/
 COPY test_bots/ test_bots/
 
 # Install all deps (frozen = exact lock file, no network drift)
-RUN uv sync --frozen
+RUN uv sync --frozen --extra dashboard
 
 EXPOSE 8765
 
