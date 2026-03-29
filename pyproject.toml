@@ -31,6 +31,7 @@ dependencies = [
     "pyyaml>=6.0",
     "networkx>=3.6.1",
     "river>=0.23.0",
+    "openai>=1.0.0",
 ]
 
 [project.urls]
