@@ -36,7 +36,8 @@ class ComplianceDriftMonitor:
 
     def record(self, tool_name: str, resource_sensitivity: int) -> float:
         """Record a tool call and return the current drift score."""
-        base = self.TOOL_SENSITIVITY_MAP.get(tool_name, 1)
+        # Default to 2 (confidential) for unknown tools — conservative assumption
+        base = self.TOOL_SENSITIVITY_MAP.get(tool_name, 2)
         effective = max(base, resource_sensitivity)
         self._window.append(effective)
         return self._drift_score()

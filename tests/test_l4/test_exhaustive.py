@@ -477,13 +477,13 @@ class TestDriftMonitorExhaustive:
         score = mon.record("http_post", 2)
         assert score > 0.9  # perfect positive correlation with 3 points
 
-    def test_unknown_tool_defaults_to_sensitivity_1(self):
-        """Unknown tool name maps to base sensitivity 1."""
+    def test_unknown_tool_defaults_to_sensitivity_2(self):
+        """Unknown tool name maps to base sensitivity 2 (conservative)."""
         mon = ComplianceDriftMonitor(window_size=8)
-        # base=1, resource_sensitivity=0 -> effective=1
+        # base=2 (conservative default), resource_sensitivity=0 -> effective=2
         for _ in range(4):
             score = mon.record("unknown_tool", 0)
-        # All 1s -> flat -> near 0
+        # All 2s -> flat -> near 0
         assert score < 0.1
 
     def test_resource_sensitivity_overrides_low_base(self):
@@ -680,7 +680,7 @@ class TestBaselineExhaustive:
         """Missing tool_name defaults to empty string."""
         baseline = AdaptiveBehavioralBaseline(**FAST)
         features = baseline.featurize({})
-        assert features["tool_id"] == int(hashlib.md5(b"").hexdigest(), 16) % 1000
+        assert features["tool_id"] == int(hashlib.sha256(b"").hexdigest(), 16) % 10000
 
     def test_featurize_complex_args(self):
         """Complex nested args produce higher entropy."""

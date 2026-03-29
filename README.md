@@ -189,7 +189,7 @@ agentguard test --config src/agentguard.yaml --module test_bots/financial_agent.
 | L2 Output: Hallucination | LLM-as-judge groundedness check (3 strategies) |
 | L4a Policy Engine | YAML-driven PBAC — hot-reloadable, wildcards, condition operators, first-match-wins |
 | L4b Adaptive Baseline | River HalfSpaceTrees — per-role online ML anomaly detection with cold-start fallback |
-| L4b Session Graph | NetworkX directed graph — node/edge/path scoring + IOA pattern matching (SentinelAgent) |
+| L4b Session Graph | NetworkX directed graph — node/edge/path scoring + IOA subsequence matching, resilient to interleaved evasion (SentinelAgent) |
 | L4b Drift Monitor | NumPy Pearson correlation — sliding-window sensitivity trajectory detection (CPF §7) |
 | L4 Orchestrator | Async two-tier engine — L4a sync policy (<2ms) + L4b behavioral scoring (<80ms) |
 | L4 Legacy RBAC | Pure-Python ABAC engine — ALLOW / DENY / ELEVATE outcomes (backward compat) |
