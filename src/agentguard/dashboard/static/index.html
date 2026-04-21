@@ -7,32 +7,35 @@
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
 
   <style>
     /* =========================================================
        DESIGN TOKENS
     ========================================================= */
     :root {
-      --black:    #0a0a0a;
-      --black2:   #111111;
-      --black3:   #1a1a1a;
-      --black4:   #242424;
-      --border:   #2a2a2a;
-      --border2:  #333333;
-      --text:     #e8e8e8;
-      --muted:    #777777;
-      --orange:   #e8400c;
-      --orange2:  #ff5a2b;
-      --red:      #e83c3c;
-      --green:    #2ecc71;
-      --green2:   #27ae60;
-      --blue:     #3498db;
-      --mono:     'JetBrains Mono', monospace;
-      --sans:     'Manrope', sans-serif;
-      --display:  'Bebas Neue', sans-serif;
-      --radius:   4px;
-      --nav-h:    64px;
+      --bg-0:         #070a11;
+      --bg-1:         #0d1320;
+      --bg-2:         #11192a;
+      --bg-3:         #17213a;
+      --border:       #1f2a44;
+      --border2:      #2a3a5c;
+      --fg-0:         #f4f6fa;
+      --fg-1:         #cdd4e1;
+      --fg-2:         #8a93a6;
+      --accent:       #216278;
+      --accent-bright:#2d8aa8;
+      --accent-deep:  #143a47;
+      --red:          #e83c3c;
+      --green:        #2ecc71;
+      --green2:       #27ae60;
+      --orange-status:#e8400c;
+      --blue-status:  #3498db;
+      --mono:         'JetBrains Mono', monospace;
+      --sans:         'Inter', sans-serif;
+      --display:      'Space Grotesk', sans-serif;
+      --radius:       4px;
+      --nav-h:        64px;
     }
 
     /* =========================================================
@@ -43,8 +46,8 @@
     html { scroll-behavior: smooth; }
 
     body {
-      background: var(--black);
-      color: var(--text);
+      background: var(--bg-0);
+      color: var(--fg-0);
       font-family: var(--sans);
       font-size: 14px;
       line-height: 1.6;
@@ -69,7 +72,7 @@
        SCROLLBAR
     ========================================================= */
     ::-webkit-scrollbar { width: 6px; height: 6px; }
-    ::-webkit-scrollbar-track { background: var(--black2); }
+    ::-webkit-scrollbar-track { background: var(--bg-1); }
     ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
 
     /* =========================================================
@@ -97,7 +100,7 @@
       position: fixed;
       top: 0; left: 0; right: 0;
       height: var(--nav-h);
-      background: rgba(10,10,10,0.92);
+      background: rgba(7,10,17,0.92);
       backdrop-filter: blur(16px);
       -webkit-backdrop-filter: blur(16px);
       border-bottom: 1px solid var(--border);
@@ -113,11 +116,11 @@
       font-size: 15px;
       font-weight: 700;
       letter-spacing: 0.08em;
-      color: var(--text);
+      color: var(--fg-0);
       white-space: nowrap;
     }
 
-    .nav-logo span { color: var(--orange); }
+    .nav-logo span { color: var(--accent); }
 
     .nav-live {
       display: flex;
@@ -127,14 +130,14 @@
       font-size: 11px;
       font-weight: 500;
       letter-spacing: 0.12em;
-      color: var(--muted);
+      color: var(--fg-2);
       text-transform: uppercase;
     }
 
     .nav-dot {
       width: 8px; height: 8px;
       border-radius: 50%;
-      background: var(--orange);
+      background: var(--accent);
       animation: pulse 2s ease-in-out infinite;
       flex-shrink: 0;
     }
@@ -154,14 +157,14 @@
       text-transform: uppercase;
     }
 
-    .badge-enforce  { background: rgba(232,64,12,0.15); color: var(--orange); border: 1px solid rgba(232,64,12,0.3); }
-    .badge-monitor  { background: rgba(52,152,219,0.15); color: var(--blue); border: 1px solid rgba(52,152,219,0.3); }
-    .badge-dryrun   { background: rgba(119,119,119,0.15); color: var(--muted); border: 1px solid rgba(119,119,119,0.3); }
+    .badge-enforce  { background: rgba(232,64,12,0.15); color: var(--orange-status); border: 1px solid rgba(232,64,12,0.3); }
+    .badge-monitor  { background: rgba(52,152,219,0.15); color: var(--blue-status); border: 1px solid rgba(52,152,219,0.3); }
+    .badge-dryrun   { background: rgba(119,119,119,0.15); color: var(--fg-2); border: 1px solid rgba(119,119,119,0.3); }
 
     .nav-service {
       font-family: var(--mono);
       font-size: 11px;
-      color: var(--muted);
+      color: var(--fg-2);
       letter-spacing: 0.08em;
     }
 
@@ -188,7 +191,7 @@
       font-size: 10px;
       font-weight: 700;
       letter-spacing: 0.2em;
-      color: var(--muted);
+      color: var(--fg-2);
       text-transform: uppercase;
       margin-bottom: 16px;
     }
@@ -197,7 +200,7 @@
       content: '';
       display: inline-block;
       width: 24px; height: 1px;
-      background: var(--orange);
+      background: var(--accent);
       flex-shrink: 0;
     }
 
@@ -216,7 +219,7 @@
     }
 
     .stat-card {
-      background: var(--black2);
+      background: var(--bg-1);
       padding: 20px 24px;
       transition: background 0.2s ease;
       position: relative;
@@ -232,8 +235,8 @@
       transition: background 0.2s ease;
     }
 
-    .stat-card:hover::before   { background: var(--orange); }
-    .stat-card:hover           { background: var(--black3); }
+    .stat-card:hover::before   { background: var(--accent); }
+    .stat-card:hover           { background: var(--bg-2); }
 
     .stat-label {
       font-family: var(--mono);
@@ -241,7 +244,7 @@
       font-weight: 700;
       letter-spacing: 0.2em;
       text-transform: uppercase;
-      color: var(--muted);
+      color: var(--fg-2);
       margin-bottom: 8px;
     }
 
@@ -252,15 +255,15 @@
       letter-spacing: 0.02em;
     }
 
-    .stat-value.white  { color: var(--text); }
+    .stat-value.white  { color: var(--fg-0); }
     .stat-value.red    { color: var(--red); }
     .stat-value.green  { color: var(--green); }
-    .stat-value.orange { color: var(--orange); }
+    .stat-value.orange { color: var(--accent-bright); }
 
     .stat-sub {
       font-family: var(--mono);
       font-size: 10px;
-      color: var(--muted);
+      color: var(--fg-2);
       margin-top: 4px;
     }
 
@@ -283,7 +286,7 @@
        PANEL / CARD BASE
     ========================================================= */
     .panel {
-      background: var(--black2);
+      background: var(--bg-1);
       border: 1px solid var(--border);
       border-radius: var(--radius);
       overflow: hidden;
@@ -323,18 +326,18 @@
       cursor: default;
     }
 
-    .feed-row:hover { background: var(--black3); }
+    .feed-row:hover { background: var(--bg-2); }
 
     .feed-ts {
       font-family: var(--mono);
       font-size: 10px;
-      color: var(--muted);
+      color: var(--fg-2);
     }
 
     .feed-op {
       font-family: var(--mono);
       font-size: 11px;
-      color: var(--text);
+      color: var(--fg-0);
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -346,7 +349,7 @@
     .feed-dur {
       font-family: var(--mono);
       font-size: 10px;
-      color: var(--muted);
+      color: var(--fg-2);
       text-align: right;
     }
 
@@ -362,10 +365,10 @@
       white-space: nowrap;
     }
 
-    .layer-l1    { background: rgba(52,152,219,0.12); color: var(--blue); }
+    .layer-l1    { background: rgba(52,152,219,0.12); color: var(--blue-status); }
     .layer-l2    { background: rgba(155,89,182,0.12); color: #9b59b6; }
-    .layer-tool  { background: rgba(232,64,12,0.12);  color: var(--orange); }
-    .layer-unk   { background: rgba(119,119,119,0.12); color: var(--muted); }
+    .layer-tool  { background: rgba(232,64,12,0.12);  color: var(--orange-status); }
+    .layer-unk   { background: rgba(119,119,119,0.12); color: var(--fg-2); }
 
     /* Status pill */
     .pill {
@@ -427,7 +430,7 @@
 
     .bar-track {
       height: 8px;
-      background: var(--black4);
+      background: var(--bg-3);
       border-radius: 4px;
       overflow: hidden;
       position: relative;
@@ -458,7 +461,7 @@
     }
 
     thead tr {
-      background: var(--black3);
+      background: var(--bg-2);
       border-bottom: 1px solid var(--border);
     }
 
@@ -468,7 +471,7 @@
       font-weight: 700;
       letter-spacing: 0.18em;
       text-transform: uppercase;
-      color: var(--muted);
+      color: var(--fg-2);
       padding: 10px 16px;
       text-align: left;
       white-space: nowrap;
@@ -480,7 +483,7 @@
       transition: background 0.12s ease;
     }
 
-    tbody tr:hover { background: var(--black3); }
+    tbody tr:hover { background: var(--bg-2); }
 
     tbody tr:last-child { border-bottom: none; }
 
@@ -488,17 +491,17 @@
       padding: 10px 16px;
       font-family: var(--mono);
       font-size: 11px;
-      color: var(--text);
+      color: var(--fg-0);
       vertical-align: middle;
     }
 
-    .td-muted { color: var(--muted); }
-    .td-orange { color: var(--orange); }
+    .td-muted { color: var(--fg-2); }
+    .td-orange { color: var(--accent-bright); }
 
     /* Expandable row */
     .span-detail-row {
       display: none;
-      background: var(--black);
+      background: var(--bg-0);
     }
 
     .span-detail-row.open { display: table-row; }
@@ -507,13 +510,13 @@
       padding: 12px 16px 16px 16px;
       font-family: var(--mono);
       font-size: 11px;
-      color: var(--muted);
+      color: var(--fg-2);
       line-height: 1.8;
       border-top: 1px solid var(--border);
     }
 
     .span-detail-inner strong {
-      color: var(--orange);
+      color: var(--accent-bright);
       font-weight: 600;
     }
 
@@ -531,7 +534,7 @@
       font-family: var(--mono);
       font-size: 200px;
       line-height: 1;
-      color: rgba(232,64,12,0.04);
+      color: rgba(33,98,120,0.08);
       pointer-events: none;
       user-select: none;
       top: -40px;
@@ -554,7 +557,7 @@
       text-align: center;
       font-family: var(--mono);
       font-size: 11px;
-      color: var(--muted);
+      color: var(--fg-2);
       letter-spacing: 0.1em;
     }
 
@@ -586,11 +589,11 @@
     OTEL LIVE
   </div>
 
-  <a href="/" style="font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:0.12em;color:var(--muted);text-transform:uppercase;text-decoration:none;padding:4px 0;border-bottom:2px solid transparent;transition:color 0.15s,border-color 0.15s;" onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--muted)'">HOME</a>
-  <a href="/dashboard" style="font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:0.12em;color:var(--orange);text-transform:uppercase;text-decoration:none;padding:4px 0;border-bottom:2px solid var(--orange);">DASHBOARD</a>
-  <a href="/demo" style="font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:0.12em;color:var(--muted);text-transform:uppercase;text-decoration:none;padding:4px 0;border-bottom:2px solid transparent;transition:color 0.15s,border-color 0.15s;" onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--muted)'">DEMO</a>
+  <a href="/" style="font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:0.12em;color:var(--fg-2);text-transform:uppercase;text-decoration:none;padding:4px 0;border-bottom:2px solid transparent;transition:color 0.15s,border-color 0.15s;" onmouseover="this.style.color='var(--fg-0)'" onmouseout="this.style.color='var(--fg-2)'">HOME</a>
+  <a href="/dashboard" style="font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:0.12em;color:var(--accent);text-transform:uppercase;text-decoration:none;padding:4px 0;border-bottom:2px solid var(--accent);">DASHBOARD</a>
+  <a href="/demo" style="font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:0.12em;color:var(--fg-2);text-transform:uppercase;text-decoration:none;padding:4px 0;border-bottom:2px solid transparent;transition:color 0.15s,border-color 0.15s;" onmouseover="this.style.color='var(--fg-0)'" onmouseout="this.style.color='var(--fg-2)'">DEMO</a>
 
-  <span id="conn-status" style="color: var(--muted);">connecting...</span>
+  <span id="conn-status" style="color: var(--fg-2);">connecting...</span>
 
   <div class="nav-spacer"></div>
 
@@ -653,7 +656,7 @@
 
           <li class="breakdown-item">
             <div class="breakdown-meta">
-              <span class="breakdown-label" style="color:var(--blue);">L1 INPUT</span>
+              <span class="breakdown-label" style="color:var(--blue-status);">L1 INPUT</span>
               <div class="breakdown-counts">
                 <span class="count-badge count-pass" id="l1-pass">0 PASS</span>
                 <span class="count-badge count-block" id="l1-block">0 BLOCK</span>
@@ -679,7 +682,7 @@
 
           <li class="breakdown-item">
             <div class="breakdown-meta">
-              <span class="breakdown-label" style="color:var(--orange);">TOOL FIREWALL</span>
+              <span class="breakdown-label" style="color:var(--orange-status);">TOOL FIREWALL</span>
               <div class="breakdown-counts">
                 <span class="count-badge count-pass" id="tf-pass">0 PASS</span>
                 <span class="count-badge count-block" id="tf-block">0 BLOCK</span>
@@ -858,7 +861,7 @@ function handleSpan(data) {
 
   if (status === 'blocked' && blockedBy) {
     const byEl = document.createElement('span');
-    byEl.style.cssText = 'display:block;font-family:var(--mono);font-size:9px;color:var(--orange);margin-top:2px;';
+    byEl.style.cssText = 'display:block;font-family:var(--mono);font-size:9px;color:var(--accent-bright);margin-top:2px;';
     byEl.textContent = '↳ ' + blockedBy;
     li.querySelector('.feed-op').after(byEl);
   }
@@ -913,11 +916,11 @@ function renderSpans(spans) {
 
     detailRow.innerHTML = `<td colspan="6">
       <div class="span-detail-inner">
-        <strong style="color:var(--muted);font-size:9px;letter-spacing:0.15em;">TRACE ID</strong><br>
+        <strong style="color:var(--fg-2);font-size:9px;letter-spacing:0.15em;">TRACE ID</strong><br>
         ${span.trace_id || '—'}<br><br>
-        <strong style="color:var(--muted);font-size:9px;letter-spacing:0.15em;">SPAN ID</strong><br>
+        <strong style="color:var(--fg-2);font-size:9px;letter-spacing:0.15em;">SPAN ID</strong><br>
         ${span.span_id || '—'}<br><br>
-        <strong style="color:var(--muted);font-size:9px;letter-spacing:0.15em;">TAGS</strong><br>
+        <strong style="color:var(--fg-2);font-size:9px;letter-spacing:0.15em;">TAGS</strong><br>
         ${tagLines || '(none)'}
       </div>
     </td>`;

@@ -22,6 +22,7 @@ from pathlib import Path
 import httpx
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from sse_starlette.sse import EventSourceResponse
 
 from agentguard.observability.audit import AuditLog
@@ -34,6 +35,12 @@ STATIC_DIR = Path(__file__).parent / "static"
 
 app = FastAPI(title="AgentGuard Dashboard")
 app.include_router(demo_router)
+app.mount("/assets", StaticFiles(directory=STATIC_DIR / "assets"), name="assets")
+
+
+@app.get("/styles.css")
+def serve_styles():
+    return FileResponse(str(STATIC_DIR / "styles.css"), media_type="text/css")
 
 # ---------------------------------------------------------------------------
 # Singleton audit log (lazy-init, one per process)

